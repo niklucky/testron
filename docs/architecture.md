@@ -169,3 +169,19 @@ Playwright generation should run in ordinary unit tests.
 6. Preventing tested websites from reaching privileged Electron capabilities.
 
 The feasibility spike addresses these risks before product CRUD is expanded.
+
+## Phase 0 architecture checkpoint
+
+Status: accepted for the next phase on 2026-08-14.
+
+The controlled spike validates the existing process model. A sandboxed
+`WebContentsView` can retain its recorder preload across main-frame navigation,
+send observations over one fixed IPC channel, normalize input bursts, and
+produce source that Playwright replays successfully. Runtime assertions confirm
+that the tested page has no Node, Electron, Testron, or `require` global.
+
+Continue with the embedded `WebContentsView` for Phase 1. Revisit an external
+Playwright browser only if real applications expose locator, authentication,
+popup, or Chromium-compatibility problems that the controlled fixture does not.
+The current role/name extraction is deliberately basic and is not evidence that
+locator quality is solved for framework-heavy applications.

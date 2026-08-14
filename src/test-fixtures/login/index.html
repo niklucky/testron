@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fixture sign in</title>
+    <style>
+      :root {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #1e293b;
+        background: #eff6ff;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+      }
+      main {
+        width: min(380px, calc(100vw - 40px));
+        padding: 34px;
+        border-radius: 18px;
+        background: white;
+        box-shadow: 0 24px 60px rgba(30, 64, 175, 0.14);
+      }
+      h1 {
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 24px;
+        color: #64748b;
+      }
+      label {
+        display: block;
+        margin: 14px 0 6px;
+        font-weight: 650;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 11px 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        font: inherit;
+      }
+      button {
+        width: 100%;
+        margin-top: 22px;
+        padding: 12px;
+        border: 0;
+        border-radius: 8px;
+        color: white;
+        background: #2563eb;
+        font: inherit;
+        font-weight: 750;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Welcome back</h1>
+      <p>Use this controlled page to verify recorder behavior.</p>
+      <form id="login-form">
+        <label for="email">Work email</label>
+        <input id="email" data-testid="email" type="email" autocomplete="off" />
+        <label for="workspace">Workspace</label>
+        <input id="workspace" data-testid="workspace" autocomplete="off" />
+        <button type="submit">Continue</button>
+      </form>
+    </main>
+    <script>
+      document.querySelector('#login-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.location.href = '/welcome';
+      });
+    </script>
+  </body>
+</html>

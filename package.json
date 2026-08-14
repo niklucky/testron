@@ -1,0 +1,48 @@
+{
+  "name": "testron",
+  "productName": "Testron",
+  "version": "0.0.1",
+  "description": "A local-first Playwright test recorder",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/dev.mjs",
+    "start:app": "electron-forge start",
+    "start:fixture": "node scripts/fixture-server.mjs",
+    "build": "electron-forge package",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:replay": "playwright test",
+    "test:electron": "playwright test -c playwright.electron.config.ts",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@electron-forge/plugin-vite": "7.11.2",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "electron": "43.4.0",
+    "eslint": "10.8.1",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  }
+}

@@ -1,0 +1,167 @@
+:root {
+  color: #e8eaf0;
+  background: #12151c;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  overflow: hidden;
+}
+button,
+input {
+  font: inherit;
+}
+.toolbar {
+  height: 150px;
+  padding: 10px 14px;
+  background: #151922;
+  border-bottom: 1px solid #303644;
+}
+.controls {
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand {
+  min-width: 170px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #11151d;
+  background: #72e3b6;
+  font-weight: 900;
+}
+.brand strong,
+.brand small {
+  display: block;
+}
+.brand small {
+  color: #8f98aa;
+  font-size: 10px;
+  margin-top: 1px;
+}
+form {
+  flex: 1;
+  display: flex;
+  min-width: 260px;
+}
+input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #3a4252;
+  border-radius: 7px 0 0 7px;
+  padding: 0 10px;
+  color: inherit;
+  background: #0f1218;
+  outline: none;
+}
+input:focus {
+  border-color: #72e3b6;
+}
+button {
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 12px;
+  color: #e8eaf0;
+  background: #343b4a;
+  cursor: pointer;
+}
+form button {
+  border-radius: 0 7px 7px 0;
+}
+.record {
+  color: #102019;
+  background: #72e3b6;
+  font-weight: 700;
+}
+.stop {
+  background: #e05d69;
+  font-weight: 700;
+}
+.status {
+  min-width: 76px;
+  color: #98a1b2;
+  font-size: 12px;
+}
+.status.live {
+  color: #ff8993;
+}
+.output {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  height: 82px;
+  margin-top: 5px;
+}
+.human,
+.source {
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid #29303d;
+  border-radius: 7px;
+  background: #10131a;
+  overflow: hidden;
+}
+h2 {
+  margin: 0 0 4px;
+  color: #8f98aa;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+  overflow: auto;
+  height: 50px;
+}
+.empty {
+  color: #687184;
+}
+pre {
+  margin: 0;
+  height: 53px;
+  overflow: auto;
+  color: #b9c6e4;
+  font:
+    10px/15px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+.warning {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  max-width: 460px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: #ffd7a0;
+  background: #5a3c18;
+  font-size: 11px;
+}
