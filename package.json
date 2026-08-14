@@ -27,7 +27,6 @@
     "@electron-forge/maker-zip": "7.11.2",
     "@electron-forge/plugin-vite": "7.11.2",
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.62.1",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
@@ -41,6 +40,7 @@
     "vitest": "4.1.10"
   },
   "dependencies": {
+    "@playwright/test": "1.62.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "4.4.3"

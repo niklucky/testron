@@ -13,6 +13,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   captureMode: 'record',
   stepWarnings: [],
   library: { projects: [], environments: [], tests: [] },
+  replay: { status: 'idle', steps: [] },
 };
 
 const assertionOptions: { value: VerifyAssertion; label: string }[] = [
@@ -193,8 +194,11 @@ export const App = () => {
   const [environmentUrl, setEnvironmentUrl] = useState('http://127.0.0.1:4174');
   const [testIdAttribute, setTestIdAttribute] = useState('data-testid');
   const [testTitle, setTestTitle] = useState('');
-  const [tab, setTab] = useState<'human' | 'source'>('human');
+  const [tab, setTab] = useState<'human' | 'source' | 'run'>('human');
   const [verifyAssertion, setVerifyAssertion] = useState<VerifyAssertion>('visible');
+  const [timeoutSeconds, setTimeoutSeconds] = useState(30);
+  const [reuseAuthState, setReuseAuthState] = useState(false);
+  const [environmentVariables, setEnvironmentVariables] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const unsubscribe = window.testron.onSnapshot(setSnapshot);
@@ -216,6 +220,16 @@ export const App = () => {
   );
   const selectedEnvironment = library.environments.find(
     (environment) => environment.id === library.selectedEnvironmentId,
+  );
+  const requiredEnvironmentVariables = useMemo(
+    () => [
+      ...new Set(
+        snapshot.steps.flatMap((step) =>
+          step.kind === 'fill' && step.secret ? [step.secret.environmentVariable] : [],
+        ),
+      ),
+    ],
+    [snapshot.steps],
   );
 
   const navigate = (): void => window.testron.command({ type: 'navigate', url });
@@ -484,8 +498,32 @@ export const App = () => {
             <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>
               Playwright
             </button>
+            <button className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}>
+              Run & diagnose
+            </button>
           </div>
           <div className="export-actions">
+            {snapshot.replay.status === 'running' ? (
+              <button className="finish" onClick={() => command({ type: 'cancel-run' })}>
+                Cancel run
+              </button>
+            ) : (
+              <button
+                className="record"
+                disabled={!library.selectedTestId || snapshot.steps.length === 0}
+                onClick={() => {
+                  setTab('run');
+                  command({
+                    type: 'run-test',
+                    environmentVariables,
+                    timeoutMs: timeoutSeconds * 1_000,
+                    reuseAuthState,
+                  });
+                }}
+              >
+                Run test
+              </button>
+            )}
             <button disabled={!snapshot.source} onClick={() => command({ type: 'copy-source' })}>
               Copy
             </button>
@@ -545,6 +583,68 @@ export const App = () => {
         </div>
         <div className="source" hidden={tab !== 'source'}>
           <pre>{snapshot.source || '// Generated source appears here'}</pre>
+        </div>
+        <div className="run-results" hidden={tab !== 'run'}>
+          <div className="run-config">
+            <label>
+              Timeout
+              <input
+                aria-label="Run timeout in seconds"
+                type="number"
+                min="1"
+                max="600"
+                value={timeoutSeconds}
+                onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
+              />
+              seconds
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={reuseAuthState}
+                onChange={(event) => setReuseAuthState(event.target.checked)}
+              />
+              Reuse auth for this environment (revision {selectedEnvironment?.authRevision ?? 1})
+            </label>
+            <button onClick={() => command({ type: 'clear-auth-state' })}>Clear auth</button>
+            {requiredEnvironmentVariables.map((name) => (
+              <label key={name}>
+                {name}
+                <input
+                  aria-label={`Environment variable ${name}`}
+                  type="password"
+                  value={environmentVariables[name] ?? ''}
+                  onChange={(event) =>
+                    setEnvironmentVariables((current) => ({
+                      ...current,
+                      [name]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <div className={`run-summary ${snapshot.replay.status}`}>
+            Run: {snapshot.replay.status}
+            {snapshot.replay.durationMs !== undefined && ` · ${snapshot.replay.durationMs} ms`}
+          </div>
+          {snapshot.replay.error && <div className="failure-detail">{snapshot.replay.error}</div>}
+          <ol className="replay-steps">
+            {snapshot.replay.steps.map((result) => (
+              <li className={result.status} key={result.index}>
+                <strong>{result.status}</strong> {result.action}
+                {result.locator && <code>Locator: {result.locator}</code>}
+                {result.error && <code className="failure-detail">Error: {result.error}</code>}
+                {result.pageUrl && <code>Page URL: {result.pageUrl}</code>}
+              </li>
+            ))}
+          </ol>
+          {(snapshot.replay.screenshotPath || snapshot.replay.tracePath) && (
+            <div className="artifacts">
+              {snapshot.replay.screenshotPath && <>Screenshot: {snapshot.replay.screenshotPath}</>}
+              {snapshot.replay.tracePath && <> · Trace: {snapshot.replay.tracePath}</>}
+            </div>
+          )}
         </div>
         {snapshot.warning && <div className="warning">{snapshot.warning}</div>}
       </section>

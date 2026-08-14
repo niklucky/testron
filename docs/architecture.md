@@ -1,34 +1,125 @@
 # Testron Architecture
 
-## Technology stack
+## Architectural direction
 
-- Electron desktop application, pinned to an exact stable version.
-- TypeScript throughout.
-- React for Testron's application interface.
-- Vite for renderer development and builds.
-- Electron Forge for packaging and distribution.
-- Plain CSS and CSS variables initially.
-- `node:sqlite` for local persistence.
-- Zod for domain, persistence, and IPC boundaries.
-- Vitest for domain and recorder unit tests.
-- Playwright Test for generated-source validation and replay tests.
-- npm as the initial package manager.
+Testron is a server-backed platform with desktop, web, and CLI clients. The
+server is the canonical source for synchronized project and test data. Clients
+may cache data and preserve drafts, but synchronization always occurs through
+explicit, revision-aware server contracts.
 
-This begins as one desktop package, not a monorepo.
+The existing desktop application remains the validated recorder and local replay
+foundation. The transition to a monorepo and server must preserve that behavior
+while changing canonical ownership from a single local SQLite database to the
+server.
 
-## Process model
+## Target repository layout
 
-Testron has three distinct trust zones.
+```text
+apps/
+  desktop/
+  web/
+  server/
+  cli/
+packages/
+  domain/
+  protocol/
+  test-format/
+  test-fixtures/
+```
+
+- `apps/desktop` owns Electron, recording, local replay, artifacts, and a
+  recoverable local working cache.
+- `apps/web` owns browser-based project, revision, and run-result management.
+- `apps/server` owns canonical persistence, authentication, authorization, and
+  revision APIs.
+- `apps/cli` owns login, pull, push, import, export, validation, and conflict
+  reporting for repository workflows.
+- `packages/domain` owns platform-independent schemas and behavior used by at
+  least two applications.
+- `packages/protocol` owns versioned client/server request and response schemas.
+- `packages/test-format` owns the durable Git-friendly test and manifest formats.
+- `packages/test-fixtures` owns controlled applications used by recorder and
+  replay tests.
+
+The monorepo migration should initially be mechanical. Desktop behavior and test
+coverage must remain unchanged during the move.
+
+## Technology constraints
+
+The validated desktop stack is:
+
+- Electron and Electron Forge.
+- TypeScript and React.
+- Vite for renderer and Electron bundle development.
+- Plain CSS and CSS variables.
+- `node:sqlite` for the desktop working cache.
+- Zod at persistence, IPC, API, and file-format boundaries.
+- Playwright Test for local replay and generated-source validation.
+- Vitest for domain and unit tests.
+
+Server, web, monorepo, and deployment technologies should be selected when their
+requirements are concrete. The architecture requires versioned contracts,
+transactional canonical persistence, authentication, authorization, and
+optimistic concurrency, but it does not yet require a particular web framework,
+database, hosting provider, or package manager.
+
+## Canonical ownership
+
+The server owns synchronized:
+
+- Projects and membership.
+- Environments and their revisions.
+- Tests, structured steps, and revision history.
+- Supported metadata and run summaries.
+- Deletion and restoration state.
+
+The desktop owns local-only:
+
+- In-progress recording observations before normalization.
+- Unsynchronized drafts and an outbox of intended writes.
+- Local Playwright run processes and cancellation state.
+- Screenshots, traces, and reusable local authentication state unless a future
+  feature explicitly uploads them.
+- Session-only secret values.
+
+The repository owns files materialized by the CLI. Its manifest identifies the
+server objects and base revisions represented by those files; it does not make
+Git an invisible second server database.
+
+## Revision model
+
+Every mutable synchronized resource has a stable ID and revision identifier. A
+client write supplies the base revision it observed.
+
+```text
+client reads revision 12
+  -> client proposes changes based on revision 12
+  -> server compares current revision
+     -> still 12: validate, commit, return revision 13
+     -> no longer 12: reject with structured conflict information
+```
+
+The initial system should prefer immutable test revision records plus a pointer
+to the current revision. This makes desktop saves, web edits, CLI pushes, audit
+history, and restoration use the same model.
+
+Last-write-wins is not acceptable for test content. Automatic merging should be
+introduced only for fields with well-defined merge semantics.
+
+## Desktop process model
+
+The desktop application has three trust zones.
 
 ### Main process
 
 The Electron main process owns:
 
 - Window and `WebContentsView` lifecycle.
-- Positioning the tested website below the Testron toolbar.
 - Navigation and popup policy.
 - Recording-session state transitions.
-- SQLite access and migrations.
+- Local working-cache access and migrations.
+- Local Playwright replay, cancellation, traces, and screenshots.
+- Server synchronization and secure token access through a narrow adapter.
 - File export and safe operating-system integration.
 - Validated IPC handlers.
 
@@ -36,14 +127,14 @@ The Electron main process owns:
 
 The React renderer owns:
 
-- Project, environment, and test screens.
-- Recording toolbar state and controls.
-- Human-readable step review and editing.
+- Project, environment, test, and synchronization screens.
+- Recording controls and structured step review.
+- Local run progress and failure diagnosis.
+- Conflict presentation and resolution workflows.
 - Generated Playwright preview.
-- User-facing warnings and errors.
 
-It receives a narrow API through its preload bridge. It does not access Node.js
-or the database directly.
+It receives a narrow API through its preload bridge. It does not access Node.js,
+the local database, authentication tokens, or the server transport directly.
 
 ### Tested website
 
@@ -53,11 +144,11 @@ The tested website runs in a separate sandboxed `WebContentsView` with:
 - `contextIsolation: true`.
 - `sandbox: true`.
 - A dedicated recorder preload.
-- No general-purpose Electron or IPC API exposure.
+- No general-purpose Electron, server, filesystem, or IPC API exposure.
 
-The recorder preload observes supported DOM events, extracts sanitized element
-metadata, and sends validated recording candidates to the main process. Remote
-page content must never choose IPC channel names or invoke arbitrary operations.
+The recorder preload observes supported DOM events, extracts sanitized metadata,
+and sends validated candidates to the main process. Remote content must never
+choose IPC channel names or invoke synchronization or privileged operations.
 
 ## Recorder pipeline
 
@@ -67,121 +158,177 @@ DOM event
   -> candidate locator extraction
   -> action normalization
   -> structured step
-  -> session persistence
-  -> human-readable renderer
+  -> recoverable desktop draft
+  -> server revision
+  -> desktop and web presentation
+  -> CLI test format
   -> Playwright TypeScript generator
 ```
 
-Each layer should be independently testable.
+Each layer should remain independently testable. Recording, normalization, and
+code generation operate on domain values and do not call the server directly.
 
 ## Instrumentation boundary
 
-Testron will not depend on Playwright's private recorder internals. Playwright's
-public code generator validates the product concept, but embedding undocumented
-internal modules would tie Testron to implementation details that may change.
-
-The initial recorder uses Electron DOM instrumentation:
+Testron does not depend on Playwright's private recorder internals. The desktop
+recorder uses Electron DOM instrumentation:
 
 - Capture listeners are installed before application code where possible.
 - Click candidates include role, accessible name, labels, test IDs, relevant
   attributes, text, frame information, and URL context.
-- Input events are buffered and collapsed into a single fill step.
+- Input events are buffered and collapsed into one fill step.
 - Change events distinguish select, checkbox, and radio interactions.
-- Keyboard events record only meaningful presses rather than normal typing.
+- Keyboard events record meaningful presses rather than normal typing.
 - Electron navigation events capture document and in-page navigation.
 - Sensitive field observations omit their values.
 
-The generated output uses Playwright's public APIs and locator conventions.
-Playwright is also used as an external verifier: generated source must compile
-and replay against controlled fixture applications.
+Playwright public APIs execute structured steps locally and produce screenshots
+and traces. Generated output uses public locator and assertion APIs.
 
-## Normalization examples
+## Desktop drafts and synchronization
 
-- Five input events for `hello` become one `fill("hello")` step.
-- Pointer down, pointer up, click, and resulting navigation normally become one
-  click step rather than several user-visible steps.
-- A checkbox change becomes `check` or `uncheck`.
-- Enter pressed in an input becomes `press("Enter")`; ordinary character keys
-  remain part of the fill action.
-- DOM changes without direct user intent are not recorded as actions.
+The current SQLite repository becomes a working cache rather than canonical
+storage. Its future synchronization model should include:
 
-## Pause semantics
+- The last acknowledged server revision for each cached object.
+- Recoverable local drafts.
+- An explicit outbox of pending create, update, and delete operations.
+- Idempotency keys for retried writes.
+- Sync status and structured conflict state.
+- A clear distinction between server data, local edits, and transient run data.
 
-Pause stops capture but does not freeze the tested website. The UI must explain
-that actions performed while paused may create state that replay cannot
-reproduce. Undo-last-step is expected to be more useful and should be introduced
-early.
+Recording must survive a crash or temporary disconnect. Reconnection may upload
+the draft only after comparing its base revision with the current server
+revision. A client must never silently replace newer server work.
 
-## Initial persistence model
+## Server boundaries
+
+The server exposes versioned operations for:
+
+- Authentication and client sessions.
+- Project and membership access.
+- Environment snapshots and revisions.
+- Test snapshots, revision history, and conflicts.
+- Batch pull and push used by the CLI.
+- Run summaries when remote result storage is introduced.
+
+Every operation validates its payload and authorizes access to the target
+project. Canonical writes are transactional and return the committed revision.
+API transport types belong in `packages/protocol`; database records and framework
+request objects do not.
+
+The server initially stores structured tests, not arbitrary executable code or
+secret values. Server-side test execution requires a separate threat model,
+isolation design, secret-delivery mechanism, and job architecture.
+
+## CLI and repository format
+
+The CLI is a first-class client, not a wrapper around generated files.
 
 ```text
-Project
-  id, name, createdAt
-
-Environment
-  id, projectId, name, baseUrl, testIdAttribute
-
-Test
-  id, projectId, environmentId, title, status, createdAt, updatedAt
-
-Step
-  id, testId, position, kind, payload
+server snapshot
+  -> testron pull
+  -> versioned structured files + manifest + generated Playwright
+  -> supported developer edits
+  -> local schema and semantic validation
+  -> testron push with base revisions
+  -> server conflict check and new revision
 ```
 
-Step payloads are versioned and Zod-validated JSON. We should avoid prematurely
-creating a relational table for every action and locator subtype.
+Required format properties:
 
-## Suggested source layout
+- Deterministic ordering and formatting.
+- Stable output when server data has not changed.
+- Explicit schema and generator versions.
+- Stable project, environment, and test IDs in a manifest.
+- Base revisions for optimistic concurrency.
+- Paths that remain understandable in Git diffs.
+- No credentials or secret material.
 
-```text
-src/
-  main/
-    windows/
-    recording/
-    persistence/
-    ipc/
-  preload/
-    app/
-    recorder/
-  renderer/
-    screens/
-    components/
-  domain/
-    projects/
-    environments/
-    tests/
-    steps/
-    locators/
-    codegen/
-  test-fixtures/
-```
+The structured format is round-trippable. Generated `.spec.ts` files are output.
+Arbitrary edits to generated Playwright are initially export-only because a
+general code-to-steps parser would be ambiguous and unsafe. If direct code edits
+become a requirement, Testron must define a bounded syntax or AST contract before
+accepting them in `push`.
 
-Domain modules must not depend on Electron or React. Recorder normalization and
-Playwright generation should run in ordinary unit tests.
+## Web application boundary
 
-## Early risks
+The web application uses the same versioned server protocol and domain language
+as desktop and CLI, but it does not share Electron IPC or desktop persistence
+types.
 
-1. Stable semantic locator generation across modern component frameworks.
-2. Correct action normalization across navigation and re-rendering.
-3. Recorder survival across full document navigation and frames.
-4. Popup, authentication, and session behavior.
-5. Differences between Electron's Chromium surface and Playwright replay.
-6. Preventing tested websites from reaching privileged Electron capabilities.
+Its initial responsibilities are project navigation, test review, revision
+history, conflicts, settings, and run-result presentation. Browser-based
+recording remains out of scope until a dedicated browser-control design exists.
 
-The feasibility spike addresses these risks before product CRUD is expanded.
+## Authentication and authorization
 
-## Phase 0 architecture checkpoint
+- Desktop and web use interactive user authentication appropriate to their
+  platforms.
+- CLI authentication supports interactive login and non-interactive CI use.
+- Long-lived credentials use operating-system or CI secret storage, never the
+  repository manifest.
+- Server authorization is enforced per project operation and cannot rely on
+  client-side filtering.
+- Tokens and secret values are excluded from logs, traces, analytics, and error
+  payloads.
+- Tested website content cannot access Testron credentials or server APIs.
 
-Status: accepted for the next phase on 2026-08-14.
+## Schema and compatibility policy
 
-The controlled spike validates the existing process model. A sandboxed
-`WebContentsView` can retain its recorder preload across main-frame navigation,
-send observations over one fixed IPC channel, normalize input bursts, and
-produce source that Playwright replays successfully. Runtime assertions confirm
-that the tested page has no Node, Electron, Testron, or `require` global.
+Four boundaries require explicit, independent versions:
 
-Continue with the embedded `WebContentsView` for Phase 1. Revisit an external
-Playwright browser only if real applications expose locator, authentication,
-popup, or Chromium-compatibility problems that the controlled fixture does not.
-The current role/name extraction is deliberately basic and is not evidence that
-locator quality is solved for framework-heavy applications.
+1. Structured step schemas.
+2. Server API protocol schemas.
+3. CLI test and manifest formats.
+4. Desktop working-cache migrations.
+
+Readers should reject unsupported future versions with actionable errors. Server
+and CLI deployments must define supported version ranges. Migrations should be
+tested with fixtures from prior released versions.
+
+Electron IPC is a separate trust boundary and must not be reused as the server
+protocol merely because some domain payloads look similar.
+
+## Deployment boundaries
+
+Desktop distribution and server/web deployment are separate release tracks:
+
+- Desktop releases require signed macOS and Windows packages and update delivery.
+- Web and server releases require compatible protocol versions and database
+  migrations.
+- CLI releases require compatible protocol and file-format ranges.
+- A server deployment must not force already-running clients to corrupt or
+  silently reinterpret cached data.
+
+Compatibility checks should fail clearly before a write when a client or format
+version is unsupported.
+
+## Architecture guardrails
+
+- The server is authoritative for synchronized project and test data.
+- Structured steps remain the canonical test representation.
+- Recording observations and secret values are never sent as unvalidated raw
+  payloads.
+- Client writes are revision-aware; test content does not use last-write-wins.
+- Generated Playwright is not reverse-parsed without a bounded contract.
+- Desktop drafts remain recoverable through crashes and disconnects.
+- Server-side execution is not added without isolation and secret-delivery
+  designs.
+- Shared packages expose narrow APIs and do not collapse distinct trust
+  boundaries.
+- No undocumented Playwright internals are used.
+
+## Validated desktop checkpoint
+
+Status: accepted on 2026-08-14.
+
+The desktop spike validates the recorder, structured persistence, assertions,
+locator alternatives, local replay, failure diagnosis, screenshots, traces,
+cancellation, timeouts, and reusable local authentication state. A sandboxed
+`WebContentsView` retains its recorder preload across navigation and exposes no
+Node, Electron, Testron, or `require` global to tested content.
+
+Continue using the embedded `WebContentsView` for desktop recording. The next
+architecture checkpoint is a thin server-and-CLI vertical slice that proves
+revision-aware pull and push before broader web or collaboration work.

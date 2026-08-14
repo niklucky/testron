@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { rm, writeFile } from 'node:fs/promises';
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, WebContentsView } from 'electron';
 import { z } from 'zod';
@@ -9,6 +10,7 @@ import { stepSchema } from '../domain/steps/schema';
 import type { AppCommand, VerifyAssertion } from '../preload/api';
 import { TestronRepository } from './persistence/repository';
 import { RecordingSession } from './recording/session';
+import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
@@ -79,6 +81,14 @@ const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select-test'), testId: z.string().uuid() }),
   z.object({ type: z.literal('copy-source') }),
   z.object({ type: z.literal('export-source') }),
+  z.object({
+    type: z.literal('run-test'),
+    environmentVariables: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string()),
+    timeoutMs: z.number().int().min(1_000).max(600_000),
+    reuseAuthState: z.boolean(),
+  }),
+  z.object({ type: z.literal('cancel-run') }),
+  z.object({ type: z.literal('clear-auth-state') }),
 ]);
 
 let mainWindow: BrowserWindow | undefined;
@@ -144,12 +154,15 @@ const createWindow = async (): Promise<void> => {
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
     ...(selectedTestId ? { selectedTestId } : {}),
   });
+  const runner = new LocalReplayRunner();
+  let replaySnapshot: ReplaySnapshot = { status: 'idle', steps: [] };
   const sendSnapshot = (snapshot: ReturnType<RecordingSession['snapshot']>): void => {
     const window = mainWindow;
     if (window && !window.isDestroyed())
       window.webContents.send(APP_CHANNELS.snapshot, {
         ...snapshot,
         library: librarySnapshot(),
+        replay: replaySnapshot,
       });
   };
   const session = new RecordingSession(sendSnapshot, (steps) => {
@@ -362,8 +375,76 @@ const createWindow = async (): Promise<void> => {
           );
         break;
       }
+      case 'run-test': {
+        if (replaySnapshot.status === 'running') break;
+        const { selectedTest, environment } = selectedContext();
+        if (!selectedTest || !environment) {
+          session.warn('Select a saved test and environment before running.');
+          break;
+        }
+        const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
+        const authStatePath = path.join(
+          dataDirectory,
+          'auth',
+          `${environment.id}-revision-${environment.authRevision}.json`,
+        );
+        const artifactsDirectory = path.join(
+          dataDirectory,
+          'runs',
+          selectedTest.id,
+          new Date().toISOString().replaceAll(':', '-'),
+        );
+        const steps = store.loadSteps(selectedTest.id);
+        void runner
+          .run({
+            steps,
+            environmentVariables: command.environmentVariables,
+            timeoutMs: command.timeoutMs,
+            artifactsDirectory,
+            ...(command.reuseAuthState && existsSync(authStatePath) ? { authStatePath } : {}),
+            ...(command.reuseAuthState ? { saveAuthStatePath: authStatePath } : {}),
+            onProgress: (progress) => {
+              replaySnapshot = progress;
+              sendSnapshot(session.snapshot());
+            },
+          })
+          .then((result) => {
+            replaySnapshot = result;
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            replaySnapshot = {
+              status: 'failed',
+              steps: replaySnapshot.steps,
+              error: error instanceof Error ? error.message : String(error),
+            } as ReplaySnapshot;
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'cancel-run':
+        runner.cancel();
+        break;
+      case 'clear-auth-state': {
+        const { environment } = selectedContext();
+        if (!environment) break;
+        const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
+        const authStatePath = path.join(
+          dataDirectory,
+          'auth',
+          `${environment.id}-revision-${environment.authRevision}.json`,
+        );
+        void rm(authStatePath, { force: true }).then(() => {
+          const revision = store.rotateAuthenticationRevision(environment.id);
+          session.warn(
+            `Cleared local authentication state for ${environment.name}; new revision is ${revision}.`,
+          );
+          sendSnapshot(session.snapshot());
+        });
+        break;
+      }
     }
-    if (!['request-snapshot', 'copy-source', 'export-source'].includes(command.type))
+    if (!['request-snapshot', 'copy-source', 'export-source', 'run-test'].includes(command.type))
       sendSnapshot(session.snapshot());
   });
 

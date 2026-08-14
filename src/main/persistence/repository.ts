@@ -16,6 +16,7 @@ export interface EnvironmentRecord {
   name: string;
   baseUrl: string;
   testIdAttribute: string;
+  authRevision: number;
 }
 
 export interface TestRecord {
@@ -65,6 +66,7 @@ const migrations = [
       PRIMARY KEY (test_id, position)
     );
   `,
+  `ALTER TABLE environments ADD COLUMN auth_revision INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 interface Row {
@@ -95,7 +97,7 @@ export class TestronRepository {
   listEnvironments(): EnvironmentRecord[] {
     return this.database
       .prepare(
-        'SELECT id, project_id, name, base_url, test_id_attribute FROM environments ORDER BY created_at, name',
+        'SELECT id, project_id, name, base_url, test_id_attribute, auth_revision FROM environments ORDER BY created_at, name',
       )
       .all()
       .map((row) => ({
@@ -104,6 +106,7 @@ export class TestronRepository {
         name: String(row.name),
         baseUrl: String(row.base_url),
         testIdAttribute: String(row.test_id_attribute),
+        authRevision: Number(row.auth_revision),
       }));
   }
 
@@ -142,6 +145,7 @@ export class TestronRepository {
       name: name.trim(),
       baseUrl,
       testIdAttribute: testIdAttribute.trim(),
+      authRevision: 1,
     };
     this.database
       .prepare(
@@ -158,6 +162,17 @@ export class TestronRepository {
         new Date().toISOString(),
       );
     return environment;
+  }
+
+  rotateAuthenticationRevision(environmentId: string): number {
+    this.database
+      .prepare('UPDATE environments SET auth_revision = auth_revision + 1 WHERE id = ?')
+      .run(environmentId);
+    const row = this.database
+      .prepare('SELECT auth_revision FROM environments WHERE id = ?')
+      .get(environmentId);
+    if (!row) throw new Error('Environment not found.');
+    return Number(row.auth_revision);
   }
 
   createTest(projectId: string, environmentId: string, title: string): TestRecord {

@@ -1,6 +1,7 @@
 import type { RecordingSnapshot } from '../main/recording/session';
 import type { LibrarySnapshot } from '../main/persistence/repository';
 import type { Step } from '../domain/steps/schema';
+import type { ReplaySnapshot } from '../main/replay/runner';
 
 export type VerifyAssertion =
   | 'visible'
@@ -15,6 +16,7 @@ export type VerifyAssertion =
 
 export interface AppSnapshot extends RecordingSnapshot {
   library: LibrarySnapshot;
+  replay: ReplaySnapshot;
 }
 
 export type AppCommand =
@@ -46,7 +48,15 @@ export type AppCommand =
   | { type: 'select-environment'; environmentId: string }
   | { type: 'select-test'; testId: string }
   | { type: 'copy-source' }
-  | { type: 'export-source' };
+  | { type: 'export-source' }
+  | {
+      type: 'run-test';
+      environmentVariables: Record<string, string>;
+      timeoutMs: number;
+      reuseAuthState: boolean;
+    }
+  | { type: 'cancel-run' }
+  | { type: 'clear-auth-state' };
 
 export interface TestronApi {
   command(command: AppCommand): void;

@@ -46,6 +46,24 @@ describe('TestronRepository', () => {
     reopened.close();
   });
 
+  it('revisions reusable authentication state within one environment', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-auth-revision-'));
+    temporaryDirectories.push(directory);
+    const repository = new TestronRepository(path.join(directory, 'testron.sqlite'));
+    const project = repository.createProject('Accounts');
+    const environment = repository.createEnvironment(
+      project.id,
+      'Local',
+      'http://127.0.0.1:4174/',
+      'data-testid',
+    );
+
+    expect(environment.authRevision).toBe(1);
+    expect(repository.rotateAuthenticationRevision(environment.id)).toBe(2);
+    expect(repository.listEnvironments()[0].authRevision).toBe(2);
+    repository.close();
+  });
+
   it('redacts a secret value before writing the step payload', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'testron-secrets-'));
     temporaryDirectories.push(directory);
