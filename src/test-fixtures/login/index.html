@@ -55,6 +55,17 @@
         font-weight: 750;
         cursor: pointer;
       }
+      .secondary {
+        color: #1d4ed8;
+        background: #dbeafe;
+      }
+      .options {
+        display: flex;
+        gap: 10px;
+      }
+      .options button {
+        margin-top: 10px;
+      }
     </style>
   </head>
   <body>
@@ -66,13 +77,31 @@
         <input id="email" data-testid="email" type="email" autocomplete="off" />
         <label for="workspace">Workspace</label>
         <input id="workspace" data-testid="workspace" autocomplete="off" />
+        <label for="password">Password</label>
+        <input id="password" data-testid="password" name="password" type="password" />
         <button type="submit">Continue</button>
       </form>
+      <div class="options">
+        <button class="secondary" id="rerender" type="button">Re-render form</button>
+        <button class="secondary" id="popup" type="button">Open help popup</button>
+      </div>
+      <label><input type="radio" name="plan" value="pro" /> Pro plan</label>
+      <p id="render-status" data-testid="render-status" hidden>Form re-rendered</p>
     </main>
     <script>
       document.querySelector('#login-form').addEventListener('submit', (event) => {
         event.preventDefault();
         window.location.href = '/welcome';
+      });
+      document.querySelector('#rerender').addEventListener('click', () => {
+        const oldWorkspace = document.querySelector('#workspace');
+        const replacement = oldWorkspace.cloneNode();
+        replacement.value = oldWorkspace.value;
+        oldWorkspace.replaceWith(replacement);
+        document.querySelector('#render-status').hidden = false;
+      });
+      document.querySelector('#popup').addEventListener('click', () => {
+        window.open('/welcome', '_blank');
       });
     </script>
   </body>

@@ -57,7 +57,12 @@ describe('RecorderNormalizer', () => {
       target: { ...input('').target, sensitive: true },
     });
     normalizer.flush();
-    expect(steps[0]).toMatchObject({ kind: 'fill', value: '' });
+    expect(steps[0]).toMatchObject({
+      kind: 'fill',
+      value: '',
+      secret: { environmentVariable: 'TESTRON_PASSWORD' },
+    });
+    expect(JSON.stringify(steps)).not.toContain('do-not-store');
   });
 
   it('commits a pending fill when its field loses focus', () => {
@@ -106,5 +111,34 @@ describe('RecorderNormalizer', () => {
       key: 'Enter',
     });
     expect(steps.map((step) => step.kind)).toEqual(['selectOption', 'check', 'uncheck', 'press']);
+  });
+
+  it('turns verify observations into structured assertions and retains warnings', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'textContains',
+      observedText: 'Signed in',
+      observedValue: '',
+      url: 'http://127.0.0.1:4174/welcome',
+      target: {
+        fingerprint: 'heading',
+        sensitive: false,
+        locators: [
+          { strategy: 'role', role: 'heading', name: 'Signed in' },
+          { strategy: 'css', selector: 'main > h1', fragile: true },
+        ],
+        warnings: ['Primary locator is ambiguous (2 matches).'],
+      },
+    });
+    expect(steps[0]).toMatchObject({
+      kind: 'assertElement',
+      assertion: { type: 'text', match: 'contains', expected: 'Signed in' },
+      target: {
+        alternatives: [{ strategy: 'css' }],
+        warnings: ['Primary locator is ambiguous (2 matches).'],
+      },
+    });
   });
 });

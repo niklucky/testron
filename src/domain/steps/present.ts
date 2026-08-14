@@ -25,7 +25,9 @@ export const presentStep = (step: Step): string => {
     case 'click':
       return `Click ${locatorName(step.target.primary)}`;
     case 'fill':
-      return `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
+      return step.secret
+        ? `Fill ${locatorName(step.target.primary)} with secret $${step.secret.environmentVariable}`
+        : `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
     case 'selectOption':
       return `Select “${step.value}” in ${locatorName(step.target.primary)}`;
     case 'check':
@@ -34,5 +36,18 @@ export const presentStep = (step: Step): string => {
       return `Uncheck ${locatorName(step.target.primary)}`;
     case 'press':
       return `Press ${step.key} in ${locatorName(step.target.primary)}`;
+    case 'assertElement': {
+      const target = locatorName(step.target.primary);
+      switch (step.assertion.type) {
+        case 'text':
+          return `Verify ${target} text ${step.assertion.match} “${step.assertion.expected}”`;
+        case 'value':
+          return `Verify ${target} has value “${step.assertion.expected}”`;
+        default:
+          return `Verify ${target} is ${step.assertion.type}`;
+      }
+    }
+    case 'assertUrlPath':
+      return `Verify URL path equals “${step.expected}”`;
   }
 };

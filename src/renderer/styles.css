@@ -30,7 +30,7 @@ select:disabled {
   opacity: 0.45;
 }
 .toolbar {
-  height: 360px;
+  height: 430px;
   padding: 10px 14px;
   background: #151922;
   border-bottom: 1px solid #303644;
@@ -145,6 +145,18 @@ button {
   margin-left: auto;
   color: #8f98aa;
 }
+.recording-actions select {
+  max-width: 130px;
+}
+.mode-active {
+  color: #102019;
+  background: #72e3b6;
+  font-weight: 700;
+}
+.verify.mode-active {
+  color: #19132b;
+  background: #bca8ff;
+}
 .record {
   color: #102019;
   background: #72e3b6;
@@ -160,7 +172,7 @@ button {
 }
 .review {
   position: relative;
-  height: 198px;
+  height: 268px;
   border: 1px solid #29303d;
   border-radius: 8px;
   background: #10131a;
@@ -190,7 +202,7 @@ button {
 }
 .human,
 .source {
-  height: 158px;
+  height: 228px;
   overflow: auto;
 }
 [hidden] {
@@ -212,13 +224,19 @@ ol li::marker {
 ol li:not(.empty) {
   display: list-item;
 }
-ol li span:first-child {
+ol li > .step-copy {
   display: inline-block;
-  width: calc(100% - 100px);
+  width: calc(100% - 140px);
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
+}
+.quality-warning {
+  display: block;
+  color: #e9b65a;
+  font-size: 10px;
+  line-height: 14px;
 }
 .empty {
   color: #687184;
@@ -228,6 +246,26 @@ ol li span:first-child {
   display: flex;
   gap: 3px;
   margin-right: 4px;
+}
+.step-editor {
+  position: relative;
+}
+.editor-panel {
+  position: fixed;
+  z-index: 10;
+  right: 165px;
+  display: flex;
+  gap: 5px;
+  max-width: 720px;
+  padding: 6px;
+  border: 1px solid #59647a;
+  border-radius: 7px;
+  background: #202633;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+.editor-panel input,
+.editor-panel select {
+  min-width: 160px;
 }
 .step-actions button {
   width: 25px;

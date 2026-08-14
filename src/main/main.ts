@@ -5,7 +5,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, WebContentsView } from 
 import { z } from 'zod';
 
 import { recorderCandidateSchema } from '../domain/recording/schema';
-import type { AppCommand } from '../preload/api';
+import { stepSchema } from '../domain/steps/schema';
+import type { AppCommand, VerifyAssertion } from '../preload/api';
 import { TestronRepository } from './persistence/repository';
 import { RecordingSession } from './recording/session';
 import {
@@ -16,7 +17,7 @@ import {
   TESTED_WEBSITE_WEB_PREFERENCES,
 } from './security';
 
-const TOOLBAR_HEIGHT = 360;
+const TOOLBAR_HEIGHT = 430;
 const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('start-recording') }),
   z.object({ type: z.literal('stop-recording') }),
@@ -30,6 +31,33 @@ const appCommandSchema = z.discriminatedUnion('type', [
     index: z.number().int().nonnegative(),
     direction: z.union([z.literal(-1), z.literal(1)]),
   }),
+  z.object({ type: z.literal('duplicate-step'), index: z.number().int().nonnegative() }),
+  z.object({
+    type: z.literal('update-step'),
+    index: z.number().int().nonnegative(),
+    step: stepSchema,
+  }),
+  z.object({
+    type: z.literal('use-alternative-locator'),
+    index: z.number().int().nonnegative(),
+    alternativeIndex: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal('set-capture-mode'),
+    mode: z.enum(['record', 'verify']),
+    assertion: z.enum([
+      'visible',
+      'hidden',
+      'textContains',
+      'textEquals',
+      'value',
+      'enabled',
+      'disabled',
+      'checked',
+      'unchecked',
+    ]),
+  }),
+  z.object({ type: z.literal('add-url-path-assertion'), expected: z.string().startsWith('/') }),
   z.object({ type: z.literal('navigate'), url: z.url() }),
   z.object({ type: z.literal('request-snapshot') }),
   z.object({ type: z.literal('create-project'), name: z.string().trim().min(1).max(100) }),
@@ -127,6 +155,7 @@ const createWindow = async (): Promise<void> => {
   const session = new RecordingSession(sendSnapshot, (steps) => {
     if (selectedTestId) store.replaceSteps(selectedTestId, steps);
   });
+  let verifyAssertion: VerifyAssertion = 'visible';
 
   const selectedContext = () => {
     const selectedTest = store.listTests().find((test) => test.id === selectedTestId);
@@ -141,6 +170,8 @@ const createWindow = async (): Promise<void> => {
     if (websiteView && !websiteView.webContents.isDestroyed()) {
       websiteView.webContents.send(RECORDER_CONFIG_CHANNEL, {
         testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
+        captureMode: session.snapshot().captureMode,
+        assertion: verifyAssertion,
       });
     }
   };
@@ -149,8 +180,8 @@ const createWindow = async (): Promise<void> => {
     if (selectedTest) session.load(selectedTest.title, store.loadSteps(selectedTest.id));
   }
 
-  websiteView.webContents.setWindowOpenHandler(() => {
-    session.warn('Popups are not supported yet.');
+  websiteView.webContents.setWindowOpenHandler(({ url, disposition }) => {
+    session.warn(`Blocked ${disposition} popup to ${url}. Popups are not recorded yet.`);
     return { action: 'deny' };
   });
   websiteView.webContents.on('will-navigate', (event, url) => {
@@ -166,6 +197,8 @@ const createWindow = async (): Promise<void> => {
     const { environment } = selectedContext();
     websiteView?.webContents.send(RECORDER_CONFIG_CHANNEL, {
       testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
+      captureMode: session.snapshot().captureMode,
+      assertion: verifyAssertion,
     });
   });
   websiteView.webContents.on(
@@ -197,6 +230,7 @@ const createWindow = async (): Promise<void> => {
     switch (command.type) {
       case 'start-recording':
         session.start();
+        applyContext();
         break;
       case 'stop-recording':
         session.stop();
@@ -206,6 +240,7 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'resume-recording':
         session.resume();
+        applyContext();
         break;
       case 'undo-step':
         session.undo();
@@ -218,6 +253,23 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'move-step':
         session.moveStep(command.index, command.direction);
+        break;
+      case 'duplicate-step':
+        session.duplicateStep(command.index);
+        break;
+      case 'update-step':
+        session.updateStep(command.index, command.step);
+        break;
+      case 'use-alternative-locator':
+        session.useAlternativeLocator(command.index, command.alternativeIndex);
+        break;
+      case 'set-capture-mode':
+        verifyAssertion = command.assertion;
+        session.setCaptureMode(command.mode);
+        applyContext();
+        break;
+      case 'add-url-path-assertion':
+        session.addUrlAssertion(command.expected);
         break;
       case 'request-snapshot':
         sendSnapshot(session.snapshot());

@@ -30,6 +30,8 @@ export const generateLocator = (locator: Locator): string => {
 };
 
 export const generatePlaywright = (title: string, steps: readonly Step[]): string => {
+  const hasAssertions = steps.some((step) => step.kind.startsWith('assert'));
+  const hasSecrets = steps.some((step) => step.kind === 'fill' && step.secret);
   const body = steps.map((step) => {
     switch (step.kind) {
       case 'navigate':
@@ -37,7 +39,9 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
       case 'click':
         return `  await ${generateLocator(step.target.primary)}.click();`;
       case 'fill':
-        return `  await ${generateLocator(step.target.primary)}.fill(${quote(step.value)});`;
+        return `  await ${generateLocator(step.target.primary)}.fill(${
+          step.secret ? `requiredEnv(${quote(step.secret.environmentVariable)})` : quote(step.value)
+        });`;
       case 'selectOption':
         return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
       case 'check':
@@ -46,11 +50,47 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.uncheck();`;
       case 'press':
         return `  await ${generateLocator(step.target.primary)}.press(${quote(step.key)});`;
+      case 'assertElement': {
+        const locator = generateLocator(step.target.primary);
+        switch (step.assertion.type) {
+          case 'visible':
+            return `  await expect(${locator}).toBeVisible();`;
+          case 'hidden':
+            return `  await expect(${locator}).toBeHidden();`;
+          case 'enabled':
+            return `  await expect(${locator}).toBeEnabled();`;
+          case 'disabled':
+            return `  await expect(${locator}).toBeDisabled();`;
+          case 'checked':
+            return `  await expect(${locator}).toBeChecked();`;
+          case 'unchecked':
+            return `  await expect(${locator}).not.toBeChecked();`;
+          case 'text':
+            return step.assertion.match === 'equals'
+              ? `  await expect(${locator}).toHaveText(${quote(step.assertion.expected)});`
+              : `  await expect(${locator}).toContainText(${quote(step.assertion.expected)});`;
+          case 'value':
+            return `  await expect(${locator}).toHaveValue(${quote(step.assertion.expected)});`;
+        }
+        throw new Error('Unsupported assertion type.');
+      }
+      case 'assertUrlPath':
+        return `  await expect(page).toHaveURL((url) => url.pathname === ${quote(step.expected)});`;
     }
   });
 
   return [
-    `import { test } from '@playwright/test';`,
+    `import { test${hasAssertions ? ', expect' : ''} } from '@playwright/test';`,
+    ...(hasSecrets
+      ? [
+          '',
+          'const requiredEnv = (name: string): string => {',
+          '  const value = process.env[name];',
+          '  if (!value) throw new Error(`Missing required environment variable: ${name}`);',
+          '  return value;',
+          '};',
+        ]
+      : []),
     '',
     `test(${quote(title)}, async ({ page }) => {`,
     ...body,

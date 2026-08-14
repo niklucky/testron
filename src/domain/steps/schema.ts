@@ -4,6 +4,18 @@ import { targetSchema } from '../locators/schema';
 
 const metadataSchema = z.object({ recordedAt: z.iso.datetime() });
 
+export const elementAssertionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.enum(['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked']) }),
+  z.object({
+    type: z.literal('text'),
+    match: z.enum(['contains', 'equals']),
+    expected: z.string(),
+  }),
+  z.object({ type: z.literal('value'), expected: z.string() }),
+]);
+
+export type ElementAssertion = z.infer<typeof elementAssertionSchema>;
+
 export const stepSchema = z.discriminatedUnion('kind', [
   z.object({
     version: z.literal(1),
@@ -22,6 +34,7 @@ export const stepSchema = z.discriminatedUnion('kind', [
     kind: z.literal('fill'),
     target: targetSchema,
     value: z.string(),
+    secret: z.object({ environmentVariable: z.string().regex(/^[A-Z][A-Z0-9_]*$/) }).optional(),
     metadata: metadataSchema,
   }),
   z.object({
@@ -44,7 +57,23 @@ export const stepSchema = z.discriminatedUnion('kind', [
     key: z.string().min(1),
     metadata: metadataSchema,
   }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal('assertElement'),
+    target: targetSchema,
+    assertion: elementAssertionSchema,
+    metadata: metadataSchema,
+  }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal('assertUrlPath'),
+    expected: z.string().startsWith('/'),
+    metadata: metadataSchema,
+  }),
 ]);
 
 export const stepsSchema = z.array(stepSchema);
 export type Step = z.infer<typeof stepSchema>;
+
+export const redactStepSecrets = (step: Step): Step =>
+  step.kind === 'fill' && step.secret && step.value !== '' ? { ...step, value: '' } : step;

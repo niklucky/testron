@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { stepSchema, type Step } from '../../domain/steps/schema';
+import { redactStepSecrets, stepSchema, type Step } from '../../domain/steps/schema';
 
 export interface ProjectRecord {
   id: string;
@@ -182,11 +182,11 @@ export class TestronRepository {
     return this.database
       .prepare('SELECT payload FROM test_steps WHERE test_id = ? ORDER BY position')
       .all(testId)
-      .map((row) => stepSchema.parse(JSON.parse(String(row.payload))));
+      .map((row) => redactStepSecrets(stepSchema.parse(JSON.parse(String(row.payload)))));
   }
 
   replaceSteps(testId: string, steps: readonly Step[]): void {
-    const validated = steps.map((step) => stepSchema.parse(step));
+    const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
     const remove = this.database.prepare('DELETE FROM test_steps WHERE test_id = ?');
     const insert = this.database.prepare(
       'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',

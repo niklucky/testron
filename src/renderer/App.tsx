@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { AppSnapshot } from '../preload/api';
+import type { Step } from '../domain/steps/schema';
+import type { AppCommand, AppSnapshot, VerifyAssertion } from '../preload/api';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
   recording: false,
@@ -9,7 +10,179 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   steps: [],
   descriptions: [],
   source: '',
+  captureMode: 'record',
+  stepWarnings: [],
   library: { projects: [], environments: [], tests: [] },
+};
+
+const assertionOptions: { value: VerifyAssertion; label: string }[] = [
+  { value: 'visible', label: 'Visible' },
+  { value: 'hidden', label: 'Hidden' },
+  { value: 'textContains', label: 'Text contains' },
+  { value: 'textEquals', label: 'Text equals' },
+  { value: 'value', label: 'Input value' },
+  { value: 'enabled', label: 'Enabled' },
+  { value: 'disabled', label: 'Disabled' },
+  { value: 'checked', label: 'Checked' },
+  { value: 'unchecked', label: 'Unchecked' },
+];
+
+const StepEditor = ({
+  step,
+  index,
+  command,
+}: {
+  step: Step;
+  index: number;
+  command: (command: AppCommand) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(step);
+  useEffect(() => setDraft(step), [step]);
+
+  const setString = (value: string): void => {
+    switch (draft.kind) {
+      case 'navigate':
+        setDraft({ ...draft, url: value });
+        break;
+      case 'fill':
+        setDraft(
+          draft.secret
+            ? {
+                ...draft,
+                secret: {
+                  environmentVariable: value
+                    .replace(/[^a-z0-9_]+/gi, '_')
+                    .replace(/^[^a-z]+/i, '')
+                    .toUpperCase(),
+                },
+              }
+            : { ...draft, value },
+        );
+        break;
+      case 'selectOption':
+        setDraft({ ...draft, value });
+        break;
+      case 'press':
+        setDraft({ ...draft, key: value });
+        break;
+      case 'assertUrlPath':
+        setDraft({ ...draft, expected: value });
+        break;
+      case 'assertElement':
+        if (draft.assertion.type === 'text' || draft.assertion.type === 'value')
+          setDraft({ ...draft, assertion: { ...draft.assertion, expected: value } });
+        break;
+    }
+  };
+  const stringValue = (() => {
+    switch (draft.kind) {
+      case 'navigate':
+        return draft.url;
+      case 'fill':
+        return draft.secret?.environmentVariable ?? draft.value;
+      case 'selectOption':
+        return draft.value;
+      case 'press':
+        return draft.key;
+      case 'assertUrlPath':
+        return draft.expected;
+      case 'assertElement':
+        return draft.assertion.type === 'text' || draft.assertion.type === 'value'
+          ? draft.assertion.expected
+          : undefined;
+      default:
+        return undefined;
+    }
+  })();
+  const targeted = 'target' in draft ? draft : undefined;
+
+  return (
+    <span className="step-editor">
+      <button aria-label={`Edit step ${index + 1}`} onClick={() => setEditing(!editing)}>
+        ✎
+      </button>
+      {editing && (
+        <span className="editor-panel">
+          {draft.kind === 'assertElement' && (
+            <select
+              aria-label="Assertion type"
+              value={
+                draft.assertion.type === 'text'
+                  ? `text${draft.assertion.match === 'contains' ? 'Contains' : 'Equals'}`
+                  : draft.assertion.type === 'value'
+                    ? 'value'
+                    : draft.assertion.type
+              }
+              onChange={(event) => {
+                const value = event.target.value as VerifyAssertion;
+                const next =
+                  value === 'textContains'
+                    ? { type: 'text' as const, match: 'contains' as const, expected: '' }
+                    : value === 'textEquals'
+                      ? { type: 'text' as const, match: 'equals' as const, expected: '' }
+                      : value === 'value'
+                        ? { type: 'value' as const, expected: '' }
+                        : {
+                            type: value as
+                              | 'visible'
+                              | 'hidden'
+                              | 'enabled'
+                              | 'disabled'
+                              | 'checked'
+                              | 'unchecked',
+                          };
+                setDraft({ ...draft, assertion: next });
+              }}
+            >
+              {assertionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {stringValue !== undefined && (
+            <input
+              aria-label="Step value"
+              value={stringValue}
+              onChange={(event) => setString(event.target.value)}
+            />
+          )}
+          {targeted && targeted.target.alternatives.length > 0 && (
+            <select
+              aria-label="Alternative locator"
+              defaultValue=""
+              onChange={(event) => {
+                if (!event.target.value) return;
+                command({
+                  type: 'use-alternative-locator',
+                  index,
+                  alternativeIndex: Number(event.target.value),
+                });
+                setEditing(false);
+              }}
+            >
+              <option value="">Use alternative locator…</option>
+              {targeted.target.alternatives.map((locator, alternativeIndex) => (
+                <option key={JSON.stringify(locator)} value={alternativeIndex}>
+                  {locator.strategy}: {JSON.stringify(locator)}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => {
+              command({ type: 'update-step', index, step: draft });
+              setEditing(false);
+            }}
+          >
+            Save
+          </button>
+        </span>
+      )}
+    </span>
+  );
 };
 
 export const App = () => {
@@ -21,6 +194,7 @@ export const App = () => {
   const [testIdAttribute, setTestIdAttribute] = useState('data-testid');
   const [testTitle, setTestTitle] = useState('');
   const [tab, setTab] = useState<'human' | 'source'>('human');
+  const [verifyAssertion, setVerifyAssertion] = useState<VerifyAssertion>('visible');
 
   useEffect(() => {
     const unsubscribe = window.testron.onSnapshot(setSnapshot);
@@ -69,7 +243,9 @@ export const App = () => {
         </form>
         <span className={`status ${snapshot.recording ? 'live' : ''}`}>
           {snapshot.status === 'recording'
-            ? '● Recording'
+            ? snapshot.captureMode === 'verify'
+              ? '◆ Verify'
+              : '● Recording'
             : snapshot.status === 'paused'
               ? 'Paused'
               : `${snapshot.steps.length} steps`}
@@ -246,6 +422,56 @@ export const App = () => {
         >
           Finish
         </button>
+        {snapshot.status === 'recording' && (
+          <>
+            <button
+              className={snapshot.captureMode === 'record' ? 'mode-active' : ''}
+              onClick={() =>
+                command({ type: 'set-capture-mode', mode: 'record', assertion: verifyAssertion })
+              }
+            >
+              Record
+            </button>
+            <button
+              className={snapshot.captureMode === 'verify' ? 'verify mode-active' : ''}
+              onClick={() =>
+                command({ type: 'set-capture-mode', mode: 'verify', assertion: verifyAssertion })
+              }
+            >
+              Verify
+            </button>
+            <select
+              aria-label="Assertion"
+              value={verifyAssertion}
+              onChange={(event) => {
+                const assertion = event.target.value as VerifyAssertion;
+                setVerifyAssertion(assertion);
+                command({ type: 'set-capture-mode', mode: 'verify', assertion });
+              }}
+            >
+              {assertionOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!snapshot.currentUrl}
+              onClick={() => {
+                try {
+                  command({
+                    type: 'add-url-path-assertion',
+                    expected: new URL(snapshot.currentUrl).pathname,
+                  });
+                } catch {
+                  /* The button is disabled until a valid page has loaded. */
+                }
+              }}
+            >
+              Verify URL path
+            </button>
+          </>
+        )}
         {selectedEnvironment && <small>Using {selectedEnvironment.testIdAttribute}</small>}
       </section>
 
@@ -275,8 +501,22 @@ export const App = () => {
             ) : (
               snapshot.descriptions.map((description, index) => (
                 <li key={`${index}-${description}`}>
-                  <span>{description}</span>
+                  <span className="step-copy">
+                    {description}
+                    {snapshot.stepWarnings[index]?.map((warning) => (
+                      <small className="quality-warning" key={warning}>
+                        ⚠ {warning}
+                      </small>
+                    ))}
+                  </span>
                   <span className="step-actions">
+                    <StepEditor step={snapshot.steps[index]} index={index} command={command} />
+                    <button
+                      aria-label={`Duplicate step ${index + 1}`}
+                      onClick={() => command({ type: 'duplicate-step', index })}
+                    >
+                      ⧉
+                    </button>
                     <button
                       aria-label={`Move step ${index + 1} up`}
                       disabled={index === 0}

@@ -1,10 +1,21 @@
 import { ipcRenderer } from 'electron';
 
-import type { Locator } from '../domain/locators/schema';
+import { rankLocators, type Locator } from '../domain/locators/schema';
 import type { RecorderCandidate } from '../domain/recording/schema';
 import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
 
 let testIdAttribute = 'data-testid';
+let captureMode: 'record' | 'verify' = 'record';
+let assertion:
+  | 'visible'
+  | 'hidden'
+  | 'textContains'
+  | 'textEquals'
+  | 'value'
+  | 'enabled'
+  | 'disabled'
+  | 'checked'
+  | 'unchecked' = 'visible';
 
 ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {
   if (
@@ -15,6 +26,20 @@ ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {
     payload.testIdAttribute.length > 0
   )
     testIdAttribute = payload.testIdAttribute;
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'captureMode' in payload &&
+    (payload.captureMode === 'record' || payload.captureMode === 'verify')
+  )
+    captureMode = payload.captureMode;
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'assertion' in payload &&
+    typeof payload.assertion === 'string'
+  )
+    assertion = payload.assertion as typeof assertion;
 });
 
 const clean = (value: string | null | undefined): string | undefined => {
@@ -100,15 +125,61 @@ const locatorsFor = (element: HTMLElement): Locator[] => {
   }
 
   locators.push({ strategy: 'css', selector: cssFallback(element), fragile: true });
-  return locators;
+  return rankLocators(locators);
+};
+
+const countMatches = (locator: Locator): number => {
+  try {
+    switch (locator.strategy) {
+      case 'testId':
+        return document.querySelectorAll(
+          `[${CSS.escape(locator.attribute)}="${CSS.escape(locator.value)}"]`,
+        ).length;
+      case 'placeholder':
+        return [...document.querySelectorAll<HTMLElement>('[placeholder]')].filter(
+          (element) => clean(element.getAttribute('placeholder')) === locator.text,
+        ).length;
+      case 'label':
+        return [...document.querySelectorAll('label')].filter(
+          (element) => clean(element.textContent) === locator.text,
+        ).length;
+      case 'role':
+        return [...document.querySelectorAll<HTMLElement>('*')].filter(
+          (element) =>
+            roleFor(element) === locator.role && accessibleName(element) === locator.name,
+        ).length;
+      case 'text':
+        return [...document.querySelectorAll<HTMLElement>('body *')].filter(
+          (element) => clean(element.textContent) === locator.text && element.children.length === 0,
+        ).length;
+      case 'css':
+        return document.querySelectorAll(locator.selector).length;
+    }
+  } catch {
+    return 0;
+  }
 };
 
 const observationFor = (element: HTMLElement) => {
   const locators = locatorsFor(element);
+  const primaryMatches = countMatches(locators[0]);
+  const warnings = [
+    ...(primaryMatches === 0 ? ['Primary locator no longer matches an element.'] : []),
+    ...(primaryMatches > 1 ? [`Primary locator is ambiguous (${primaryMatches} matches).`] : []),
+    ...(locators[0].strategy === 'css' ? ['Primary locator is a fragile CSS fallback.'] : []),
+  ];
+  const secretToken = clean(element.getAttribute('name')) ?? element.id ?? 'password';
   return {
     locators,
     fingerprint: JSON.stringify(locators[0]),
     sensitive: element instanceof HTMLInputElement && element.type === 'password',
+    secretName: `TESTRON_${
+      secretToken
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '')
+        .toUpperCase() || 'PASSWORD'
+    }`,
+    warnings,
   };
 };
 
@@ -119,10 +190,30 @@ window.addEventListener(
   (event) => {
     const origin = event.target;
     if (!(origin instanceof HTMLElement)) return;
-    const element = origin.closest<HTMLElement>(
-      'button, a, input[type="button"], input[type="submit"], [role="button"], [role="link"]',
-    );
+    const element =
+      captureMode === 'verify'
+        ? origin.closest<HTMLElement>('body *')
+        : origin.closest<HTMLElement>(
+            'button, a, input[type="button"], input[type="submit"], [role="button"], [role="link"]',
+          );
     if (!element) return;
+    if (captureMode === 'verify') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const value =
+        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+          ? element.value
+          : '';
+      send({
+        kind: 'assertion',
+        target: observationFor(element),
+        assertion,
+        observedText: clean(element.textContent) ?? '',
+        observedValue: value,
+        url: window.location.href,
+      });
+      return;
+    }
     send({ kind: 'click', target: observationFor(element), url: window.location.href });
   },
   true,
@@ -131,6 +222,7 @@ window.addEventListener(
 window.addEventListener(
   'input',
   (event) => {
+    if (captureMode === 'verify') return;
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     const sensitive = element instanceof HTMLInputElement && element.type === 'password';
@@ -147,6 +239,7 @@ window.addEventListener(
 window.addEventListener(
   'focusout',
   (event) => {
+    if (captureMode === 'verify') return;
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     send({
@@ -161,6 +254,7 @@ window.addEventListener(
 window.addEventListener(
   'change',
   (event) => {
+    if (captureMode === 'verify') return;
     const element = event.target;
     if (element instanceof HTMLSelectElement) {
       send({
@@ -194,6 +288,7 @@ window.addEventListener(
 window.addEventListener(
   'keydown',
   (event) => {
+    if (captureMode === 'verify') return;
     if (!['Enter', 'Escape', 'Tab'].includes(event.key) || event.repeat) return;
     const element = event.target;
     if (!(

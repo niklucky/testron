@@ -2,7 +2,7 @@ import { generatePlaywright } from '../../domain/codegen/playwright';
 import { RecorderNormalizer } from '../../domain/recording/normalizer';
 import type { RecorderCandidate } from '../../domain/recording/schema';
 import { presentStep } from '../../domain/steps/present';
-import { stepsSchema, type Step } from '../../domain/steps/schema';
+import { redactStepSecrets, stepSchema, stepsSchema, type Step } from '../../domain/steps/schema';
 
 export interface RecordingSnapshot {
   recording: boolean;
@@ -11,6 +11,8 @@ export interface RecordingSnapshot {
   steps: Step[];
   descriptions: string[];
   source: string;
+  captureMode: 'record' | 'verify';
+  stepWarnings: string[][];
   warning?: string;
 }
 
@@ -19,6 +21,7 @@ export class RecordingSession {
   private currentUrl = '';
   private steps: Step[] = [];
   private title = 'Untitled test';
+  private captureMode: RecordingSnapshot['captureMode'] = 'record';
   private lastNavigationActionAt = 0;
   private readonly normalizer: RecorderNormalizer;
 
@@ -39,6 +42,7 @@ export class RecordingSession {
     this.normalizer.dispose();
     this.steps = [];
     this.status = 'recording';
+    this.captureMode = 'record';
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -55,6 +59,24 @@ export class RecordingSession {
 
   resume(): void {
     this.status = 'recording';
+    this.notify();
+  }
+
+  setCaptureMode(mode: RecordingSnapshot['captureMode']): void {
+    this.normalizer.flush();
+    this.captureMode = mode;
+    this.notify();
+  }
+
+  addUrlAssertion(expected: string): void {
+    this.normalizer.flush();
+    this.steps.push({
+      version: 1,
+      kind: 'assertUrlPath',
+      expected,
+      metadata: { recordedAt: new Date().toISOString() },
+    });
+    this.stepsChanged(this.steps);
     this.notify();
   }
 
@@ -94,10 +116,48 @@ export class RecordingSession {
     this.notify();
   }
 
+  duplicateStep(index: number): void {
+    this.normalizer.flush();
+    const step = this.steps[index];
+    if (!step) return;
+    const copy = stepSchema.parse({
+      ...structuredClone(step),
+      metadata: { recordedAt: new Date().toISOString() },
+    });
+    this.steps.splice(index + 1, 0, copy);
+    this.stepsChanged(this.steps);
+    this.notify();
+  }
+
+  updateStep(index: number, step: Step): void {
+    this.normalizer.flush();
+    if (!this.steps[index]) return;
+    this.steps[index] = redactStepSecrets(stepSchema.parse(step));
+    this.stepsChanged(this.steps);
+    this.notify();
+  }
+
+  useAlternativeLocator(index: number, alternativeIndex: number): void {
+    const step = this.steps[index];
+    if (!step || !('target' in step)) return;
+    const replacement = step.target.alternatives[alternativeIndex];
+    if (!replacement) return;
+    const alternatives = [
+      step.target.primary,
+      ...step.target.alternatives.filter(
+        (_, candidateIndex) => candidateIndex !== alternativeIndex,
+      ),
+    ];
+    this.updateStep(index, {
+      ...step,
+      target: { primary: replacement, alternatives },
+    });
+  }
+
   load(title: string, steps: readonly Step[]): void {
     this.normalizer.dispose();
     this.title = title;
-    this.steps = stepsSchema.parse(steps);
+    this.steps = stepsSchema.parse(steps).map(redactStepSecrets);
     this.status = 'idle';
     this.notify();
   }
@@ -150,6 +210,17 @@ export class RecordingSession {
       steps,
       descriptions: steps.map(presentStep),
       source: generatePlaywright(this.title, steps),
+      captureMode: this.captureMode,
+      stepWarnings: steps.map((step) => {
+        if (!('target' in step)) return [];
+        return [
+          ...(step.target.warnings ?? []),
+          ...(step.target.primary.strategy === 'css' &&
+          !(step.target.warnings ?? []).some((warning) => warning.includes('fragile'))
+            ? ['Primary locator is a fragile CSS fallback.']
+            : []),
+        ];
+      }),
       ...(warning ? { warning } : {}),
     };
   }

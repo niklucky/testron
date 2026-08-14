@@ -10,6 +10,9 @@ type TargetedCandidate = Exclude<ActionCandidate, { kind: 'input-commit' }>;
 const targetFrom = (candidate: TargetedCandidate) => ({
   primary: candidate.target.locators[0],
   alternatives: candidate.target.locators.slice(1),
+  ...(candidate.target.warnings && candidate.target.warnings.length > 0
+    ? { warnings: candidate.target.warnings }
+    : {}),
 });
 
 export class RecorderNormalizer {
@@ -44,6 +47,30 @@ export class RecorderNormalizer {
       case 'press':
         this.emit({ version: 1, kind: 'press', target, key: candidate.key, metadata });
         break;
+      case 'assertion': {
+        const assertion = (() => {
+          switch (candidate.assertion) {
+            case 'textContains':
+              return {
+                type: 'text' as const,
+                match: 'contains' as const,
+                expected: candidate.observedText,
+              };
+            case 'textEquals':
+              return {
+                type: 'text' as const,
+                match: 'equals' as const,
+                expected: candidate.observedText,
+              };
+            case 'value':
+              return { type: 'value' as const, expected: candidate.observedValue };
+            default:
+              return { type: candidate.assertion };
+          }
+        })();
+        this.emit({ version: 1, kind: 'assertElement', target, assertion, metadata });
+        break;
+      }
     }
   }
 
@@ -72,6 +99,13 @@ export class RecorderNormalizer {
       kind: 'fill',
       target: targetFrom(buffered.candidate),
       value: buffered.candidate.target.sensitive ? '' : buffered.candidate.value,
+      ...(buffered.candidate.target.sensitive
+        ? {
+            secret: {
+              environmentVariable: buffered.candidate.target.secretName ?? 'TESTRON_PASSWORD',
+            },
+          }
+        : {}),
       metadata: { recordedAt: new Date().toISOString() },
     });
   }

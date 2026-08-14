@@ -19,6 +19,14 @@
     <main>
       <h1>Signed in</h1>
       <p>The controlled flow completed successfully.</p>
+      <button id="toggle" type="button">Toggle details</button>
+      <p data-testid="details" hidden>Stable after client-side re-render.</p>
     </main>
+    <script>
+      document.querySelector('#toggle').addEventListener('click', () => {
+        const details = document.querySelector('[data-testid="details"]');
+        details.hidden = !details.hidden;
+      });
+    </script>
   </body>
 </html>
