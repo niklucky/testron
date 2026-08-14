@@ -21,6 +21,7 @@ import {
 
 const TOOLBAR_HEIGHT = 430;
 const appCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set-shell-route'), route: z.enum(['dashboard', 'recorder']) }),
   z.object({ type: z.literal('start-recording') }),
   z.object({ type: z.literal('stop-recording') }),
   z.object({ type: z.literal('pause-recording') }),
@@ -111,6 +112,9 @@ const createWindow = async (): Promise<void> => {
     minWidth: 880,
     minHeight: 640,
     title: 'Testron',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: '#dcebed',
     webPreferences: {
       ...APP_RENDERER_WEB_PREFERENCES,
       preload: path.join(__dirname, 'app.js'),
@@ -125,13 +129,14 @@ const createWindow = async (): Promise<void> => {
   });
   mainWindow.contentView.addChildView(websiteView);
 
+  let shellRoute: 'dashboard' | 'recorder' = 'dashboard';
   const layout = (): void => {
     const [width, height] = mainWindow?.getContentSize() ?? [0, 0];
     websiteView?.setBounds({
       x: 0,
-      y: TOOLBAR_HEIGHT,
+      y: shellRoute === 'recorder' ? TOOLBAR_HEIGHT : height,
       width,
-      height: Math.max(0, height - TOOLBAR_HEIGHT),
+      height: shellRoute === 'recorder' ? Math.max(0, height - TOOLBAR_HEIGHT) : 0,
     });
   };
   layout();
@@ -241,6 +246,10 @@ const createWindow = async (): Promise<void> => {
     if (!parsed.success) return;
     const command: AppCommand = parsed.data;
     switch (command.type) {
+      case 'set-shell-route':
+        shellRoute = command.route;
+        layout();
+        break;
       case 'start-recording':
         session.start();
         applyContext();

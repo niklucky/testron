@@ -1,12 +1,20 @@
-import { _electron as electron, expect, test } from '@playwright/test';
+import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+const openRecorder = async (appWindow: Page) => {
+  await appWindow.evaluate(() => {
+    window.location.hash = '#/recorder';
+  });
+  await appWindow.getByRole('button', { name: 'Start recording' }).waitFor({ timeout: 3_000 });
+};
+
 test('the tested website has no privileged renderer surface', async () => {
   const electronApp = await electron.launch({ args: ['.'] });
   try {
-    await electronApp.firstWindow();
+    const appWindow = await electronApp.firstWindow();
+    await openRecorder(appWindow);
     await expect
       .poll(() =>
         electronApp.evaluate(({ webContents }) =>
@@ -57,7 +65,7 @@ test('records the controlled login-like flow through the Electron pipeline', asy
   const electronApp = await electron.launch({ args: ['.'] });
   try {
     const appWindow = await electronApp.firstWindow();
-    await appWindow.getByRole('button', { name: 'Start recording' }).waitFor({ timeout: 3_000 });
+    await openRecorder(appWindow);
     await expect
       .poll(() =>
         electronApp.evaluate(({ webContents }) =>
@@ -136,6 +144,7 @@ test('restores a created project, environment, test, and its steps after restart
   let electronApp = await launch();
   try {
     let appWindow = await electronApp.firstWindow();
+    await openRecorder(appWindow);
     await appWindow.getByLabel('New project name').fill('Checkout');
     await appWindow.locator('.entity').nth(0).getByRole('button', { name: 'Add' }).click();
     await expect(appWindow.getByLabel('Project', { exact: true })).toHaveValue(/.+/);
@@ -177,6 +186,7 @@ test('restores a created project, environment, test, and its steps after restart
 
     electronApp = await launch();
     appWindow = await electronApp.firstWindow();
+    await openRecorder(appWindow);
     await expect(appWindow.getByLabel('Project', { exact: true })).toContainText('Checkout');
     await expect(appWindow.getByLabel('Environment', { exact: true })).toContainText('Local');
     await expect(appWindow.getByLabel('Test', { exact: true })).toContainText(

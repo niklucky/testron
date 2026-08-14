@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { Step } from '../domain/steps/schema';
 import type { AppCommand, AppSnapshot, VerifyAssertion } from '../preload/api';
+import { Dashboard } from './Dashboard';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
   recording: false,
@@ -186,7 +187,7 @@ const StepEditor = ({
   );
 };
 
-export const App = () => {
+const RecorderApp = () => {
   const [url, setUrl] = useState('http://127.0.0.1:4174');
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [projectName, setProjectName] = useState('');
@@ -201,6 +202,7 @@ export const App = () => {
   const [environmentVariables, setEnvironmentVariables] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    window.testron.command({ type: 'set-shell-route', route: 'recorder' });
     const unsubscribe = window.testron.onSnapshot(setSnapshot);
     window.testron.command({ type: 'request-snapshot' });
     return unsubscribe;
@@ -236,7 +238,10 @@ export const App = () => {
   const command = window.testron.command;
 
   return (
-    <main className="toolbar">
+    <main className="toolbar recorder-app">
+      <a className="back-to-dashboard" href="#/">
+        ← Overview
+      </a>
       <section className="controls">
         <div className="brand">
           <span className="brand-mark">T</span>
@@ -650,4 +655,16 @@ export const App = () => {
       </section>
     </main>
   );
+};
+
+export const App = () => {
+  const [route, setRoute] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleRoute = () => setRoute(window.location.hash);
+    window.addEventListener('hashchange', handleRoute);
+    return () => window.removeEventListener('hashchange', handleRoute);
+  }, []);
+
+  return route === '#/recorder' ? <RecorderApp /> : <Dashboard />;
 };

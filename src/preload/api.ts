@@ -20,6 +20,7 @@ export interface AppSnapshot extends RecordingSnapshot {
 }
 
 export type AppCommand =
+  | { type: 'set-shell-route'; route: 'dashboard' | 'recorder' }
   | { type: 'start-recording' }
   | { type: 'stop-recording' }
   | { type: 'pause-recording' }
