@@ -11,6 +11,24 @@ const targetObservationSchema = z.object({
 export const recorderCandidateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('click'), target: targetObservationSchema, url: z.url() }),
   z.object({
+    kind: z.literal('select'),
+    target: targetObservationSchema,
+    value: z.string(),
+    url: z.url(),
+  }),
+  z.object({
+    kind: z.literal('check'),
+    target: targetObservationSchema,
+    checked: z.boolean(),
+    url: z.url(),
+  }),
+  z.object({
+    kind: z.literal('press'),
+    target: targetObservationSchema,
+    key: z.string().min(1),
+    url: z.url(),
+  }),
+  z.object({
     kind: z.literal('input'),
     target: targetObservationSchema,
     value: z.string(),

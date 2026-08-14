@@ -38,15 +38,22 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.click();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${quote(step.value)});`;
+      case 'selectOption':
+        return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
+      case 'check':
+        return `  await ${generateLocator(step.target.primary)}.check();`;
+      case 'uncheck':
+        return `  await ${generateLocator(step.target.primary)}.uncheck();`;
+      case 'press':
+        return `  await ${generateLocator(step.target.primary)}.press(${quote(step.key)});`;
     }
   });
 
   return [
-    `import { test, expect } from '@playwright/test';`,
+    `import { test } from '@playwright/test';`,
     '',
     `test(${quote(title)}, async ({ page }) => {`,
     ...body,
-    `  await expect(page).toHaveURL(/\\/welcome$/);`,
     '});',
     '',
   ].join('\n');

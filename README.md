@@ -1,6 +1,6 @@
 # Testron
 
-Phase 0 feasibility spike for a secure Electron-owned browser recorder that emits deterministic Playwright TypeScript.
+Local-first Electron test recorder that persists structured tests and emits deterministic Playwright TypeScript.
 
 ## Run
 
@@ -9,7 +9,7 @@ npm install
 npm start
 ```
 
-In the toolbar, select **Start recording**, press **Go**, fill both fixture fields, and press **Continue**. Stop recording to see the final normalized steps and source.
+Create a project, add an environment with its base URL and test-ID attribute, then create a test. Start recording and use the embedded page. You can pause, undo, finish, reorder or delete steps, review the human-readable or Playwright form, and copy or export the generated `.spec.ts` file. Projects and tests are restored from SQLite when Testron restarts.
 
 ## Verify
 
@@ -20,4 +20,4 @@ npm run build
 npm run test:electron
 ```
 
-The replay command runs the checked-in source generated from the canonical fixture steps against the controlled local fixture. The Electron test launches the built app and verifies the tested website's effective sandbox preferences and absent privileged globals.
+The replay command runs the checked-in source generated from the canonical fixture steps against the controlled local fixture. The Electron suite verifies the tested website's sandbox, the recording pipeline, and persistence across an application restart.

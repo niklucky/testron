@@ -4,6 +4,7 @@ export const APP_CHANNELS = {
 } as const;
 
 export const RECORDER_CHANNEL = 'testron:recorder-candidate' as const;
+export const RECORDER_CONFIG_CHANNEL = 'testron:recorder-config' as const;
 
 export const APP_RENDERER_WEB_PREFERENCES = {
   nodeIntegration: false,

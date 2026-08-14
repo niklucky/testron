@@ -24,6 +24,26 @@ export const stepSchema = z.discriminatedUnion('kind', [
     value: z.string(),
     metadata: metadataSchema,
   }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal('selectOption'),
+    target: targetSchema,
+    value: z.string(),
+    metadata: metadataSchema,
+  }),
+  z.object({
+    version: z.literal(1),
+    kind: z.enum(['check', 'uncheck']),
+    target: targetSchema,
+    metadata: metadataSchema,
+  }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal('press'),
+    target: targetSchema,
+    key: z.string().min(1),
+    metadata: metadataSchema,
+  }),
 ]);
 
 export const stepsSchema = z.array(stepSchema);

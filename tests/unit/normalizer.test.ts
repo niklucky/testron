@@ -72,4 +72,39 @@ describe('RecorderNormalizer', () => {
     expect(steps).toHaveLength(1);
     expect(steps[0]).toMatchObject({ kind: 'fill', value: 'qa@example.test' });
   });
+
+  it('normalizes select, checkbox, and meaningful key actions', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    const target = {
+      fingerprint: 'control',
+      sensitive: false,
+      locators: [{ strategy: 'testId' as const, attribute: 'data-testid', value: 'control' }],
+    };
+    normalizer.accept({
+      kind: 'select',
+      url: 'http://127.0.0.1:4174/',
+      target,
+      value: 'staging',
+    });
+    normalizer.accept({
+      kind: 'check',
+      url: 'http://127.0.0.1:4174/',
+      target,
+      checked: true,
+    });
+    normalizer.accept({
+      kind: 'check',
+      url: 'http://127.0.0.1:4174/',
+      target,
+      checked: false,
+    });
+    normalizer.accept({
+      kind: 'press',
+      url: 'http://127.0.0.1:4174/',
+      target,
+      key: 'Enter',
+    });
+    expect(steps.map((step) => step.kind)).toEqual(['selectOption', 'check', 'uncheck', 'press']);
+  });
 });

@@ -26,5 +26,13 @@ export const presentStep = (step: Step): string => {
       return `Click ${locatorName(step.target.primary)}`;
     case 'fill':
       return `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
+    case 'selectOption':
+      return `Select “${step.value}” in ${locatorName(step.target.primary)}`;
+    case 'check':
+      return `Check ${locatorName(step.target.primary)}`;
+    case 'uncheck':
+      return `Uncheck ${locatorName(step.target.primary)}`;
+    case 'press':
+      return `Press ${step.key} in ${locatorName(step.target.primary)}`;
   }
 };

@@ -5,7 +5,7 @@ interface BufferedInput {
   candidate: Extract<ActionCandidate, { kind: 'input' }>;
 }
 
-type TargetedCandidate = Extract<ActionCandidate, { kind: 'click' | 'input' }>;
+type TargetedCandidate = Exclude<ActionCandidate, { kind: 'input-commit' }>;
 
 const targetFrom = (candidate: TargetedCandidate) => ({
   primary: candidate.target.locators[0],
@@ -29,12 +29,22 @@ export class RecorderNormalizer {
     }
 
     this.flush();
-    this.emit({
-      version: 1,
-      kind: 'click',
-      target: targetFrom(candidate),
-      metadata: { recordedAt: new Date().toISOString() },
-    });
+    const metadata = { recordedAt: new Date().toISOString() };
+    const target = targetFrom(candidate);
+    switch (candidate.kind) {
+      case 'click':
+        this.emit({ version: 1, kind: 'click', target, metadata });
+        break;
+      case 'select':
+        this.emit({ version: 1, kind: 'selectOption', target, value: candidate.value, metadata });
+        break;
+      case 'check':
+        this.emit({ version: 1, kind: candidate.checked ? 'check' : 'uncheck', target, metadata });
+        break;
+      case 'press':
+        this.emit({ version: 1, kind: 'press', target, key: candidate.key, metadata });
+        break;
+    }
   }
 
   flush(): void {

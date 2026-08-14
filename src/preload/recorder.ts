@@ -2,7 +2,20 @@ import { ipcRenderer } from 'electron';
 
 import type { Locator } from '../domain/locators/schema';
 import type { RecorderCandidate } from '../domain/recording/schema';
-import { RECORDER_CHANNEL } from '../main/security';
+import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
+
+let testIdAttribute = 'data-testid';
+
+ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'testIdAttribute' in payload &&
+    typeof payload.testIdAttribute === 'string' &&
+    payload.testIdAttribute.length > 0
+  )
+    testIdAttribute = payload.testIdAttribute;
+});
 
 const clean = (value: string | null | undefined): string | undefined => {
   const normalized = value?.replace(/\s+/g, ' ').trim();
@@ -12,7 +25,11 @@ const clean = (value: string | null | undefined): string | undefined => {
 const cssEscape = (value: string): string => CSS.escape(value);
 
 const associatedLabel = (element: HTMLElement): string | undefined => {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement
+  ) {
     const labels = [...(element.labels ?? [])].map((label) => label.textContent).join(' ');
     return clean(labels);
   }
@@ -32,6 +49,7 @@ const roleFor = (element: HTMLElement): string | undefined => {
   if (tag === 'button') return 'button';
   if (tag === 'a' && element.hasAttribute('href')) return 'link';
   if (tag === 'textarea') return 'textbox';
+  if (tag === 'select') return 'combobox';
   if (element instanceof HTMLInputElement) {
     if (['text', 'email', 'password', 'search', 'tel', 'url'].includes(element.type))
       return 'textbox';
@@ -63,8 +81,8 @@ const cssFallback = (element: HTMLElement): string => {
 
 const locatorsFor = (element: HTMLElement): Locator[] => {
   const locators: Locator[] = [];
-  const testId = clean(element.getAttribute('data-testid'));
-  if (testId) locators.push({ strategy: 'testId', attribute: 'data-testid', value: testId });
+  const testId = clean(element.getAttribute(testIdAttribute));
+  if (testId) locators.push({ strategy: 'testId', attribute: testIdAttribute, value: testId });
 
   const role = roleFor(element);
   const name = accessibleName(element);
@@ -144,18 +162,51 @@ window.addEventListener(
   'change',
   (event) => {
     const element = event.target;
-    const interaction =
-      element instanceof HTMLSelectElement
-        ? 'select option'
-        : element instanceof HTMLInputElement &&
-            ['checkbox', 'radio', 'file'].includes(element.type)
-          ? element.type
-          : undefined;
-    if (!interaction) return;
+    if (element instanceof HTMLSelectElement) {
+      send({
+        kind: 'select',
+        target: observationFor(element),
+        value: element.value,
+        url: window.location.href,
+      });
+      return;
+    }
+    if (element instanceof HTMLInputElement && element.type === 'checkbox') {
+      send({
+        kind: 'check',
+        target: observationFor(element),
+        checked: element.checked,
+        url: window.location.href,
+      });
+      return;
+    }
+    if (element instanceof HTMLInputElement && ['radio', 'file'].includes(element.type))
+      send({
+        kind: 'unsupported',
+        interaction: element.type,
+        message: `${element.type} recording is not supported yet.`,
+        url: window.location.href,
+      });
+  },
+  true,
+);
+
+window.addEventListener(
+  'keydown',
+  (event) => {
+    if (!['Enter', 'Escape', 'Tab'].includes(event.key) || event.repeat) return;
+    const element = event.target;
+    if (!(
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLButtonElement
+    ))
+      return;
     send({
-      kind: 'unsupported',
-      interaction,
-      message: `${interaction} recording is not supported in Phase 0.`,
+      kind: 'press',
+      target: observationFor(element),
+      key: event.key,
       url: window.location.href,
     });
   },
