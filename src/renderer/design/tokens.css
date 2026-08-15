@@ -80,6 +80,20 @@
   --ui-shot-text: #5d666b;
   --ui-shot-good-fill: #1d3a2a;
   --ui-shot-good-text: #a9c7b6;
+  --ui-shot-ink: #c3ccd1; /* real copy on the stand-in page */
+  --ui-shot-line: #262e33;
+  --ui-shot-brand: #3f7d6a; /* the target site's own hue, never ours */
+  --ui-shot-brand-ink: #ffffff;
+
+  /* -- glass --------------------------------------------------------------
+     Panels that float over the recorded page. In the packaged app they are
+     their own WebContentsViews, and a backdrop-filter cannot reach across a
+     view boundary — there is no blur to soften what shows through. The tint
+     alone has to keep our text readable over an unknown site, which is why it
+     is this heavy: enough to see the page move behind it, not enough to read
+     the page's own words through ours. */
+  --ui-glass: rgb(20 24 27 / 88%);
+  --ui-glass-line: rgb(255 255 255 / 9%);
 
   /* -- chrome ------------------------------------------------------------ */
   --ui-scroll: #2c3439;
@@ -140,6 +154,13 @@
   --ui-shot-text: #8b9591;
   --ui-shot-good-fill: #e4f1e8;
   --ui-shot-good-text: #2f6b47;
+  --ui-shot-ink: #232b28;
+  --ui-shot-line: #e2e6e4;
+  --ui-shot-brand: #2f6b58;
+  --ui-shot-brand-ink: #ffffff;
+
+  --ui-glass: rgb(255 255 255 / 86%);
+  --ui-glass-line: rgb(26 32 30 / 10%);
 
   --ui-scroll: #c9d0cd;
   --ui-scroll-hover: #b2bbb7;

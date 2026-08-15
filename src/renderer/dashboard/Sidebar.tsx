@@ -73,8 +73,11 @@ export const Sidebar = ({
         variant="ghost"
         size="lg"
         block
-        icon="test"
-        onClick={() => onLog('New test · the recorder would open here')}
+        icon="record"
+        onClick={() => {
+          onLog('New test · recording on Staging');
+          window.location.hash = '#/record';
+        }}
       >
         New test
       </Button>

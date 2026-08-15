@@ -46,6 +46,20 @@
   --color-chart-skipped: var(--ui-chart-skipped);
   --color-chart-failed: var(--ui-chart-failed);
 
+  --color-glass: var(--ui-glass);
+  --color-glass-line: var(--ui-glass-line);
+
+  --color-shot-bg: var(--ui-shot-bg);
+  --color-shot-panel: var(--ui-shot-panel);
+  --color-shot-slot: var(--ui-shot-slot);
+  --color-shot-block: var(--ui-shot-block);
+  --color-shot-block-2: var(--ui-shot-block-2);
+  --color-shot-line: var(--ui-shot-line);
+  --color-shot-ink: var(--ui-shot-ink);
+  --color-shot-text: var(--ui-shot-text);
+  --color-shot-brand: var(--ui-shot-brand);
+  --color-shot-brand-ink: var(--ui-shot-brand-ink);
+
   --font-sans: var(--ui-font-sans);
   --font-mono: var(--ui-font-mono);
 }

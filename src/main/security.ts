@@ -3,6 +3,17 @@ export const APP_CHANNELS = {
   snapshot: 'testron:snapshot',
 } as const;
 
+/**
+ * The record screen's panels run in their own views, so their traffic is
+ * relayed rather than handled: `state` goes down to the panels, `event` comes
+ * back up to the screen. Neither channel accepts anything from the website
+ * view — main checks the sender on both.
+ */
+export const RECORD_CHANNELS = {
+  state: 'testron:record-state',
+  event: 'testron:record-event',
+} as const;
+
 export const RECORDER_CHANNEL = 'testron:recorder-candidate' as const;
 export const RECORDER_CONFIG_CHANNEL = 'testron:recorder-config' as const;
 

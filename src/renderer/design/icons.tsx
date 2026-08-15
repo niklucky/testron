@@ -123,6 +123,67 @@ const iconPaths = {
     </>
   ),
   play: <path d="M8.5 5.6 18 12l-9.5 6.4Z" />,
+  record: <circle cx="12" cy="12" r="5.4" fill="currentColor" stroke="none" />,
+  pause: <path d="M9.5 5.5v13M14.5 5.5v13" />,
+  stop: <rect x="6.5" y="6.5" width="11" height="11" rx="2" />,
+  arrowLeft: <path d="M19 12H5.6M11.2 6.4 5.6 12l5.6 5.6" />,
+  arrowRight: <path d="M5 12h13.4M12.8 6.4 18.4 12l-5.6 5.6" />,
+  undo: (
+    <>
+      <path d="M4 9h9.8a5.5 5.5 0 0 1 0 11H8.2" />
+      <path d="M7.8 4.6 3.4 9l4.4 4.4" />
+    </>
+  ),
+  redo: (
+    <>
+      <path d="M20 9h-9.8a5.5 5.5 0 0 0 0 11h5.6" />
+      <path d="m16.2 4.6 4.4 4.4-4.4 4.4" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2.4" />
+      <path d="M8.2 10.4V7.9a3.8 3.8 0 0 1 7.6 0v2.5" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.6 12S6.2 5.9 12 5.9 21.4 12 21.4 12 17.8 18.1 12 18.1 2.6 12 2.6 12Z" />
+      <circle cx="12" cy="12" r="2.9" />
+    </>
+  ),
+  code: (
+    <>
+      <path d="m8.6 8.4-4.2 3.6 4.2 3.6M15.4 8.4l4.2 3.6-4.2 3.6" />
+      <path d="m13.8 5.4-3.6 13.2" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11.5" height="11.5" rx="2.4" />
+      <path d="M15 9V6a2.5 2.5 0 0 0-2.5-2.5H6A2.5 2.5 0 0 0 3.5 6v6.5A2.5 2.5 0 0 0 6 15h3" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4.6 7h14.8M9.6 7V4.8h4.8V7" />
+      <path d="m6.8 7 1 12.7h8.4L17.2 7" />
+      <path d="M10.4 10.6v6M13.6 10.6v6" />
+    </>
+  ),
+  close: <path d="M6.6 6.6 17.4 17.4M17.4 6.6 6.6 17.4" />,
+  panelLeft: (
+    <>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="M9.6 4.5v15" />
+    </>
+  ),
+  panelRight: (
+    <>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+      <path d="M14.4 4.5v15" />
+    </>
+  ),
   clock: (
     <>
       <circle cx="12" cy="12" r="8.6" />
