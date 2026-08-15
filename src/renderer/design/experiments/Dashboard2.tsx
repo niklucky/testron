@@ -179,7 +179,7 @@ export const Dashboard2 = () => {
         <nav className="grid gap-1" aria-label="Project navigation">
           <a
             className="flex h-[42px] items-center gap-3 rounded-full bg-white/40 px-3 text-[14px] font-semibold text-[#34352f] no-underline max-[800px]:mx-auto max-[800px]:h-11 max-[800px]:w-11 max-[800px]:justify-center max-[800px]:px-0"
-            href="#/dashboard2"
+            href="#/experiments/codex"
           >
             <Icon name="grid" />
             <span className="max-[800px]:hidden">Overview</span>
@@ -272,7 +272,10 @@ export const Dashboard2 = () => {
 
       <section className="relative z-10 min-w-0 overflow-auto bg-[#fbfaf7] shadow-[-16px_0_36px_rgb(70_61_52_/_18%)]">
         <header className="sticky top-0 z-20 flex h-[58px] items-center justify-between border-b border-[#e8e6df]/80 bg-[#fbfaf7]/90 px-7 pt-[6px] backdrop-blur-xl">
-          <a href="#/" className="text-[12px] text-[#89877f] no-underline hover:text-[#292a25]">
+          <a
+            href="#/experiments"
+            className="text-[12px] text-[#89877f] no-underline hover:text-[#292a25]"
+          >
             All designs
           </a>
           <div className="flex items-center gap-2">

@@ -1,0 +1,86 @@
+/* Base layer: the handful of element defaults the design system relies on.
+   Everything here sits in `base` so any utility class beats it. */
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    color: var(--ui-ink);
+    background: var(--ui-plane);
+    font-family: var(--ui-font-sans);
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  input:disabled,
+  select:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  /* One focus ring for the whole app. Pointer interaction never draws it. */
+  :focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+/* Numerals that line up in tables, logs and timers. `font-mono` alone is not
+   enough — slashed zero keeps run ids and locators unambiguous. */
+.ui-mono {
+  font-family: var(--ui-font-mono);
+  font-feature-settings: 'zero' 1;
+}
+
+/* Scrollbars follow the theme rather than the OS. */
+.ui-scroll::-webkit-scrollbar,
+.ui-root ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb,
+.ui-root ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: var(--ui-scroll);
+  background-clip: content-box;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb:hover,
+.ui-root ::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-scroll-hover);
+  background-clip: content-box;
+}
+
+.ui-scroll::-webkit-scrollbar-track,
+.ui-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
