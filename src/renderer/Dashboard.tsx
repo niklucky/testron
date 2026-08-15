@@ -307,9 +307,11 @@ export const Dashboard = () => {
   const selectedProject = projects[activeProject];
 
   return (
-    <main className={`dashboard-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <main
+      className={`dashboard-shell relative grid h-screen min-h-[640px] w-screen overflow-hidden font-sans${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+    >
       <button
-        className="sidebar-toggle"
+        className="sidebar-toggle fixed z-30 grid place-items-center"
         aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         aria-expanded={!sidebarCollapsed}
         title={`${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar (⌘B)`}
@@ -317,7 +319,7 @@ export const Dashboard = () => {
       >
         <Icon name="sidebar" size={17} />
       </button>
-      <aside className="glass sidebar">
+      <aside className="glass sidebar flex min-h-0 flex-col">
         <div className="project-control">
           <button
             className="project-selector"
@@ -362,7 +364,7 @@ export const Dashboard = () => {
           )}
         </div>
 
-        <nav className="main-nav" aria-label="Project navigation">
+        <nav className="main-nav grid gap-1" aria-label="Project navigation">
           <a className="active" href="#/">
             <Icon name="grid" />
             Overview
@@ -421,7 +423,7 @@ export const Dashboard = () => {
             })}
           </div>
         </section>
-        <div className="sidebar-spacer" />
+        <div className="sidebar-spacer flex-1" />
         <a className="settings-link" href="#/recorder">
           <Icon name="settings" />
           Settings
@@ -438,14 +440,14 @@ export const Dashboard = () => {
         </button>
       </aside>
 
-      <section className="dashboard-main">
-        <header className="topbar">
+      <section className="dashboard-main h-full min-w-0 overflow-auto">
+        <header className="topbar flex items-center justify-between gap-8">
           <div>
             <p className="eyebrow">{selectedProject.name.toUpperCase()}</p>
             <h1>Project overview</h1>
             <p>Monitor test health, runs, and recent changes for this project.</p>
           </div>
-          <div className="top-actions">
+          <div className="top-actions flex items-center gap-2">
             <label className="search-box">
               <Icon name="search" size={17} />
               <input aria-label="Search" placeholder="Search tests…" />
@@ -481,7 +483,7 @@ export const Dashboard = () => {
           </div>
         </header>
 
-        <section className="metric-grid" aria-label="Key metrics">
+        <section className="metric-grid grid grid-cols-4 gap-[13px]" aria-label="Key metrics">
           <article className="glass metric-card">
             <div className="metric-heading">
               <span>Total tests</span>
