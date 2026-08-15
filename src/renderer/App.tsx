@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Step } from '../domain/steps/schema';
 import type { AppCommand, AppSnapshot, VerifyAssertion } from '../preload/api';
 import { Dashboard } from './Dashboard';
+import { Dashboard2 } from './Dashboard2';
+import { DashboardIndex } from './DashboardIndex';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
   recording: false,
@@ -666,5 +668,8 @@ export const App = () => {
     return () => window.removeEventListener('hashchange', handleRoute);
   }, []);
 
-  return route === '#/recorder' ? <RecorderApp /> : <Dashboard />;
+  if (route === '#/recorder') return <RecorderApp />;
+  if (route === '#/dashboard') return <Dashboard />;
+  if (route === '#/dashboard2') return <Dashboard2 />;
+  return <DashboardIndex />;
 };

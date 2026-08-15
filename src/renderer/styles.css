@@ -29,6 +29,10 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
 button:disabled,
 input:disabled,
 select:disabled {
@@ -85,8 +89,8 @@ select:disabled {
   min-width: 240px;
 }
 
-input,
-select {
+.recorder-app :is(input, select),
+.dashboard-shell :is(input, select) {
   height: 30px;
   border: 1px solid #3a4252;
   border-radius: 6px;
@@ -97,8 +101,8 @@ select {
   min-width: 0;
 }
 
-input:focus,
-select:focus {
+.recorder-app :is(input, select):focus,
+.dashboard-shell :is(input, select):focus {
   border-color: #72e3b6;
 }
 
@@ -107,7 +111,8 @@ select:focus {
   border-radius: 7px 0 0 7px;
 }
 
-button {
+.recorder-app button,
+.dashboard-shell button {
   height: 30px;
   border: 0;
   border-radius: 6px;
@@ -2097,4 +2102,152 @@ pre {
 .search-box kbd,
 .change-avatar {
   font-size: 11px;
+}
+
+/* Dashboard chooser */
+.dashboard-gallery {
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  min-height: 620px;
+  overflow: auto;
+  color: #2a2b27;
+  background:
+    radial-gradient(circle at 8% 92%, rgb(72 198 175 / 28%), transparent 35%),
+    radial-gradient(circle at 85% 6%, rgb(186 138 245 / 28%), transparent 34%),
+    linear-gradient(135deg, #dcebe6, #eee7f2 55%, #f1e6dc);
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+.gallery-content {
+  width: min(940px, calc(100% - 64px));
+  padding: 70px 0 50px;
+}
+.gallery-content header span {
+  color: #6f716c;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+.gallery-content h1 {
+  margin: 13px 0 7px;
+  font-size: clamp(32px, 5vw, 54px);
+  font-weight: 520;
+  letter-spacing: -0.05em;
+}
+.gallery-content header p {
+  margin: 0;
+  color: #777872;
+  font-size: 15px;
+}
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+  margin-top: 45px;
+}
+.gallery-card {
+  padding: 9px;
+  color: inherit;
+  border: 1px solid rgb(77 72 63 / 10%);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 44%);
+  box-shadow: 0 18px 42px rgb(67 57 50 / 8%);
+  text-decoration: none;
+  transition: 0.22s ease;
+}
+.gallery-card:hover {
+  transform: translateY(-4px);
+  background: rgb(255 255 255 / 62%);
+  box-shadow: 0 24px 50px rgb(67 57 50 / 13%);
+}
+.gallery-preview {
+  position: relative;
+  height: 248px;
+  overflow: hidden;
+  border-radius: 14px;
+}
+.gallery-preview i {
+  position: absolute;
+  display: block;
+}
+.gallery-sidebar {
+  inset: 16px auto 16px 16px;
+  width: 28%;
+}
+.gallery-canvas {
+  inset: 16px 16px 16px 32%;
+}
+.gallery-preview span {
+  position: absolute;
+  right: 21px;
+  bottom: 17px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.gallery-glass {
+  background: linear-gradient(135deg, #bcd6da, #d9e5e4);
+}
+.gallery-glass .gallery-sidebar,
+.gallery-glass .gallery-canvas {
+  border-radius: 13px;
+  background: rgb(255 255 255 / 42%);
+  box-shadow: 0 6px 20px rgb(54 89 92 / 12%);
+}
+.gallery-glass .gallery-canvas {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 54%) 0 38px,
+    transparent 38px 46px
+  );
+}
+.gallery-codex {
+  background: linear-gradient(135deg, #d5e7e0, #e8dcf0 48%, #edddce);
+}
+.gallery-codex .gallery-sidebar {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 19px,
+    rgb(62 61 56 / 13%) 19px 23px,
+    transparent 23px 34px
+  );
+}
+.gallery-codex .gallery-canvas {
+  inset: 8px 8px 8px 31%;
+  border-radius: 14px;
+  background: #fbfaf7;
+  box-shadow: -9px 2px 22px rgb(71 62 55 / 18%);
+}
+.gallery-card-copy {
+  padding: 17px 10px 10px;
+}
+.gallery-card-copy > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gallery-card-copy strong {
+  font-size: 16px;
+}
+.gallery-card-copy span {
+  color: #787970;
+  font-size: 11px;
+}
+.gallery-card-copy p {
+  min-height: 34px;
+  margin: 8px 0 0;
+  color: #777872;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 800px) {
+  .gallery-grid {
+    grid-template-columns: 1fr;
+  }
 }
