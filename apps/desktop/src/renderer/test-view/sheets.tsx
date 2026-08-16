@@ -62,6 +62,8 @@ export const SourceSheet = ({
   onReattach,
   onClose,
   onLog,
+  canDetach = true,
+  onCopy,
 }: {
   lines: CodeLine[];
   file: string;
@@ -72,6 +74,8 @@ export const SourceSheet = ({
   onReattach: () => void;
   onClose: () => void;
   onLog: (message: string) => void;
+  canDetach?: boolean;
+  onCopy?: () => void;
 }) => (
   <Sheet title="Auto test source" subtitle={file} width={620} onClose={onClose}>
     <div className="ui-scroll min-h-0 flex-1 overflow-auto border-b border-line-soft bg-plane">
@@ -116,21 +120,24 @@ export const SourceSheet = ({
             className="ml-auto"
             icon="copy"
             onClick={() => {
-              void navigator.clipboard?.writeText(sourceText(lines));
+              if (onCopy) onCopy();
+              else void navigator.clipboard?.writeText(sourceText(lines));
               onLog('Spec copied to the clipboard');
             }}
           >
             Copy
           </Button>
-          <Button
-            icon="pencil"
-            onClick={() => {
-              onDetach();
-              onLog('Source detached · the board no longer regenerates it');
-            }}
-          >
-            Edit by hand
-          </Button>
+          {canDetach && (
+            <Button
+              icon="pencil"
+              onClick={() => {
+                onDetach();
+                onLog('Source detached · the board no longer regenerates it');
+              }}
+            >
+              Edit by hand
+            </Button>
+          )}
         </>
       )}
     </footer>

@@ -29,10 +29,12 @@ export const DetailCard = ({
   detail,
   onDetail,
   onLog,
+  metadataEditable = true,
 }: {
   detail: TestDetail;
   onDetail: (detail: TestDetail) => void;
   onLog: (message: string) => void;
+  metadataEditable?: boolean;
 }) => (
   <Card className="!p-3">
     <InlineText
@@ -47,21 +49,25 @@ export const DetailCard = ({
 
     <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">Environments</p>
     <div className="flex flex-wrap gap-1">
-      {allEnvironments.map((environment) => {
+      {(metadataEditable ? allEnvironments : detail.environments).map((environment) => {
         const on = detail.environments.includes(environment);
         return (
           <Chip
             key={environment}
             on={on}
-            onClick={() => {
-              onDetail({
-                ...detail,
-                environments: on
-                  ? detail.environments.filter((one) => one !== environment)
-                  : [...detail.environments, environment],
-              });
-              onLog(`${environment} ${on ? 'removed from' : 'added to'} this test`);
-            }}
+            onClick={
+              metadataEditable
+                ? () => {
+                    onDetail({
+                      ...detail,
+                      environments: on
+                        ? detail.environments.filter((one) => one !== environment)
+                        : [...detail.environments, environment],
+                    });
+                    onLog(`${environment} ${on ? 'removed from' : 'added to'} this test`);
+                  }
+                : undefined
+            }
           >
             {environment}
           </Chip>
@@ -69,26 +75,32 @@ export const DetailCard = ({
       })}
     </div>
 
-    <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">Tags</p>
-    <div className="flex flex-wrap items-center gap-1">
-      {detail.tags.map((tag) => (
-        <Chip
-          key={tag}
-          on
-          onRemove={() => onDetail({ ...detail, tags: detail.tags.filter((one) => one !== tag) })}
-        >
-          {tag}
-        </Chip>
-      ))}
-      <IconButton
-        icon="plus"
-        size="sm"
-        label="Add a tag"
-        onClick={() =>
-          onDetail({ ...detail, tags: [...detail.tags, `tag-${detail.tags.length + 1}`] })
-        }
-      />
-    </div>
+    {metadataEditable && (
+      <>
+        <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">Tags</p>
+        <div className="flex flex-wrap items-center gap-1">
+          {detail.tags.map((tag) => (
+            <Chip
+              key={tag}
+              on
+              onRemove={() =>
+                onDetail({ ...detail, tags: detail.tags.filter((one) => one !== tag) })
+              }
+            >
+              {tag}
+            </Chip>
+          ))}
+          <IconButton
+            icon="plus"
+            size="sm"
+            label="Add a tag"
+            onClick={() =>
+              onDetail({ ...detail, tags: [...detail.tags, `tag-${detail.tags.length + 1}`] })
+            }
+          />
+        </div>
+      </>
+    )}
 
     <dl className="mt-3 space-y-1 border-t border-line-soft pt-2.5 text-xs text-ink-3">
       {[
@@ -152,6 +164,7 @@ export const StepCard = ({
   onStep,
   onAddAssertion,
   onDelete,
+  locatorEditable = true,
 }: {
   step: RecordedStep;
   index: number;
@@ -161,6 +174,7 @@ export const StepCard = ({
   onStep: (step: RecordedStep) => void;
   onAddAssertion: () => void;
   onDelete: () => void;
+  locatorEditable?: boolean;
 }) => {
   const style = stepStyle[step.kind];
   return (
@@ -190,7 +204,7 @@ export const StepCard = ({
               />
             </span>
           )}
-          {step.locator && (
+          {step.locator && locatorEditable && (
             <InlineText
               label={`Step ${index + 1} locator`}
               mono
@@ -198,6 +212,9 @@ export const StepCard = ({
               onChange={(locator) => onStep({ ...step, locator })}
               className="mt-1 text-xs text-ink-3"
             />
+          )}
+          {step.locator && !locatorEditable && (
+            <span className="ui-mono mt-1 block truncate text-xs text-ink-3">{step.locator}</span>
           )}
           {step.secret && (
             <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
@@ -255,6 +272,8 @@ export const AssertionCard = ({
   onAssertion,
   onMove,
   onDelete,
+  subjectEditable = true,
+  kinds,
 }: {
   assertion: Assertion;
   canMoveUp: boolean;
@@ -262,27 +281,33 @@ export const AssertionCard = ({
   onAssertion: (assertion: Assertion) => void;
   onMove: (direction: -1 | 1) => void;
   onDelete: () => void;
+  subjectEditable?: boolean;
+  kinds?: AssertionKind[];
 }) => (
   <Card className="group">
     <div className="flex items-start gap-2">
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <Icon name="eye" size={13} className="shrink-0 text-good" />
-          <InlineText
-            label="Assertion subject"
-            value={assertion.label}
-            onChange={(label) => onAssertion({ ...assertion, label })}
-            className="text-base"
-          />
+          {subjectEditable ? (
+            <InlineText
+              label="Assertion subject"
+              value={assertion.label}
+              onChange={(label) => onAssertion({ ...assertion, label })}
+              className="text-base"
+            />
+          ) : (
+            <span className="truncate text-base">{assertion.label}</span>
+          )}
         </span>
 
         <span className="mt-1 flex flex-wrap items-center gap-1 text-sm text-ink-3">
           <InlineSelect
             label="Assertion"
             value={assertion.kind}
-            options={Object.entries(assertionLabels).map(([id, label]) => ({
-              id: id as AssertionKind,
-              label,
+            options={(kinds ?? (Object.keys(assertionLabels) as AssertionKind[])).map((id) => ({
+              id,
+              label: assertionLabels[id],
             }))}
             onChange={(kind) => onAssertion({ ...assertion, kind })}
             className="text-sm"
@@ -343,12 +368,14 @@ export const RunCard = ({
   selected,
   onClick,
   onLog,
+  reportAvailable = true,
 }: {
   run: Run;
   total: number;
   selected: boolean;
   onClick: () => void;
   onLog: (message: string) => void;
+  reportAvailable?: boolean;
 }) => {
   const verdict = verdictTone[run.verdict];
   return (
@@ -374,7 +401,7 @@ export const RunCard = ({
         <span className="truncate">{run.by}</span>·<span>{age(run.minutesAgo)}</span>
       </Meta>
 
-      {run.verdict !== 'running' && (
+      {reportAvailable && run.verdict !== 'running' && (
         <button
           type="button"
           className="mt-1.5 flex items-center gap-1 text-xs text-ink-3 opacity-0 hover:text-accent group-hover:opacity-100"

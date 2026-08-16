@@ -2,7 +2,6 @@ import { useEffect, useState, type RefObject } from 'react';
 
 import { Badge, Button, Icon, IconButton, Kbd, PulseDot, type Theme } from '../design';
 import { clock } from './codegen';
-import { session } from './data';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 /**
@@ -17,6 +16,10 @@ export const SessionBar = ({
   onTheme,
   steps,
   onBack,
+  project,
+  suite,
+  environment,
+  test,
 }: {
   status: RecordStatus;
   elapsed: number;
@@ -25,6 +28,10 @@ export const SessionBar = ({
   onTheme: () => void;
   steps: number;
   onBack: () => void;
+  project: string;
+  suite: string;
+  environment: string;
+  test: string;
 }) => {
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
@@ -33,19 +40,19 @@ export const SessionBar = ({
       <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
         <IconButton icon="arrowLeft" size="sm" label="Back to the dashboard" onClick={onBack} />
         <Button variant="ghost" size="sm" iconEnd="caret">
-          {session.project}
+          {project}
         </Button>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <Button variant="ghost" size="sm" iconEnd="caret">
-          {session.suite}
+          {suite}
         </Button>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <Button variant="ghost" size="sm" iconEnd="caret" icon="grid">
-          {session.environment}
+          {environment}
         </Button>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <Button variant="ghost" size="sm" icon="pencil" className="min-w-0">
-          <span className="truncate">{session.test}</span>
+          <span className="truncate">{test}</span>
         </Button>
       </div>
 
@@ -125,12 +132,7 @@ export const BrowserBar = ({
   return (
     <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-line px-3">
       <IconButton icon="arrowLeft" label="Back" onClick={() => onNavigate('back')} />
-      <IconButton
-        icon="arrowRight"
-        label="Forward"
-        disabled
-        onClick={() => onNavigate('forward')}
-      />
+      <IconButton icon="arrowRight" label="Forward" onClick={() => onNavigate('forward')} />
       <IconButton
         icon={loading ? 'stop' : 'rerun'}
         label={loading ? 'Stop loading' : 'Reload'}

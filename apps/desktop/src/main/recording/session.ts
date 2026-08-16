@@ -18,6 +18,8 @@ export interface RecordingSnapshot {
   source: string;
   captureMode: 'record' | 'verify';
   stepWarnings: string[][];
+  canUndo: boolean;
+  canRedo: boolean;
   warning?: string;
 }
 
@@ -25,6 +27,7 @@ export class RecordingSession {
   private status: RecordingSnapshot['status'] = 'idle';
   private currentUrl = '';
   private steps: Step[] = [];
+  private future: Step[] = [];
   private title = 'Untitled test';
   private captureMode: RecordingSnapshot['captureMode'] = 'record';
   private lastNavigationActionAt = 0;
@@ -36,6 +39,7 @@ export class RecordingSession {
   ) {
     this.normalizer = new RecorderNormalizer((step) => {
       this.steps.push(step);
+      this.future = [];
       if (['click', 'selectOption', 'check', 'uncheck', 'press'].includes(step.kind))
         this.lastNavigationActionAt = Date.now();
       this.stepsChanged(this.steps);
@@ -45,7 +49,17 @@ export class RecordingSession {
 
   start(): void {
     this.normalizer.dispose();
-    this.steps = [];
+    this.steps = this.currentUrl
+      ? [
+          {
+            version: 1,
+            kind: 'navigate',
+            url: this.currentUrl,
+            metadata: { recordedAt: new Date().toISOString() },
+          },
+        ]
+      : [];
+    this.future = [];
     this.status = 'recording';
     this.captureMode = 'record';
     this.stepsChanged(this.steps);
@@ -81,6 +95,7 @@ export class RecordingSession {
       expected,
       metadata: { recordedAt: new Date().toISOString() },
     });
+    this.future = [];
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -93,7 +108,17 @@ export class RecordingSession {
 
   undo(): void {
     this.normalizer.flush();
-    this.steps.pop();
+    const step = this.steps.pop();
+    if (step) this.future.push(step);
+    this.stepsChanged(this.steps);
+    this.notify();
+  }
+
+  redo(): void {
+    this.normalizer.flush();
+    const step = this.future.pop();
+    if (!step) return;
+    this.steps.push(step);
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -101,6 +126,7 @@ export class RecordingSession {
   deleteStep(index: number): void {
     this.normalizer.flush();
     this.steps.splice(index, 1);
+    this.future = [];
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -117,6 +143,7 @@ export class RecordingSession {
       return;
     const [step] = this.steps.splice(index, 1);
     this.steps.splice(destination, 0, step);
+    this.future = [];
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -130,6 +157,7 @@ export class RecordingSession {
       metadata: { recordedAt: new Date().toISOString() },
     });
     this.steps.splice(index + 1, 0, copy);
+    this.future = [];
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -138,6 +166,15 @@ export class RecordingSession {
     this.normalizer.flush();
     if (!this.steps[index]) return;
     this.steps[index] = redactStepSecrets(stepSchema.parse(step));
+    this.future = [];
+    this.stepsChanged(this.steps);
+    this.notify();
+  }
+
+  replaceSteps(steps: readonly Step[]): void {
+    this.normalizer.flush();
+    this.steps = stepsSchema.parse(steps).map(redactStepSecrets);
+    this.future = [];
     this.stepsChanged(this.steps);
     this.notify();
   }
@@ -163,6 +200,7 @@ export class RecordingSession {
     this.normalizer.dispose();
     this.title = title;
     this.steps = stepsSchema.parse(steps).map(redactStepSecrets);
+    this.future = [];
     this.status = 'idle';
     this.notify();
   }
@@ -197,6 +235,7 @@ export class RecordingSession {
         url,
         metadata: { recordedAt: new Date().toISOString() },
       });
+      this.future = [];
       this.stepsChanged(this.steps);
     }
     this.notify();
@@ -226,6 +265,8 @@ export class RecordingSession {
             : []),
         ];
       }),
+      canUndo: steps.length > 0,
+      canRedo: this.future.length > 0,
       ...(warning ? { warning } : {}),
     };
   }

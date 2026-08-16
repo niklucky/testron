@@ -24,6 +24,7 @@ export interface TestRecord {
   projectId: string;
   environmentId: string;
   title: string;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -113,7 +114,7 @@ export class TestronRepository {
   listTests(): TestRecord[] {
     return this.database
       .prepare(
-        'SELECT id, project_id, environment_id, title, updated_at FROM tests ORDER BY updated_at DESC',
+        'SELECT id, project_id, environment_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
       )
       .all()
       .map((row) => ({
@@ -121,6 +122,7 @@ export class TestronRepository {
         projectId: String(row.project_id),
         environmentId: String(row.environment_id),
         title: String(row.title),
+        createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
       }));
   }
@@ -182,6 +184,7 @@ export class TestronRepository {
       projectId,
       environmentId,
       title: title.trim(),
+      createdAt: now,
       updatedAt: now,
     };
     this.database
@@ -191,6 +194,12 @@ export class TestronRepository {
       )
       .run(test.id, projectId, environmentId, test.title, now, now);
     return test;
+  }
+
+  renameTest(testId: string, title: string): void {
+    this.database
+      .prepare('UPDATE tests SET title = ?, updated_at = ? WHERE id = ?')
+      .run(title.trim(), new Date().toISOString(), testId);
   }
 
   loadSteps(testId: string): Step[] {

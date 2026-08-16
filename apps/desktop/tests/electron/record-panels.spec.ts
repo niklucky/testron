@@ -126,3 +126,60 @@ test('hiding a panel takes its view off the window', async () => {
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('records live website interactions and saves the new test', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.getByRole('button', { name: 'Record' }).click();
+    await expect(appWindow.getByRole('button', { name: 'Pause' })).toBeVisible();
+
+    await electronApp.evaluate(async ({ webContents }) => {
+      const website = webContents
+        .getAllWebContents()
+        .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+      if (!website) throw new Error('Fixture WebContentsView was not found.');
+      await website.executeJavaScript(`(() => {
+        const input = document.querySelector('[data-testid="email"]');
+        input.value = 'phase-two@example.test';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+      })()`);
+    });
+
+    await appWindow.getByRole('button', { name: 'Finish', exact: true }).click();
+    await appWindow.getByLabel('Test name').fill('Phase 2 live flow');
+    await appWindow.getByRole('button', { name: 'Save and open test' }).click();
+
+    await expect(appWindow.getByText('Phase 2 live flow', { exact: true }).first()).toBeVisible();
+    await expect(appWindow.getByText('phase-two@example.test', { exact: true })).toBeVisible();
+
+    await appWindow.getByRole('button', { name: 'Test name — click to edit' }).click();
+    await appWindow.getByLabel('Test name').fill('Phase 2 edited flow');
+    await appWindow.getByLabel('Test name').press('Enter');
+    await expect(appWindow.getByText('Phase 2 edited flow', { exact: true }).first()).toBeVisible();
+
+    await appWindow.getByRole('button', { name: 'Step 2 value — click to edit' }).click();
+    await appWindow.getByLabel('Step 2 value').fill('edited@example.test');
+    await appWindow.getByLabel('Step 2 value').press('Enter');
+    await expect(appWindow.getByText('edited@example.test', { exact: true })).toBeVisible();
+
+    await appWindow
+      .getByRole('button', { name: 'Assert something after step 2' })
+      .click({ force: true });
+    await expect(appWindow.getByLabel('Assertion', { exact: true })).toHaveValue('visible');
+
+    await appWindow.getByRole('button', { name: 'Run on Local' }).click();
+    await expect(appWindow.getByText('Passed', { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    await appWindow.evaluate(() => {
+      window.location.hash = '#/recorder';
+    });
+    await expect(appWindow.getByLabel('Test', { exact: true })).toContainText(
+      'Phase 2 edited flow',
+    );
+    await expect(appWindow.locator('.human')).toContainText('edited@example.test');
+  } finally {
+    await electronApp.close().catch(() => undefined);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});

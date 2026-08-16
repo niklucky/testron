@@ -1,15 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
-import { buildSource, clock, sourceText } from './codegen';
+import { clock, sourceText } from './codegen';
 import { CodePanel } from './CodePanel';
-import { script, session } from './data';
 import { GlassPanel } from './GlassPanel';
+import { presentRecordedSteps, presentSource, recordingContext } from './live';
 import { StepsPanel } from './StepsPanel';
 import { TargetPage, type PageState } from './TargetPage';
 import { BrowserBar, SessionBar } from './Toolbar';
-import type { CaptureMode, PanelId, RecordedStep, RecordStatus } from './types';
+import type { CaptureMode, PanelId, RecordStatus } from './types';
+
+const EMPTY_SNAPSHOT: AppSnapshot = {
+  recording: false,
+  status: 'idle',
+  currentUrl: '',
+  steps: [],
+  descriptions: [],
+  source: '',
+  captureMode: 'record',
+  stepWarnings: [],
+  canUndo: false,
+  canRedo: false,
+  library: { projects: [], environments: [], tests: [] },
+  replay: { status: 'idle', steps: [] },
+};
 
 /**
  * Recording a test.
@@ -30,20 +46,14 @@ import type { CaptureMode, PanelId, RecordedStep, RecordStatus } from './types';
  * is how the design is worked on — there are no views, so the same panels and
  * a stand-in page render inline. `hosted` is the only thing that differs.
  *
- * Shell only: `script` in ./data stands in for the recorder until this screen
- * is wired to the live snapshot stream in preload/api.ts.
  */
 export const RecordScreen = () => {
   /** True in Electron, where the page and the panels are native views. */
   const hosted = typeof window.testron !== 'undefined';
   const { theme, toggle } = useTheme();
-  const [steps, setSteps] = useState<RecordedStep[]>([]);
-  const [past, setPast] = useState<RecordedStep[][]>([]);
-  const [future, setFuture] = useState<RecordedStep[][]>([]);
-  const [status, setStatus] = useState<RecordStatus>('idle');
-  const [mode, setMode] = useState<CaptureMode>('act');
+  const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [elapsed, setElapsed] = useState(0);
-  const [url, setUrl] = useState(session.baseUrl);
+  const [url, setUrl] = useState('http://127.0.0.1:4174');
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [expandedId, setExpandedId] = useState<string>();
@@ -51,18 +61,28 @@ export const RecordScreen = () => {
   const [widths, setWidths] = useState<Record<PanelId, number>>({ steps: 25, code: 25 });
   /** Set while the finish sheet is open, so "keep recording" picks the take back up. */
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
-  const [name, setName] = useState(session.test);
+  const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
   const planeRef = useRef<HTMLDivElement>(null);
+  const stepCountRef = useRef(0);
   /** The panel being dragged, whose view is widened to the whole plane. */
   const [resizing, setResizing] = useState<PanelId | null>(null);
+
+  const steps = useMemo(() => presentRecordedSteps(snapshot.steps), [snapshot.steps]);
+  const status: RecordStatus = snapshot.status;
+  const mode: CaptureMode = snapshot.captureMode === 'verify' ? 'assert' : 'act';
+  const context = useMemo(() => recordingContext(snapshot), [snapshot]);
+  const lines = useMemo(() => presentSource(snapshot.source, steps), [snapshot.source, steps]);
 
   useEffect(() => {
     // The legacy recorder shell's own layout stays parked: from here on the
     // record layout below decides where every view goes.
     window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
-    return () =>
+    const unsubscribe = window.testron?.onSnapshot(setSnapshot);
+    window.testron?.command({ type: 'request-snapshot' });
+    return () => {
+      unsubscribe?.();
       window.testron?.command({
         type: 'set-record-layout',
         layout: {
@@ -71,51 +91,40 @@ export const RecordScreen = () => {
           resizing: null,
         },
       });
+    };
   }, []);
 
-  const commit = (next: RecordedStep[]) => {
-    setPast((current) => [...current, steps]);
-    setFuture([]);
-    setSteps(next);
-  };
+  useEffect(() => {
+    if (snapshot.currentUrl) setUrl(snapshot.currentUrl);
+    else if (snapshot.library.selectedEnvironmentId) setUrl(context.baseUrl);
+  }, [snapshot.currentUrl, snapshot.library.selectedEnvironmentId, context.baseUrl]);
+
+  useEffect(() => {
+    setName(context.title);
+  }, [snapshot.library.selectedTestId, context.title]);
+
+  useEffect(() => {
+    if (selectedId && !steps.some((step) => step.id === selectedId)) setSelectedId(undefined);
+  }, [selectedId, steps]);
+
+  useEffect(() => {
+    if (steps.length > stepCountRef.current) {
+      setSelectedId(steps.at(-1)?.id);
+      setExpandedId(undefined);
+      setLog(`Captured · ${steps.at(-1)?.kind ?? 'step'}`);
+    }
+    stepCountRef.current = steps.length;
+  }, [steps]);
 
   const undo = () => {
-    const previous = past.at(-1);
-    if (!previous) return;
-    setPast((current) => current.slice(0, -1));
-    setFuture((current) => [steps, ...current]);
-    setSteps(previous);
+    window.testron?.command({ type: 'undo-step' });
     setLog('Undo · step list rolled back');
   };
 
   const redo = () => {
-    const next = future[0];
-    if (!next) return;
-    setFuture((current) => current.slice(1));
-    setPast((current) => [...current, steps]);
-    setSteps(next);
+    window.testron?.command({ type: 'redo-step' });
     setLog('Redo');
   };
-
-  // The recorder, stood in for: one scripted interaction lands every 1.6s.
-  useEffect(() => {
-    if (status !== 'recording') return;
-    const next = script[steps.length];
-    if (!next) return;
-    const timer = window.setTimeout(() => {
-      const captured =
-        mode === 'assert' && !next.kind.startsWith('assert')
-          ? ({ ...next, kind: 'assert', assertion: 'visible' } satisfies RecordedStep)
-          : next;
-      commit([...steps, captured]);
-      setSelectedId(captured.id);
-      setExpandedId(undefined);
-      setMode('act');
-      if (captured.url) setUrl(captured.url);
-      setLog(`Captured · ${captured.kind} on ${captured.label}`);
-    }, 1600);
-    return () => window.clearTimeout(timer);
-  }, [status, steps, mode]);
 
   useEffect(() => {
     if (status !== 'recording') return;
@@ -124,53 +133,60 @@ export const RecordScreen = () => {
   }, [status]);
 
   const record = () => {
-    setStatus('recording');
+    window.testron?.command({
+      type: status === 'paused' ? 'resume-recording' : 'start-recording',
+    });
+    if (status === 'idle' || status === 'finished') setElapsed(0);
     setLog(steps.length === 0 ? 'Recording · every interaction becomes a step' : 'Resumed');
   };
 
   const pause = () => {
-    setStatus('paused');
-    setMode('act');
+    window.testron?.command({ type: 'pause-recording' });
     setLog('Paused · the page is yours again, nothing is captured');
   };
 
   const remove = (id: string) => {
-    commit(steps.filter((step) => step.id !== id));
+    const index = steps.findIndex((step) => step.id === id);
+    if (index < 0) return;
+    window.testron?.command({ type: 'delete-step', index });
     if (selectedId === id) setSelectedId(undefined);
     setLog('Step deleted · the spec regenerated without it');
   };
 
   const useAlternative = (id: string, locator: string) => {
-    commit(
-      steps.map((step) =>
-        step.id === id
-          ? {
-              ...step,
-              locator,
-              alternatives: [step.locator, ...step.alternatives.filter((one) => one !== locator)],
-            }
-          : step,
-      ),
-    );
+    const index = steps.findIndex((step) => step.id === id);
+    const alternativeIndex = steps[index]?.alternatives.indexOf(locator) ?? -1;
+    if (index < 0 || alternativeIndex < 0) return;
+    window.testron?.command({ type: 'use-alternative-locator', index, alternativeIndex });
     setLog(`Locator swapped · ${locator}`);
   };
 
   const navigate = (action: 'back' | 'forward' | 'reload' | 'stop') => {
-    if (action === 'stop') {
-      setLoading(false);
-      setLog('Load stopped');
-      return;
-    }
-    setLoading(true);
-    window.setTimeout(() => setLoading(false), 700);
+    window.testron?.command({ type: 'browser-navigation', action });
+    setLoading(action !== 'stop');
+    if (action !== 'stop') window.setTimeout(() => setLoading(false), 700);
     setLog(`${action[0].toUpperCase()}${action.slice(1)} · ${url}`);
   };
 
   const goTo = (next: string) => {
-    setUrl(next);
-    setLoading(true);
-    window.setTimeout(() => setLoading(false), 700);
-    setLog(`Navigated · ${next}`);
+    try {
+      const normalized = new URL(next).toString();
+      setUrl(normalized);
+      setLoading(true);
+      window.testron?.command({ type: 'navigate', url: normalized });
+      window.setTimeout(() => setLoading(false), 700);
+      setLog(`Navigated · ${normalized}`);
+    } catch {
+      setLog('Enter a complete HTTP(S) address');
+    }
+  };
+
+  const setCaptureMode = (next: CaptureMode, assertion: VerifyAssertion = 'visible') => {
+    window.testron?.command({
+      type: 'set-capture-mode',
+      mode: next === 'assert' ? 'verify' : 'record',
+      assertion,
+    });
   };
 
   const togglePanel = (panel: PanelId) =>
@@ -182,7 +198,7 @@ export const RecordScreen = () => {
       if (status === 'recording') pause();
       else record();
     } else if (key === 'a' && status === 'recording') {
-      setMode((current) => (current === 'assert' ? 'act' : 'assert'));
+      setCaptureMode(mode === 'assert' ? 'act' : 'assert');
     } else if (key === '1') {
       togglePanel('steps');
     } else if (key === '2') {
@@ -211,14 +227,16 @@ export const RecordScreen = () => {
         return;
       }
 
-      if (event.key === 'Escape') setFinishing(undefined);
-      else shortcut(event.key.toLowerCase());
+      if (event.key === 'Escape' && finishing) {
+        const resume = finishing === 'from-recording';
+        setFinishing(undefined);
+        if (resume) window.testron?.command({ type: 'resume-recording' });
+      } else shortcut(event.key.toLowerCase());
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [status, steps.length]);
+  }, [status, steps.length, finishing, mode]);
 
-  const lines = useMemo(() => buildSource(steps), [steps]);
   const selected = steps.find((step) => step.id === selectedId);
 
   /**
@@ -260,7 +278,7 @@ export const RecordScreen = () => {
         status,
         mode,
         elapsed,
-        file: session.file,
+        file: context.file,
         selectedId,
         expandedId,
         steps,
@@ -268,6 +286,12 @@ export const RecordScreen = () => {
         layout: current,
       },
     });
+  };
+
+  const copySource = () => {
+    if (hosted) window.testron?.command({ type: 'copy-source' });
+    else void navigator.clipboard?.writeText(sourceText(lines));
+    setLog('Spec copied to the clipboard');
   };
 
   useEffect(publish, [
@@ -321,8 +345,7 @@ export const RecordScreen = () => {
           setResizing(event.done ? null : event.panel);
           break;
         case 'copy':
-          void navigator.clipboard?.writeText(sourceText(lines));
-          setLog('Spec copied to the clipboard');
+          copySource();
           break;
         case 'shortcut':
           shortcut(event.key);
@@ -348,6 +371,10 @@ export const RecordScreen = () => {
         theme={theme}
         onTheme={toggle}
         steps={steps.length}
+        project={context.project}
+        suite={context.suite}
+        environment={context.environment}
+        test={name}
         onBack={() => {
           window.location.hash = '#/';
         }}
@@ -360,9 +387,9 @@ export const RecordScreen = () => {
         onNavigate={navigate}
         status={status}
         mode={mode}
-        onMode={setMode}
-        canUndo={past.length > 0}
-        canRedo={future.length > 0}
+        onMode={setCaptureMode}
+        canUndo={snapshot.canUndo}
+        canRedo={snapshot.canRedo}
         onUndo={undo}
         onRedo={redo}
         onRecord={record}
@@ -434,21 +461,11 @@ export const RecordScreen = () => {
           <GlassPanel
             side="right"
             title="Auto test"
-            subtitle={session.file.split('/').at(-1)}
+            subtitle={context.file.split('/').at(-1)}
             width={widths.code}
             onResize={(width) => setWidths((current) => ({ ...current, code: width }))}
             onClose={() => togglePanel('code')}
-            action={
-              <IconButton
-                icon="copy"
-                size="sm"
-                label="Copy the spec"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(sourceText(lines));
-                  setLog('Spec copied to the clipboard');
-                }}
-              />
-            }
+            action={<IconButton icon="copy" size="sm" label="Copy the spec" onClick={copySource} />}
           >
             <CodePanel lines={lines} selectedId={selectedId} onSelectStep={setSelectedId} />
           </GlassPanel>
@@ -460,14 +477,17 @@ export const RecordScreen = () => {
             onName={setName}
             steps={steps.length}
             elapsed={elapsed}
+            environment={context.environment}
+            file={context.file}
             onCancel={() => {
               const resume = finishing === 'from-recording';
               setFinishing(undefined);
               if (resume) record();
             }}
             onSave={() => {
+              if (!name.trim()) return;
+              window.testron?.command({ type: 'save-recording', title: name, baseUrl: url });
               setFinishing(undefined);
-              setStatus('finished');
               setLog(`Saved · ${steps.length} steps → test view`);
               window.location.hash = '#/test';
             }}
@@ -476,12 +496,12 @@ export const RecordScreen = () => {
       </div>
 
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
-        <span className="ui-mono truncate text-ink-2">{session.file}</span>
+        <span className="ui-mono truncate text-ink-2">{context.file}</span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
           <span>{lines.length} lines generated</span>
-          <span className="ui-mono">{session.testIdAttribute}</span>
-          <span>{session.environment}</span>
+          <span className="ui-mono">{context.testIdAttribute}</span>
+          <span>{context.environment}</span>
         </span>
       </footer>
     </main>
@@ -494,6 +514,8 @@ const FinishSheet = ({
   onName,
   steps,
   elapsed,
+  environment,
+  file,
   onCancel,
   onSave,
 }: {
@@ -501,6 +523,8 @@ const FinishSheet = ({
   onName: (name: string) => void;
   steps: number;
   elapsed: number;
+  environment: string;
+  file: string;
   onCancel: () => void;
   onSave: () => void;
 }) => (
@@ -515,8 +539,8 @@ const FinishSheet = ({
     >
       <h2 className="text-lg font-semibold">Finish recording</h2>
       <p className="mt-1 text-base text-ink-3">
-        {steps} steps over {clock(elapsed)} in {session.environment}. The spec is saved next to the
-        suite and opens in the test view.
+        {steps} steps over {clock(elapsed)} in {environment}. The spec is saved next to the suite
+        and opens in the test view.
       </p>
 
       <label className="mt-4 block">
@@ -530,11 +554,11 @@ const FinishSheet = ({
 
       <p className="ui-mono mt-3 flex items-center gap-1.5 text-sm text-ink-3">
         <Icon name="test" size={13} />
-        {session.file}
+        {file}
       </p>
 
       <div className="mt-5 flex items-center gap-2">
-        <Button variant="primary" icon="check" onClick={onSave}>
+        <Button variant="primary" icon="check" onClick={onSave} disabled={!name.trim()}>
           Save and open test
         </Button>
         <Button variant="ghost" onClick={onCancel}>

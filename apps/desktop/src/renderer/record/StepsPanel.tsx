@@ -101,7 +101,7 @@ export const StepsPanel = ({
 
                 {step.warning && (
                   <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
-                    Secret
+                    {step.secret ? 'Secret' : 'Locator'}
                   </Badge>
                 )}
               </span>

@@ -26,16 +26,10 @@ const asStep = (assertion: Assertion): RecordedStep => {
   };
   if (assertion.kind === 'urlPath')
     return { ...base, kind: 'assertUrl', value: assertion.expected };
-  const assertionKind =
-    assertion.kind === 'textEquals' || assertion.kind === 'textContains'
-      ? 'text'
-      : assertion.kind === 'value'
-        ? 'value'
-        : assertion.kind;
   return {
     ...base,
     kind: 'assert',
-    assertion: assertionKind,
+    assertion: assertion.kind,
     value: assertion.expected,
   };
 };

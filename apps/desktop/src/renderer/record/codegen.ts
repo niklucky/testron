@@ -24,20 +24,28 @@ export const sentence = (step: RecordedStep): string => {
       return `Select “${step.value ?? ''}” in “${step.label}”`;
     case 'check':
       return `Check “${step.label}”`;
+    case 'uncheck':
+      return `Uncheck “${step.label}”`;
     case 'press':
       return `Press ${step.value ?? 'Enter'} in “${step.label}”`;
     case 'assertUrl':
       return `Expect the page to be at ${step.value ?? '/'}`;
     case 'assert':
       switch (step.assertion) {
-        case 'text':
+        case 'textContains':
+          return `Expect “${step.label}” to contain “${step.value ?? ''}”`;
+        case 'textEquals':
           return `Expect “${step.label}” to read “${step.value ?? ''}”`;
         case 'value':
           return `Expect “${step.label}” to hold “${step.value ?? ''}”`;
         case 'enabled':
           return `Expect “${step.label}” to be enabled`;
+        case 'disabled':
+          return `Expect “${step.label}” to be disabled`;
         case 'checked':
           return `Expect “${step.label}” to be checked`;
+        case 'unchecked':
+          return `Expect “${step.label}” to be unchecked`;
         case 'hidden':
           return `Expect “${step.label}” to be hidden`;
         default:
@@ -62,20 +70,28 @@ const call = (step: RecordedStep): string => {
       return `await ${target}.selectOption(${quote(step.value ?? '')});`;
     case 'check':
       return `await ${target}.check();`;
+    case 'uncheck':
+      return `await ${target}.uncheck();`;
     case 'press':
       return `await ${target}.press(${quote(step.value ?? 'Enter')});`;
     case 'assertUrl':
       return `await expect(page).toHaveURL(${quote(step.value ?? '/')});`;
     case 'assert':
       switch (step.assertion) {
-        case 'text':
+        case 'textEquals':
           return `await expect(${target}).toHaveText(${quote(step.value ?? '')});`;
+        case 'textContains':
+          return `await expect(${target}).toContainText(${quote(step.value ?? '')});`;
         case 'value':
           return `await expect(${target}).toHaveValue(${quote(step.value ?? '')});`;
         case 'enabled':
           return `await expect(${target}).toBeEnabled();`;
+        case 'disabled':
+          return `await expect(${target}).toBeDisabled();`;
         case 'checked':
           return `await expect(${target}).toBeChecked();`;
+        case 'unchecked':
+          return `await expect(${target}).not.toBeChecked();`;
         case 'hidden':
           return `await expect(${target}).toBeHidden();`;
         default:

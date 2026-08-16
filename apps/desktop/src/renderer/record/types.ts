@@ -35,6 +35,7 @@ export const stepStyle: Record<StepKind, StepStyle> = {
   fill: { icon: 'pencil', verb: 'Fill' },
   select: { icon: 'caret', verb: 'Select' },
   check: { icon: 'check', verb: 'Check' },
+  uncheck: { icon: 'check', verb: 'Uncheck' },
   press: { icon: 'keyboard', verb: 'Press' },
   assert: { icon: 'eye', verb: 'Expect' },
   assertUrl: { icon: 'eye', verb: 'Expect' },

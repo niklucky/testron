@@ -27,15 +27,18 @@ export type AppCommand =
   | { type: 'pause-recording' }
   | { type: 'resume-recording' }
   | { type: 'undo-step' }
+  | { type: 'redo-step' }
   | { type: 'finish-recording' }
   | { type: 'delete-step'; index: number }
   | { type: 'move-step'; index: number; direction: -1 | 1 }
   | { type: 'duplicate-step'; index: number }
   | { type: 'update-step'; index: number; step: Step }
+  | { type: 'replace-steps'; steps: Step[] }
   | { type: 'use-alternative-locator'; index: number; alternativeIndex: number }
   | { type: 'set-capture-mode'; mode: 'record' | 'verify'; assertion: VerifyAssertion }
   | { type: 'add-url-path-assertion'; expected: string }
   | { type: 'navigate'; url: string }
+  | { type: 'browser-navigation'; action: 'back' | 'forward' | 'reload' | 'stop' }
   | { type: 'request-snapshot' }
   | { type: 'create-project'; name: string }
   | {
@@ -49,6 +52,9 @@ export type AppCommand =
   | { type: 'select-project'; projectId: string }
   | { type: 'select-environment'; environmentId: string }
   | { type: 'select-test'; testId: string }
+  | { type: 'rename-test'; testId: string; title: string }
+  | { type: 'prepare-new-test' }
+  | { type: 'save-recording'; title: string; baseUrl: string }
   | { type: 'copy-source' }
   | { type: 'export-source' }
   | {

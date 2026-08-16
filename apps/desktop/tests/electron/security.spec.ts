@@ -119,7 +119,7 @@ test('records the controlled login-like flow through the Electron pipeline', asy
       .toContain('http://127.0.0.1:4174/welcome');
     await appWindow.evaluate(() => window.testron.command({ type: 'stop-recording' }));
 
-    await expect(appWindow.locator('.human li')).toHaveCount(4);
+    await expect(appWindow.locator('.human li')).toHaveCount(5);
     await expect(appWindow.locator('.human')).toContainText(
       'Navigate to http://127.0.0.1:4174/?recording=1',
     );
@@ -181,7 +181,7 @@ test('restores a created project, environment, test, and its steps after restart
       })()`);
     });
     await appWindow.getByRole('button', { name: 'Finish' }).click();
-    await expect(appWindow.locator('.human li')).toHaveCount(2);
+    await expect(appWindow.locator('.human li')).toHaveCount(3);
     await electronApp.close();
 
     electronApp = await launch();
@@ -192,7 +192,7 @@ test('restores a created project, environment, test, and its steps after restart
     await expect(appWindow.getByLabel('Test', { exact: true })).toContainText(
       'sign in successfully',
     );
-    await expect(appWindow.locator('.human li')).toHaveCount(2);
+    await expect(appWindow.locator('.human li')).toHaveCount(3);
     await expect(appWindow.locator('.human')).toContainText('qa@example.test');
   } finally {
     await electronApp.close().catch(() => undefined);

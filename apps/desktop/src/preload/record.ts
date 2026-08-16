@@ -49,7 +49,17 @@ export type RecordLayout = z.infer<typeof recordLayoutSchema>;
 
 export const recordedStepSchema = z.object({
   id: z.string().min(1),
-  kind: z.enum(['navigate', 'click', 'fill', 'select', 'check', 'press', 'assert', 'assertUrl']),
+  kind: z.enum([
+    'navigate',
+    'click',
+    'fill',
+    'select',
+    'check',
+    'uncheck',
+    'press',
+    'assert',
+    'assertUrl',
+  ]),
   label: z.string(),
   locator: z.string(),
   alternatives: z.array(z.string()),
@@ -57,7 +67,19 @@ export const recordedStepSchema = z.object({
   value: z.string().optional(),
   secret: z.string().optional(),
   url: z.string().optional(),
-  assertion: z.enum(['visible', 'hidden', 'text', 'value', 'enabled', 'checked']).optional(),
+  assertion: z
+    .enum([
+      'visible',
+      'hidden',
+      'textContains',
+      'textEquals',
+      'value',
+      'enabled',
+      'disabled',
+      'checked',
+      'unchecked',
+    ])
+    .optional(),
   warning: z.string().optional(),
   at: z.number().nonnegative(),
 });

@@ -68,7 +68,7 @@ export const script: RecordedStep[] = [
     locator: "getByTestId('order-total')",
     alternatives: ["getByText('£148.00')"],
     spot: 'summary',
-    assertion: 'text',
+    assertion: 'textEquals',
     value: '£148.00',
     at: 27,
   },

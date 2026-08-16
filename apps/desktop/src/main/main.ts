@@ -6,7 +6,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, WebContentsView } from 
 import { z } from 'zod';
 
 import { recorderCandidateSchema } from '@testron/domain/recording/schema';
-import { stepSchema } from '@testron/domain/steps/schema';
+import { stepSchema, stepsSchema } from '@testron/domain/steps/schema';
 import type { AppCommand, VerifyAssertion } from '../preload/api';
 import {
   recordLayoutSchema,
@@ -49,6 +49,7 @@ const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('pause-recording') }),
   z.object({ type: z.literal('resume-recording') }),
   z.object({ type: z.literal('undo-step') }),
+  z.object({ type: z.literal('redo-step') }),
   z.object({ type: z.literal('finish-recording') }),
   z.object({ type: z.literal('delete-step'), index: z.number().int().nonnegative() }),
   z.object({
@@ -62,6 +63,7 @@ const appCommandSchema = z.discriminatedUnion('type', [
     index: z.number().int().nonnegative(),
     step: stepSchema,
   }),
+  z.object({ type: z.literal('replace-steps'), steps: stepsSchema }),
   z.object({
     type: z.literal('use-alternative-locator'),
     index: z.number().int().nonnegative(),
@@ -84,6 +86,10 @@ const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('add-url-path-assertion'), expected: z.string().startsWith('/') }),
   z.object({ type: z.literal('navigate'), url: z.url() }),
+  z.object({
+    type: z.literal('browser-navigation'),
+    action: z.enum(['back', 'forward', 'reload', 'stop']),
+  }),
   z.object({ type: z.literal('request-snapshot') }),
   z.object({ type: z.literal('create-project'), name: z.string().trim().min(1).max(100) }),
   z.object({
@@ -102,6 +108,17 @@ const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select-project'), projectId: z.string().uuid() }),
   z.object({ type: z.literal('select-environment'), environmentId: z.string().uuid() }),
   z.object({ type: z.literal('select-test'), testId: z.string().uuid() }),
+  z.object({
+    type: z.literal('rename-test'),
+    testId: z.string().uuid(),
+    title: z.string().trim().min(1).max(200),
+  }),
+  z.object({ type: z.literal('prepare-new-test') }),
+  z.object({
+    type: z.literal('save-recording'),
+    title: z.string().trim().min(1).max(200),
+    baseUrl: z.url(),
+  }),
   z.object({ type: z.literal('copy-source') }),
   z.object({ type: z.literal('export-source') }),
   z.object({
@@ -340,6 +357,7 @@ const createWindow = async (): Promise<void> => {
         layout();
         break;
       case 'start-recording':
+        replaySnapshot = { status: 'idle', steps: [] };
         session.start();
         applyContext();
         break;
@@ -356,6 +374,9 @@ const createWindow = async (): Promise<void> => {
       case 'undo-step':
         session.undo();
         break;
+      case 'redo-step':
+        session.redo();
+        break;
       case 'finish-recording':
         session.finish();
         break;
@@ -370,6 +391,9 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'update-step':
         session.updateStep(command.index, command.step);
+        break;
+      case 'replace-steps':
+        session.replaceSteps(command.steps);
         break;
       case 'use-alternative-locator':
         session.useAlternativeLocator(command.index, command.alternativeIndex);
@@ -391,6 +415,18 @@ const createWindow = async (): Promise<void> => {
         } catch (error) {
           session.warn(error instanceof Error ? error.message : 'Invalid URL.');
         }
+        break;
+      case 'browser-navigation':
+        if (!websiteView) break;
+        if (command.action === 'back' && websiteView.webContents.navigationHistory.canGoBack())
+          websiteView.webContents.navigationHistory.goBack();
+        else if (
+          command.action === 'forward' &&
+          websiteView.webContents.navigationHistory.canGoForward()
+        )
+          websiteView.webContents.navigationHistory.goForward();
+        else if (command.action === 'reload') websiteView.webContents.reload();
+        else if (command.action === 'stop') websiteView.webContents.stop();
         break;
       case 'create-project': {
         const project = store.createProject(command.name);
@@ -418,6 +454,7 @@ const createWindow = async (): Promise<void> => {
         selectedProjectId = command.projectId;
         selectedEnvironmentId = command.environmentId;
         selectedTestId = test.id;
+        replaySnapshot = { status: 'idle', steps: [] };
         session.load(test.title, []);
         break;
       }
@@ -427,6 +464,7 @@ const createWindow = async (): Promise<void> => {
           .listEnvironments()
           .find((environment) => environment.projectId === command.projectId)?.id;
         selectedTestId = store.listTests().find((test) => test.projectId === command.projectId)?.id;
+        replaySnapshot = { status: 'idle', steps: [] };
         if (selectedTestId) {
           const { selectedTest } = selectedContext();
           if (selectedTest) session.load(selectedTest.title, store.loadSteps(selectedTest.id));
@@ -442,7 +480,46 @@ const createWindow = async (): Promise<void> => {
         selectedTestId = test.id;
         selectedProjectId = test.projectId;
         selectedEnvironmentId = test.environmentId;
+        replaySnapshot = { status: 'idle', steps: [] };
         session.load(test.title, store.loadSteps(test.id));
+        break;
+      }
+      case 'rename-test': {
+        const test = store.listTests().find((candidate) => candidate.id === command.testId);
+        if (!test) break;
+        store.renameTest(test.id, command.title);
+        if (selectedTestId === test.id) session.setGenerationContext(command.title);
+        break;
+      }
+      case 'prepare-new-test':
+        selectedTestId = undefined;
+        replaySnapshot = { status: 'idle', steps: [] };
+        session.load('Untitled test', []);
+        break;
+      case 'save-recording': {
+        session.finish();
+        let project = store.listProjects().find((one) => one.id === selectedProjectId);
+        if (!project) {
+          project = store.createProject('My project');
+          selectedProjectId = project.id;
+        }
+        let environment = store
+          .listEnvironments()
+          .find((one) => one.id === selectedEnvironmentId && one.projectId === selectedProjectId);
+        if (!environment) {
+          const origin = new URL(command.baseUrl).origin;
+          environment = store.createEnvironment(project.id, 'Local', origin, 'data-testid');
+          selectedEnvironmentId = environment.id;
+        }
+        let test = store.listTests().find((one) => one.id === selectedTestId);
+        if (!test) {
+          test = store.createTest(project.id, environment.id, command.title);
+          selectedTestId = test.id;
+        } else {
+          store.renameTest(test.id, command.title);
+        }
+        store.replaceSteps(test.id, session.snapshot().steps);
+        session.setGenerationContext(command.title);
         break;
       }
       case 'copy-source':

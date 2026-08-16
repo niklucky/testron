@@ -26,7 +26,9 @@ export type AssertionKind =
   | 'textContains'
   | 'value'
   | 'enabled'
+  | 'disabled'
   | 'checked'
+  | 'unchecked'
   | 'urlPath';
 
 export type Assertion = {
@@ -90,7 +92,9 @@ export const assertionLabels: Record<AssertionKind, string> = {
   textContains: 'text contains',
   value: 'has value',
   enabled: 'is enabled',
+  disabled: 'is disabled',
   checked: 'is checked',
+  unchecked: 'is unchecked',
   urlPath: 'URL path equals',
 };
 

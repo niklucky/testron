@@ -12,6 +12,8 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   source: '',
   captureMode: 'record',
   stepWarnings: [],
+  canUndo: false,
+  canRedo: false,
   library: { projects: [], environments: [], tests: [] },
   replay: { status: 'idle', steps: [] },
 };

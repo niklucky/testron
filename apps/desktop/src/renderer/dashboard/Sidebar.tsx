@@ -82,6 +82,7 @@ export const Sidebar = ({
         icon="record"
         onClick={() => {
           onLog('New test · recording on Staging');
+          window.testron?.command({ type: 'prepare-new-test' });
           window.location.hash = '#/record';
         }}
       >
