@@ -57,7 +57,7 @@ export const recordedStepSchema = z.object({
   value: z.string().optional(),
   secret: z.string().optional(),
   url: z.string().optional(),
-  assertion: z.enum(['visible', 'text', 'value', 'enabled', 'checked']).optional(),
+  assertion: z.enum(['visible', 'hidden', 'text', 'value', 'enabled', 'checked']).optional(),
   warning: z.string().optional(),
   at: z.number().nonnegative(),
 });

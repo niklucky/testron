@@ -38,6 +38,8 @@ export const sentence = (step: RecordedStep): string => {
           return `Expect “${step.label}” to be enabled`;
         case 'checked':
           return `Expect “${step.label}” to be checked`;
+        case 'hidden':
+          return `Expect “${step.label}” to be hidden`;
         default:
           return `Expect “${step.label}” to be visible`;
       }
@@ -74,6 +76,8 @@ const call = (step: RecordedStep): string => {
           return `await expect(${target}).toBeEnabled();`;
         case 'checked':
           return `await expect(${target}).toBeChecked();`;
+        case 'hidden':
+          return `await expect(${target}).toBeHidden();`;
         default:
           return `await expect(${target}).toBeVisible();`;
       }

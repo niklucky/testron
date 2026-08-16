@@ -7,7 +7,9 @@ import { Dashboard3 as WorkspaceStudy } from './design/experiments/Dashboard3';
 import { DashboardIndex } from './design/experiments/DashboardIndex';
 import { PanelHost } from './record/PanelHost';
 import { RecordScreen } from './record/RecordScreen';
+import { RunView } from './run-view/RunView';
 import { Showcase } from './design/Showcase';
+import { TestView } from './test-view/TestView';
 import { RecorderApp } from './recorder/RecorderApp';
 
 /**
@@ -27,6 +29,8 @@ export const App = () => {
   }, []);
 
   if (route === '#/record') return <RecordScreen />;
+  if (route === '#/test') return <TestView />;
+  if (route === '#/run') return <RunView />;
   // One route per panel view: each is its own renderer, stacked over the site.
   if (route === '#/panel/steps') return <PanelHost panel="steps" />;
   if (route === '#/panel/code') return <PanelHost panel="code" />;

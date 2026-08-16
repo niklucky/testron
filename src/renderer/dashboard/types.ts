@@ -79,7 +79,7 @@ export type Totals = { tests: number; passed: number; skipped: number; failed: n
 export type ManualVerdict = 'pass' | 'fail' | 'block';
 
 export type Scope = 'all' | 'new' | 'flaky' | 'mine';
-export type View = 'overview' | 'triage';
+export type View = 'overview' | 'triage' | 'runs';
 export type EvidenceTab = 'steps' | 'error' | 'shot' | 'manual' | 'history';
 export type SortKey = 'name' | 'tests' | 'passRate' | 'lastRun';
 export type Sort = { key: SortKey; direction: 'asc' | 'desc' };

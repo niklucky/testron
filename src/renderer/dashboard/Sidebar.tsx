@@ -69,6 +69,12 @@ export const Sidebar = ({
         badge={openFailures}
         onClick={() => onView('triage')}
       />
+      <NavItem
+        icon="history"
+        label="Run history"
+        active={view === 'runs'}
+        onClick={() => onView('runs')}
+      />
       <Button
         variant="ghost"
         size="lg"

@@ -5,6 +5,9 @@ import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
 import { age } from './format';
 import { initialOverviewState, Overview, type OverviewState } from './Overview';
+import { runs } from './runHistory';
+import { initialRunsState, Runs, type RunsState } from './Runs';
+import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
 import { evidenceTabs, Triage } from './Triage';
 import type {
@@ -45,6 +48,7 @@ export const Dashboard = () => {
   const [manualCursor, setManualCursor] = useState(0);
   const [shotView, setShotView] = useState<'actual' | 'expected'>('actual');
   const [overview, setOverview] = useState<OverviewState>(initialOverviewState);
+  const [runsState, setRunsState] = useState<RunsState>(initialRunsState);
   const [log, setLog] = useState('Ready · 9 open failures across 6 suites');
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -129,6 +133,8 @@ export const Dashboard = () => {
         setView('overview');
       } else if (key === 't') {
         setView('triage');
+      } else if (key === 'h') {
+        setView('runs');
       } else if (key === 'r' || key === 'q' || key === 'b') {
         runAction(key);
       } else if (view === 'triage' && tab === 'manual' && ['p', 'f', 'x'].includes(key)) {
@@ -154,7 +160,9 @@ export const Dashboard = () => {
         return;
       }
     }
+    // A test with nothing to triage opens as itself: the board.
     setLog(`${test.name} · last run ${age(test.minutesAgo)} ago in ${test.seconds}s`);
+    window.location.hash = '#/test';
   };
 
   const reorder = (suiteId: string, from: number, to: number) =>
@@ -236,7 +244,7 @@ export const Dashboard = () => {
 
       <div
         className={`grid min-h-0 flex-1 ${
-          view === 'triage' && !focusMode
+          view !== 'overview' && !focusMode
             ? 'grid-cols-[336px_minmax(0,1fr)_330px]'
             : 'grid-cols-[336px_minmax(0,1fr)]'
         }`}
@@ -281,6 +289,16 @@ export const Dashboard = () => {
             onState={setOverview}
             onLog={setLog}
           />
+        ) : view === 'runs' ? (
+          <>
+            <Runs state={runsState} onState={setRunsState} onLog={setLog} />
+            {!focusMode && (
+              <RunsRail
+                period={runs.filter((run) => run.minutesAgo / 1_440 < runsState.range)}
+                onFilter={(query) => setRunsState({ ...runsState, query })}
+              />
+            )}
+          </>
         ) : (
           <>
             <Triage

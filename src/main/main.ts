@@ -28,6 +28,10 @@ import {
 } from './security';
 
 const TOOLBAR_HEIGHT = 430;
+const APP_ICON_PATH = path.join(
+  app.getAppPath(),
+  'assets/brand/testron-app-icon-18-glass-t-gradient.png',
+);
 
 const PANEL_IDS = ['steps', 'code'] as const;
 const PANEL_ROUTES: Record<PanelId, string> = { steps: 'panel/steps', code: 'panel/code' };
@@ -136,6 +140,7 @@ const createWindow = async (): Promise<void> => {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#dcebed',
+    icon: existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       ...APP_RENDERER_WEB_PREFERENCES,
       preload: path.join(__dirname, 'app.js'),
@@ -609,6 +614,9 @@ const createWindow = async (): Promise<void> => {
 };
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && existsSync(APP_ICON_PATH)) {
+    app.dock?.setIcon(APP_ICON_PATH);
+  }
   const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
   await createWindow();

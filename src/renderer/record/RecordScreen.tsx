@@ -469,6 +469,7 @@ export const RecordScreen = () => {
               setFinishing(undefined);
               setStatus('finished');
               setLog(`Saved · ${steps.length} steps → test view`);
+              window.location.hash = '#/test';
             }}
           />
         )}

@@ -21,6 +21,20 @@ const openRecordScreen = async () => {
     window.location.hash = '#/record';
   });
   await appWindow.getByRole('button', { name: 'Record' }).waitFor({ timeout: 10_000 });
+
+  // The panel views load in the background so they never delay startup; every
+  // test here needs them present before it can say anything about them.
+  await expect
+    .poll(() =>
+      electronApp.evaluate(
+        ({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .filter((contents) => contents.getURL().includes('#/panel/')).length,
+      ),
+    )
+    .toBe(2);
+
   return { electronApp, appWindow, dataDirectory };
 };
 
@@ -73,7 +87,7 @@ test('a panel being dragged takes the whole plane so the pointer cannot escape i
         async ({ webContents }, payload) => {
           const panel = webContents
             .getAllWebContents()
-            .find((contents) => contents.getURL().endsWith('#/panel/steps'));
+            .find((contents) => contents.getURL().includes('#/panel/steps'));
           if (!panel) throw new Error('The steps panel view was not found.');
           await panel.executeJavaScript(
             `window.testron.sendRecordEvent(${JSON.stringify(payload)})`,
