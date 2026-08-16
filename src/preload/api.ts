@@ -2,6 +2,7 @@ import type { RecordingSnapshot } from '../main/recording/session';
 import type { LibrarySnapshot } from '../main/persistence/repository';
 import type { Step } from '../domain/steps/schema';
 import type { ReplaySnapshot } from '../main/replay/runner';
+import type { RecordLayout, RecordPanelEvent, RecordPanelState } from './record';
 
 export type VerifyAssertion =
   | 'visible'
@@ -57,9 +58,19 @@ export type AppCommand =
       reuseAuthState: boolean;
     }
   | { type: 'cancel-run' }
-  | { type: 'clear-auth-state' };
+  | { type: 'clear-auth-state' }
+  /** Where the website view and the two panel views belong in the window. */
+  | { type: 'set-record-layout'; layout: RecordLayout }
+  /** Everything the panels draw, pushed from the screen that owns it. */
+  | { type: 'publish-record-state'; state: RecordPanelState };
 
 export interface TestronApi {
   command(command: AppCommand): void;
   onSnapshot(listener: (snapshot: AppSnapshot) => void): () => void;
+  /** Panel views: the state to draw. */
+  onRecordState(listener: (state: RecordPanelState) => void): () => void;
+  /** Panel views: report an interaction back to the record screen. */
+  sendRecordEvent(event: RecordPanelEvent): void;
+  /** The record screen: interactions that happened inside a panel view. */
+  onRecordEvent(listener: (event: RecordPanelEvent) => void): () => void;
 }

@@ -1,17 +1,31 @@
 const dashboards = [
   {
-    href: '#/dashboard',
+    href: '#/experiments/glass',
     number: '01',
     title: 'Glass dashboard',
     description: 'The original data-rich dashboard with translucent panels and analytics.',
     className: 'gallery-glass',
   },
   {
-    href: '#/dashboard2',
+    href: '#/experiments/codex',
     number: '02',
     title: 'Codex-inspired',
     description: 'A quieter workspace with a flat sidebar and elevated, high-contrast canvas.',
     className: 'gallery-codex',
+  },
+  {
+    href: '#/experiments/workspace',
+    number: '03',
+    title: 'Workspace',
+    description: 'A dense project workspace: suite tree in the sidebar, analytics on the canvas.',
+    className: 'gallery-workspace',
+  },
+  {
+    href: '#/',
+    number: '04',
+    title: 'Flight Deck',
+    description: 'Suite tree, dashboard and a keyboard-first triage console. Now the main app.',
+    className: 'gallery-deck',
   },
 ];
 
@@ -21,7 +35,7 @@ export const DashboardIndex = () => (
       <header>
         <span>TESTRON / UI STUDIES</span>
         <h1>Choose a dashboard</h1>
-        <p>Two directions for the same testing workspace.</p>
+        <p>Four directions for the same testing workspace. 04 shipped.</p>
       </header>
       <div className="gallery-grid">
         {dashboards.map((dashboard) => (

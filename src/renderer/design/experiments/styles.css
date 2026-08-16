@@ -1,8 +1,12 @@
-@import 'tailwindcss';
+/* Frozen UI studies — the shells behind #/experiments and the recorder.
+   These are kept working as-is; the design system in ../ owns the main app.
+   The reset, the base element rules and the Tailwind import now live in
+   src/renderer/app.css, so everything below is scoped to a legacy shell. */
 
-:root {
+.toolbar,
+.dashboard-shell,
+.dashboard-gallery {
   color: #e8eaf0;
-  background: #12151c;
   font-family:
     Inter,
     ui-sans-serif,
@@ -12,32 +16,6 @@
     'Segoe UI',
     sans-serif;
   font-synthesis: none;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  overflow: hidden;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled,
-input:disabled,
-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 
 .toolbar {
@@ -324,27 +302,27 @@ select:disabled {
   display: none !important;
 }
 
-ol {
+.recorder-app ol {
   margin: 0;
   padding: 6px 8px 8px 32px;
   font-size: 12px;
   line-height: 29px;
 }
 
-ol li {
+.recorder-app ol li {
   padding-left: 3px;
   border-bottom: 1px solid #202633;
 }
 
-ol li::marker {
+.recorder-app ol li::marker {
   color: #697386;
 }
 
-ol li:not(.empty) {
+.recorder-app ol li:not(.empty) {
   display: list-item;
 }
 
-ol li > .step-copy {
+.recorder-app ol li > .step-copy {
   display: inline-block;
   width: calc(100% - 140px);
   overflow: hidden;
@@ -400,7 +378,7 @@ ol li > .step-copy {
   padding: 0;
 }
 
-pre {
+.recorder-app pre {
   margin: 0;
   padding: 9px 12px;
   min-height: 100%;
@@ -2125,7 +2103,7 @@ pre {
     sans-serif;
 }
 .gallery-content {
-  width: min(940px, calc(100% - 64px));
+  width: min(1020px, calc(100% - 64px));
   padding: 70px 0 50px;
 }
 .gallery-content header span {
@@ -2168,7 +2146,7 @@ pre {
 }
 .gallery-preview {
   position: relative;
-  height: 248px;
+  height: 214px;
   overflow: hidden;
   border-radius: 14px;
 }
@@ -2222,6 +2200,59 @@ pre {
   border-radius: 14px;
   background: #fbfaf7;
   box-shadow: -9px 2px 22px rgb(71 62 55 / 18%);
+}
+.gallery-workspace {
+  background: #eceadf;
+}
+.gallery-workspace .gallery-sidebar {
+  inset: 14px auto 14px 14px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 15px,
+    rgb(62 61 56 / 12%) 15px 21px,
+    transparent 21px 30px
+  );
+}
+.gallery-workspace .gallery-canvas {
+  inset: 10px 10px 10px 33%;
+  border: 1px solid #e0dbcd;
+  border-radius: 12px;
+  background:
+    linear-gradient(to right, #6ba98a 0 22%, #cdc7b9 22% 30%, #cd6353 30% 34%, transparent 34%) 0
+      74% / 100% 5px no-repeat,
+    linear-gradient(#fff 0 0) 8px 22% / calc(100% - 16px) 44px no-repeat,
+    #faf9f5;
+  box-shadow: -8px 2px 20px rgb(71 62 55 / 14%);
+}
+.gallery-deck {
+  background: #0c0f11;
+}
+.gallery-deck .gallery-sidebar {
+  inset: 12px auto 12px 12px;
+  width: 30%;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 6px,
+      rgb(227 232 230 / 10%) 6px 10px,
+      transparent 10px 24px
+    ),
+    #14181b;
+}
+.gallery-deck .gallery-canvas {
+  inset: 12px 12px 12px 34%;
+  border-radius: 8px;
+  background:
+    linear-gradient(#d03b3b 0 0) 12px 22% / 44% 3px no-repeat,
+    linear-gradient(#3987e5 0 0) 12px 34% / 62% 3px no-repeat,
+    linear-gradient(#3987e5 0 0) 12px 46% / 30% 3px no-repeat,
+    #14181b;
+  box-shadow: inset 0 0 0 1px #262d32;
+}
+.gallery-deck .gallery-preview span,
+.gallery-deck span {
+  color: #9aa4a0;
 }
 .gallery-card-copy {
   padding: 17px 10px 10px;

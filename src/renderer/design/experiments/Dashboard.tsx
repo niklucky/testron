@@ -286,7 +286,7 @@ export const Dashboard = () => {
     document.documentElement.dataset.gradient = gradient;
     localStorage.setItem('testron-theme', theme);
     localStorage.setItem('testron-gradient', gradient);
-    window.testron.command({ type: 'set-shell-route', route: 'dashboard' });
+    window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
   }, [gradient, theme]);
 
   useEffect(() => {
@@ -365,7 +365,7 @@ export const Dashboard = () => {
         </div>
 
         <nav className="main-nav grid gap-1" aria-label="Project navigation">
-          <a className="active" href="#/">
+          <a className="active" href="#/experiments">
             <Icon name="grid" />
             Overview
           </a>

@@ -8,18 +8,40 @@ import { z } from 'zod';
 import { recorderCandidateSchema } from '../domain/recording/schema';
 import { stepSchema } from '../domain/steps/schema';
 import type { AppCommand, VerifyAssertion } from '../preload/api';
+import {
+  recordLayoutSchema,
+  recordPanelEventSchema,
+  recordPanelStateSchema,
+  type PanelId,
+  type RecordLayout,
+} from '../preload/record';
 import { TestronRepository } from './persistence/repository';
 import { RecordingSession } from './recording/session';
 import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
+  RECORD_CHANNELS,
   RECORDER_CHANNEL,
   RECORDER_CONFIG_CHANNEL,
   TESTED_WEBSITE_WEB_PREFERENCES,
 } from './security';
 
 const TOOLBAR_HEIGHT = 430;
+const APP_ICON_PATH = path.join(
+  app.getAppPath(),
+  'assets/brand/testron-app-icon-18-glass-t-gradient.png',
+);
+
+const PANEL_IDS = ['steps', 'code'] as const;
+const PANEL_ROUTES: Record<PanelId, string> = { steps: 'panel/steps', code: 'panel/code' };
+const OFF_WINDOW = { x: 0, y: 0, width: 0, height: 0 } as const;
+
+const idleRecordLayout = (): RecordLayout => ({
+  plane: null,
+  panels: { steps: { visible: false, width: 25 }, code: { visible: false, width: 25 } },
+  resizing: null,
+});
 const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-shell-route'), route: z.enum(['dashboard', 'recorder']) }),
   z.object({ type: z.literal('start-recording') }),
@@ -90,10 +112,13 @@ const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('clear-auth-state') }),
+  z.object({ type: z.literal('set-record-layout'), layout: recordLayoutSchema }),
+  z.object({ type: z.literal('publish-record-state'), state: recordPanelStateSchema }),
 ]);
 
 let mainWindow: BrowserWindow | undefined;
 let websiteView: WebContentsView | undefined;
+let panelViews = new Map<PanelId, WebContentsView>();
 let repository: TestronRepository | undefined;
 
 const safeUrl = (value: string): string => {
@@ -115,6 +140,7 @@ const createWindow = async (): Promise<void> => {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#dcebed',
+    icon: existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       ...APP_RENDERER_WEB_PREFERENCES,
       preload: path.join(__dirname, 'app.js'),
@@ -129,15 +155,78 @@ const createWindow = async (): Promise<void> => {
   });
   mainWindow.contentView.addChildView(websiteView);
 
+  /**
+   * The step and spec panels are views of their own, added after the website
+   * view so they composite above it, and painted on a transparent background
+   * so the page shows through their tint.
+   *
+   * They are app renderers — same preload, same origin, same sandbox as the
+   * main window — reached at their own hash routes. They talk to the record
+   * screen only through the relay below.
+   */
+  for (const id of PANEL_IDS) {
+    const view = new WebContentsView({
+      webPreferences: {
+        ...APP_RENDERER_WEB_PREFERENCES,
+        preload: path.join(__dirname, 'app.js'),
+      },
+    });
+    view.setBackgroundColor('#00000000');
+    view.setBounds(OFF_WINDOW);
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    mainWindow.contentView.addChildView(view);
+    panelViews.set(id, view);
+  }
+
   let shellRoute: 'dashboard' | 'recorder' = 'dashboard';
+  let recordLayout = idleRecordLayout();
+
+  /**
+   * One arithmetic pass over the whole stack. The record screen measures the
+   * rectangle it wants the page to fill and sends it here; the panels are cut
+   * out of that same rectangle, so the three views can never disagree about
+   * where the browser plane is.
+   */
   const layout = (): void => {
     const [width, height] = mainWindow?.getContentSize() ?? [0, 0];
-    websiteView?.setBounds({
-      x: 0,
-      y: shellRoute === 'recorder' ? TOOLBAR_HEIGHT : height,
-      width,
-      height: shellRoute === 'recorder' ? Math.max(0, height - TOOLBAR_HEIGHT) : 0,
-    });
+    const plane = recordLayout.plane;
+
+    if (plane) {
+      websiteView?.setBounds({
+        x: plane.x,
+        y: plane.y,
+        width: Math.min(plane.width, Math.max(0, width - plane.x)),
+        height: Math.min(plane.height, Math.max(0, height - plane.y)),
+      });
+    } else {
+      websiteView?.setBounds({
+        x: 0,
+        y: shellRoute === 'recorder' ? TOOLBAR_HEIGHT : height,
+        width,
+        height: shellRoute === 'recorder' ? Math.max(0, height - TOOLBAR_HEIGHT) : 0,
+      });
+    }
+
+    for (const [id, view] of panelViews) {
+      const panel = recordLayout.panels[id];
+      if (!plane || !panel.visible) {
+        view.setBounds(OFF_WINDOW);
+        continue;
+      }
+      // Mid-drag the panel owns the whole plane: the pointer stays inside one
+      // view, and the transparent remainder shields the page from stray clicks.
+      if (recordLayout.resizing === id) {
+        view.setBounds(plane);
+        continue;
+      }
+      const panelWidth = Math.round((plane.width * panel.width) / 100);
+      view.setBounds({
+        x: id === 'steps' ? plane.x : plane.x + plane.width - panelWidth,
+        y: plane.y,
+        width: panelWidth,
+        height: plane.height,
+      });
+    }
   };
   layout();
   mainWindow.on('resize', layout);
@@ -434,6 +523,16 @@ const createWindow = async (): Promise<void> => {
       case 'cancel-run':
         runner.cancel();
         break;
+      case 'set-record-layout':
+        recordLayout = command.layout;
+        layout();
+        break;
+      case 'publish-record-state':
+        for (const view of panelViews.values()) {
+          if (!view.webContents.isDestroyed())
+            view.webContents.send(RECORD_CHANNELS.state, command.state);
+        }
+        break;
       case 'clear-auth-state': {
         const { environment } = selectedContext();
         if (!environment) break;
@@ -453,24 +552,59 @@ const createWindow = async (): Promise<void> => {
         break;
       }
     }
-    if (!['request-snapshot', 'copy-source', 'export-source', 'run-test'].includes(command.type))
+    if (
+      ![
+        'request-snapshot',
+        'copy-source',
+        'export-source',
+        'run-test',
+        'set-record-layout',
+        'publish-record-state',
+      ].includes(command.type)
+    )
       sendSnapshot(session.snapshot());
+  });
+
+  // Panels are not trusted to command the app — they report what the user did
+  // in them, and the record screen decides what that means.
+  ipcMain.on(RECORD_CHANNELS.event, (event, payload: unknown) => {
+    const fromPanel = [...panelViews.values()].some((view) => view.webContents === event.sender);
+    if (!fromPanel) return;
+    const parsed = recordPanelEventSchema.safeParse(payload);
+    if (!parsed.success) return;
+    if (mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send(RECORD_CHANNELS.event, parsed.data);
   });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.on('closed', () => {
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
+    ipcMain.removeAllListeners(RECORD_CHANNELS.event);
+    for (const view of panelViews.values()) view.webContents.close();
+    panelViews = new Map();
     websiteView = undefined;
     mainWindow = undefined;
   });
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  } else {
-    await mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+  const loadAppRenderer = async (contents: Electron.WebContents, route?: string): Promise<void> => {
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      await contents.loadURL(
+        route ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}#/${route}` : MAIN_WINDOW_VITE_DEV_SERVER_URL,
+      );
+      return;
+    }
+    const file = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+    await contents.loadFile(file, route ? { hash: `/${route}` } : {});
+  };
+
+  await loadAppRenderer(mainWindow.webContents);
+
+  // The panels load alongside everything else rather than ahead of it: they
+  // are off-window until the record screen asks for them, and a panel that
+  // arrives late announces itself and is sent the current state.
+  for (const [id, view] of panelViews) {
+    void loadAppRenderer(view.webContents, PANEL_ROUTES[id]).catch(() => undefined);
   }
   try {
     await websiteView.webContents.loadURL('http://127.0.0.1:4174');
@@ -480,6 +614,9 @@ const createWindow = async (): Promise<void> => {
 };
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && existsSync(APP_ICON_PATH)) {
+    app.dock?.setIcon(APP_ICON_PATH);
+  }
   const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
   await createWindow();

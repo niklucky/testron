@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+
+@import './design/tokens.css';
+@import './design/base.css';
+
+/* The frozen UI studies behind #/experiments and the recorder shell. Fully
+   scoped to their own class names — nothing in here reaches the design
+   system. Delete this import once those screens have been rebuilt. */
+@import './design/experiments/styles.css';
+
+/* --------------------------------------------------------------------------
+   Token → utility bridge.
+
+   `inline` matters: it makes Tailwind emit the *token reference* into every
+   utility (`.bg-surface { background: var(--ui-surface) }`) instead of a copy
+   of the value, so a theme swap on <html> repaints the whole app with no
+   rebuild and no duplicate dark: variants in the markup.
+   -------------------------------------------------------------------------- */
+@theme inline {
+  --color-plane: var(--ui-plane);
+  --color-surface: var(--ui-surface);
+  --color-raised: var(--ui-raised);
+  --color-line: var(--ui-line);
+  --color-line-soft: var(--ui-line-soft);
+
+  --color-ink: var(--ui-ink);
+  --color-ink-2: var(--ui-ink-2);
+  --color-ink-3: var(--ui-ink-3);
+
+  --color-accent: var(--ui-accent);
+  --color-accent-ink: var(--ui-accent-ink);
+  --color-accent-wash: var(--ui-accent-wash);
+
+  --color-good: var(--ui-good);
+  --color-warning: var(--ui-warning);
+  --color-warning-ink: var(--ui-warning-ink);
+  --color-serious: var(--ui-serious);
+  --color-critical: var(--ui-critical);
+  --color-neutral: var(--ui-neutral);
+
+  --color-good-wash: var(--ui-good-wash);
+  --color-warning-wash: var(--ui-warning-wash);
+  --color-critical-wash: var(--ui-critical-wash);
+
+  --color-chart-passed: var(--ui-chart-passed);
+  --color-chart-skipped: var(--ui-chart-skipped);
+  --color-chart-failed: var(--ui-chart-failed);
+
+  --color-glass: var(--ui-glass);
+  --color-glass-line: var(--ui-glass-line);
+
+  --color-shot-bg: var(--ui-shot-bg);
+  --color-shot-panel: var(--ui-shot-panel);
+  --color-shot-slot: var(--ui-shot-slot);
+  --color-shot-block: var(--ui-shot-block);
+  --color-shot-block-2: var(--ui-shot-block-2);
+  --color-shot-line: var(--ui-shot-line);
+  --color-shot-ink: var(--ui-shot-ink);
+  --color-shot-text: var(--ui-shot-text);
+  --color-shot-brand: var(--ui-shot-brand);
+  --color-shot-brand-ink: var(--ui-shot-brand-ink);
+
+  --font-sans: var(--ui-font-sans);
+  --font-mono: var(--ui-font-mono);
+}
+
+/* --------------------------------------------------------------------------
+   Type scale. A console is read at arm's length for hours: the body size is
+   13px and the steps are tight, so a row of metadata never shouts over the
+   thing it describes.
+   -------------------------------------------------------------------------- */
+@theme {
+  --text-2xs: 10px; /* uppercase micro-labels, legend keys */
+  --text-2xs--line-height: 14px;
+  --text-xs: 11px; /* timestamps, counts, kbd */
+  --text-xs--line-height: 16px;
+  --text-sm: 12px; /* secondary copy, table meta */
+  --text-sm--line-height: 17px;
+  --text-base: 13px; /* body — rows, labels, code */
+  --text-base--line-height: 19px;
+  --text-md: 14px; /* nav, panel titles, buttons */
+  --text-md--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 19px; /* detail-view heading */
+  --text-xl--line-height: 25px;
+  --text-2xl: 22px; /* page heading */
+  --text-2xl--line-height: 28px;
+  --text-3xl: 28px; /* stat numerals */
+  --text-3xl--line-height: 32px;
+}
