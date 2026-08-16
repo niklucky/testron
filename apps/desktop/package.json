@@ -1,0 +1,38 @@
+{
+  "name": "@testron/desktop",
+  "productName": "Testron",
+  "version": "0.0.1",
+  "description": "The Testron Electron desktop application",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/dev.mjs",
+    "start:app": "electron-forge start",
+    "build": "electron-forge package",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:electron": "playwright test -c playwright.electron.config.ts"
+  },
+  "dependencies": {
+    "@playwright/test": "1.62.1",
+    "@testron/domain": "0.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@electron-forge/plugin-vite": "7.11.2",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "electron": "43.4.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

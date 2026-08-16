@@ -28,7 +28,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/preload/recorder.ts'],
+    files: ['apps/desktop/src/preload/recorder.ts'],
     languageOptions: {
       globals: {
         window: 'readonly',

@@ -2,6 +2,12 @@
 
 Local-first Electron test recorder that persists structured tests and emits deterministic Playwright TypeScript.
 
+## Workspaces
+
+- `apps/desktop` — Electron application, renderer, local persistence, and replay.
+- `packages/domain` — platform-independent schemas and test behavior.
+- `packages/test-fixtures` — controlled websites used by recorder and replay tests.
+
 ## Run
 
 ```sh

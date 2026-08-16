@@ -4,6 +4,7 @@
     {
       "name": "renderer",
       "runtimeExecutable": "npx",
+      "cwd": "${workspaceFolder}/apps/desktop",
       "runtimeArgs": ["vite", "--config", "vite.renderer.config.mts", "--port", "5199"],
       "port": 5199
     }

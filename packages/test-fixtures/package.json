@@ -1,0 +1,14 @@
+{
+  "name": "@testron/test-fixtures",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/server.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:replay": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}
