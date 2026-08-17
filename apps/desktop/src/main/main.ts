@@ -5,7 +5,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, WebContentsView } from 'electron';
 import { z } from 'zod';
 
-import { recorderCandidateSchema } from '@testron/domain/recording/schema';
+import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
 import { stepSchema, stepsSchema } from '@testron/domain/steps/schema';
 import type { AppCommand, VerifyAssertion } from '../preload/api';
 import {
@@ -44,7 +44,7 @@ const idleRecordLayout = (): RecordLayout => ({
 });
 const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-shell-route'), route: z.enum(['dashboard', 'recorder']) }),
-  z.object({ type: z.literal('start-recording') }),
+  z.object({ type: z.literal('start-recording'), append: z.boolean().optional() }),
   z.object({ type: z.literal('stop-recording') }),
   z.object({ type: z.literal('pause-recording') }),
   z.object({ type: z.literal('resume-recording') }),
@@ -70,6 +70,10 @@ const appCommandSchema = z.discriminatedUnion('type', [
     alternativeIndex: z.number().int().nonnegative(),
   }),
   z.object({
+    type: z.literal('set-repick-step'),
+    index: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
     type: z.literal('set-capture-mode'),
     mode: z.enum(['record', 'verify']),
     assertion: z.enum([
@@ -82,6 +86,8 @@ const appCommandSchema = z.discriminatedUnion('type', [
       'disabled',
       'checked',
       'unchecked',
+      'countExactly',
+      'countAtLeast',
     ]),
   }),
   z.object({ type: z.literal('add-url-path-assertion'), expected: z.string().startsWith('/') }),
@@ -107,6 +113,27 @@ const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('select-project'), projectId: z.string().uuid() }),
   z.object({ type: z.literal('select-environment'), environmentId: z.string().uuid() }),
+  z.object({
+    type: z.literal('create-profile'),
+    environmentId: z.string().uuid(),
+    name: z.string().trim().min(1).max(100),
+    authenticationType: z.literal('credentials'),
+    variables: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1).max(100),
+          value: z.string().min(1).max(10_000),
+          sensitive: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .refine(
+        (variables) =>
+          new Set(variables.map((variable) => variable.name)).size === variables.length,
+      ),
+  }),
+  z.object({ type: z.literal('select-profile'), profileId: z.string().uuid() }),
   z.object({ type: z.literal('select-test'), testId: z.string().uuid() }),
   z.object({
     type: z.literal('rename-test'),
@@ -131,6 +158,26 @@ const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('clear-auth-state') }),
   z.object({ type: z.literal('set-record-layout'), layout: recordLayoutSchema }),
   z.object({ type: z.literal('publish-record-state'), state: recordPanelStateSchema }),
+]);
+
+const recorderControlSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('set-assertion'),
+    assertion: z.enum([
+      'visible',
+      'hidden',
+      'textContains',
+      'textEquals',
+      'value',
+      'enabled',
+      'disabled',
+      'checked',
+      'unchecked',
+      'countExactly',
+      'countAtLeast',
+    ]),
+  }),
+  z.object({ kind: z.literal('repick-target'), target: targetObservationSchema }),
 ]);
 
 let mainWindow: BrowserWindow | undefined;
@@ -209,10 +256,19 @@ const createWindow = async (): Promise<void> => {
     const plane = recordLayout.plane;
 
     if (plane) {
+      const stepsWidth = recordLayout.panels.steps.visible
+        ? Math.round((plane.width * recordLayout.panels.steps.width) / 100)
+        : 0;
+      const codeWidth = recordLayout.panels.code.visible
+        ? Math.round((plane.width * recordLayout.panels.code.width) / 100)
+        : 0;
       websiteView?.setBounds({
-        x: plane.x,
+        x: plane.x + stepsWidth,
         y: plane.y,
-        width: Math.min(plane.width, Math.max(0, width - plane.x)),
+        width: Math.min(
+          Math.max(0, plane.width - stepsWidth - codeWidth),
+          Math.max(0, width - plane.x - stepsWidth),
+        ),
         height: Math.min(plane.height, Math.max(0, height - plane.y)),
       });
     } else {
@@ -255,18 +311,41 @@ const createWindow = async (): Promise<void> => {
   let selectedEnvironmentId = environments.find(
     (environment) => environment.projectId === selectedProjectId,
   )?.id;
+  let selectedProfileId = store
+    .listProfiles()
+    .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
   let selectedTestId = tests.find((test) => test.projectId === selectedProjectId)?.id;
 
   const librarySnapshot = () => ({
     projects: store.listProjects(),
     environments: store.listEnvironments(),
+    profiles: store.listProfiles(),
+    profileVariables: store
+      .listProfileVariables()
+      .map(({ profileId, name, sensitive }) => ({ profileId, name, sensitive })),
     tests: store.listTests(),
     ...(selectedProjectId ? { selectedProjectId } : {}),
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
+    ...(selectedProfileId ? { selectedProfileId } : {}),
     ...(selectedTestId ? { selectedTestId } : {}),
   });
   const runner = new LocalReplayRunner();
   let replaySnapshot: ReplaySnapshot = { status: 'idle', steps: [] };
+  let verifyAssertion: VerifyAssertion = 'visible';
+  let repickIndex: number | undefined;
+  const replayHistory = new Map<string, ReplaySnapshot[]>();
+  const historyFor = (testId: string | undefined): ReplaySnapshot[] =>
+    testId ? (replayHistory.get(testId) ?? []) : [];
+  const rememberReplay = (testId: string, replay: ReplaySnapshot): void => {
+    if (!replay.startedAt) return;
+    const history = historyFor(testId);
+    const existing = history.findIndex((entry) => entry.startedAt === replay.startedAt);
+    const next =
+      existing >= 0
+        ? history.map((entry, index) => (index === existing ? replay : entry))
+        : [replay, ...history];
+    replayHistory.set(testId, next.slice(0, 50));
+  };
   const sendSnapshot = (snapshot: ReturnType<RecordingSession['snapshot']>): void => {
     const window = mainWindow;
     if (window && !window.isDestroyed())
@@ -274,13 +353,14 @@ const createWindow = async (): Promise<void> => {
         ...snapshot,
         library: librarySnapshot(),
         replay: replaySnapshot,
+        replayHistory: historyFor(selectedTestId),
+        verifyAssertion,
+        ...(repickIndex === undefined ? {} : { repickIndex }),
       });
   };
   const session = new RecordingSession(sendSnapshot, (steps) => {
     if (selectedTestId) store.replaceSteps(selectedTestId, steps);
   });
-  let verifyAssertion: VerifyAssertion = 'visible';
-
   const selectedContext = () => {
     const selectedTest = store.listTests().find((test) => test.id === selectedTestId);
     const environment = store
@@ -295,7 +375,13 @@ const createWindow = async (): Promise<void> => {
       websiteView.webContents.send(RECORDER_CONFIG_CHANNEL, {
         testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
         captureMode: session.snapshot().captureMode,
+        recording: session.snapshot().recording,
         assertion: verifyAssertion,
+        repicking: repickIndex !== undefined,
+        profileVariables: store
+          .listProfileVariables()
+          .filter((variable) => variable.profileId === selectedProfileId)
+          .map(({ name, value }) => ({ name, value })),
       });
     }
   };
@@ -322,7 +408,13 @@ const createWindow = async (): Promise<void> => {
     websiteView?.webContents.send(RECORDER_CONFIG_CHANNEL, {
       testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
       captureMode: session.snapshot().captureMode,
+      recording: session.snapshot().recording,
       assertion: verifyAssertion,
+      repicking: repickIndex !== undefined,
+      profileVariables: store
+        .listProfileVariables()
+        .filter((variable) => variable.profileId === selectedProfileId)
+        .map(({ name, value }) => ({ name, value })),
     });
   });
   websiteView.webContents.on(
@@ -342,6 +434,25 @@ const createWindow = async (): Promise<void> => {
       event.senderFrame !== websiteView.webContents.mainFrame
     )
       return;
+    const control = recorderControlSchema.safeParse(payload);
+    if (control.success) {
+      if (control.data.kind === 'set-assertion') {
+        verifyAssertion = control.data.assertion;
+        applyContext();
+      } else if (repickIndex !== undefined) {
+        const index = repickIndex;
+        repickIndex = undefined;
+        session.repickTarget(index, {
+          primary: control.data.target.locators[0]!,
+          alternatives: control.data.target.locators.slice(1),
+          ...(control.data.target.warnings?.length
+            ? { warnings: control.data.target.warnings }
+            : {}),
+        });
+        applyContext();
+      }
+      return;
+    }
     const candidate = recorderCandidateSchema.safeParse(payload);
     if (candidate.success) session.accept(candidate.data);
   });
@@ -358,14 +469,16 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'start-recording':
         replaySnapshot = { status: 'idle', steps: [] };
-        session.start();
+        session.start(command.append);
         applyContext();
         break;
       case 'stop-recording':
         session.stop();
+        applyContext();
         break;
       case 'pause-recording':
         session.pause();
+        applyContext();
         break;
       case 'resume-recording':
         session.resume();
@@ -379,6 +492,7 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'finish-recording':
         session.finish();
+        applyContext();
         break;
       case 'delete-step':
         session.deleteStep(command.index);
@@ -397,6 +511,13 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'use-alternative-locator':
         session.useAlternativeLocator(command.index, command.alternativeIndex);
+        break;
+      case 'set-repick-step':
+        repickIndex =
+          command.index !== undefined && 'target' in (session.snapshot().steps[command.index] ?? {})
+            ? command.index
+            : undefined;
+        applyContext();
         break;
       case 'set-capture-mode':
         verifyAssertion = command.assertion;
@@ -432,6 +553,7 @@ const createWindow = async (): Promise<void> => {
         const project = store.createProject(command.name);
         selectedProjectId = project.id;
         selectedEnvironmentId = undefined;
+        selectedProfileId = undefined;
         selectedTestId = undefined;
         session.load('recorded test', []);
         break;
@@ -446,6 +568,14 @@ const createWindow = async (): Promise<void> => {
         );
         selectedProjectId = command.projectId;
         selectedEnvironmentId = environment.id;
+        selectedProfileId = undefined;
+        applyContext();
+        break;
+      }
+      case 'create-profile': {
+        const profile = store.createProfile(command.environmentId, command.name, command.variables);
+        selectedEnvironmentId = command.environmentId;
+        selectedProfileId = profile.id;
         applyContext();
         break;
       }
@@ -463,8 +593,11 @@ const createWindow = async (): Promise<void> => {
         selectedEnvironmentId = store
           .listEnvironments()
           .find((environment) => environment.projectId === command.projectId)?.id;
+        selectedProfileId = store
+          .listProfiles()
+          .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
         selectedTestId = store.listTests().find((test) => test.projectId === command.projectId)?.id;
-        replaySnapshot = { status: 'idle', steps: [] };
+        replaySnapshot = historyFor(selectedTestId)[0] ?? { status: 'idle', steps: [] };
         if (selectedTestId) {
           const { selectedTest } = selectedContext();
           if (selectedTest) session.load(selectedTest.title, store.loadSteps(selectedTest.id));
@@ -472,6 +605,13 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'select-environment':
         selectedEnvironmentId = command.environmentId;
+        selectedProfileId = store
+          .listProfiles()
+          .find((profile) => profile.environmentId === command.environmentId)?.id;
+        applyContext();
+        break;
+      case 'select-profile':
+        selectedProfileId = command.profileId;
         applyContext();
         break;
       case 'select-test': {
@@ -480,7 +620,10 @@ const createWindow = async (): Promise<void> => {
         selectedTestId = test.id;
         selectedProjectId = test.projectId;
         selectedEnvironmentId = test.environmentId;
-        replaySnapshot = { status: 'idle', steps: [] };
+        selectedProfileId = store
+          .listProfiles()
+          .find((profile) => profile.environmentId === test.environmentId)?.id;
+        replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
         session.load(test.title, store.loadSteps(test.id));
         break;
       }
@@ -498,6 +641,7 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'save-recording': {
         session.finish();
+        applyContext();
         let project = store.listProjects().find((one) => one.id === selectedProjectId);
         if (!project) {
           project = store.createProject('My project');
@@ -570,29 +714,41 @@ const createWindow = async (): Promise<void> => {
           new Date().toISOString().replaceAll(':', '-'),
         );
         const steps = store.loadSteps(selectedTest.id);
+        const runTestId = selectedTest.id;
+        const profileVariables = Object.fromEntries(
+          store
+            .listProfileVariables()
+            .filter((variable) => variable.profileId === selectedProfileId)
+            .map((variable) => [variable.name, variable.value]),
+        );
         void runner
           .run({
             steps,
-            environmentVariables: command.environmentVariables,
+            environmentVariables: { ...profileVariables, ...command.environmentVariables },
             timeoutMs: command.timeoutMs,
             artifactsDirectory,
             ...(command.reuseAuthState && existsSync(authStatePath) ? { authStatePath } : {}),
             ...(command.reuseAuthState ? { saveAuthStatePath: authStatePath } : {}),
             onProgress: (progress) => {
               replaySnapshot = progress;
+              rememberReplay(runTestId, progress);
               sendSnapshot(session.snapshot());
             },
           })
           .then((result) => {
             replaySnapshot = result;
+            rememberReplay(runTestId, result);
             sendSnapshot(session.snapshot());
           })
           .catch((error: unknown) => {
             replaySnapshot = {
               status: 'failed',
               steps: replaySnapshot.steps,
+              startedAt: replaySnapshot.startedAt,
+              durationMs: replaySnapshot.durationMs,
               error: error instanceof Error ? error.message : String(error),
             } as ReplaySnapshot;
+            rememberReplay(runTestId, replaySnapshot);
             sendSnapshot(session.snapshot());
           });
         break;

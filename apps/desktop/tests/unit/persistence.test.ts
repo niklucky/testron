@@ -64,6 +64,30 @@ describe('TestronRepository', () => {
     repository.close();
   });
 
+  it('stores credential profiles and their named variables per environment', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-profiles-'));
+    temporaryDirectories.push(directory);
+    const repository = new TestronRepository(path.join(directory, 'testron.sqlite'));
+    const project = repository.createProject('Analytics');
+    const environment = repository.createEnvironment(
+      project.id,
+      'Development',
+      'https://dev.example.test/',
+      'data-testid',
+    );
+    const profile = repository.createProfile(environment.id, 'Administrator', [
+      { name: 'username', value: 'Administrator', sensitive: false },
+      { name: 'password', value: 'not-a-real-password', sensitive: true },
+    ]);
+
+    expect(repository.listProfiles()).toEqual([profile]);
+    expect(repository.listProfileVariables()).toEqual([
+      { profileId: profile.id, name: 'password', value: 'not-a-real-password', sensitive: true },
+      { profileId: profile.id, name: 'username', value: 'Administrator', sensitive: false },
+    ]);
+    repository.close();
+  });
+
   it('redacts a secret value before writing the step payload', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'testron-secrets-'));
     temporaryDirectories.push(directory);
@@ -96,6 +120,41 @@ describe('TestronRepository', () => {
     const row = database.prepare('SELECT payload FROM test_steps').get();
     expect(String(row?.payload)).not.toContain('must-never-be-written');
     expect(String(row?.payload)).toContain('TESTRON_PASSWORD');
+    database.close();
+  });
+
+  it('redacts a resolved profile value before writing the step payload', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-profile-step-'));
+    temporaryDirectories.push(directory);
+    const databasePath = path.join(directory, 'testron.sqlite');
+    const repository = new TestronRepository(databasePath);
+    const project = repository.createProject('Profiles');
+    const environment = repository.createEnvironment(
+      project.id,
+      'Development',
+      'https://dev.example.test/',
+      'data-testid',
+    );
+    const test = repository.createTest(project.id, environment.id, 'sign in');
+    repository.replaceSteps(test.id, [
+      {
+        version: 1,
+        kind: 'fill',
+        target: {
+          primary: { strategy: 'name', value: 'username' },
+          alternatives: [],
+        },
+        value: 'must-never-be-written',
+        variable: { name: 'username' },
+        metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+      },
+    ]);
+    repository.close();
+
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    const row = database.prepare('SELECT payload FROM test_steps').get();
+    expect(String(row?.payload)).not.toContain('must-never-be-written');
+    expect(String(row?.payload)).toContain('username');
     database.close();
   });
 });

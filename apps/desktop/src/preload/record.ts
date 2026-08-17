@@ -78,6 +78,8 @@ export const recordedStepSchema = z.object({
       'disabled',
       'checked',
       'unchecked',
+      'countExactly',
+      'countAtLeast',
     ])
     .optional(),
   warning: z.string().optional(),
@@ -93,6 +95,7 @@ export const recordPanelStateSchema = z.object({
   file: z.string(),
   selectedId: z.string().optional(),
   expandedId: z.string().optional(),
+  repickingId: z.string().optional(),
   steps: z.array(recordedStepSchema).max(2_000),
   lines: z.array(z.object({ text: z.string(), stepId: z.string().optional() })).max(10_000),
   layout: recordLayoutSchema,
@@ -105,6 +108,14 @@ export const recordPanelEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select'), id: z.string().min(1) }),
   z.object({ type: z.literal('expand'), id: z.string().min(1) }),
   z.object({ type: z.literal('use-alternative'), id: z.string().min(1), locator: z.string() }),
+  z.object({
+    type: z.literal('edit-locator'),
+    id: z.string().min(1),
+    locator: z.string().trim().min(1).max(2_000),
+  }),
+  z.object({ type: z.literal('repick'), id: z.string().min(1) }),
+  z.object({ type: z.literal('cancel-repick') }),
+  z.object({ type: z.literal('convert-to-assertion'), id: z.string().min(1) }),
   z.object({ type: z.literal('delete'), id: z.string().min(1) }),
   z.object({ type: z.literal('close'), panel: panelIdSchema }),
   z.object({

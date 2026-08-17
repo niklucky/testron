@@ -14,8 +14,10 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   stepWarnings: [],
   canUndo: false,
   canRedo: false,
-  library: { projects: [], environments: [], tests: [] },
+  library: { projects: [], environments: [], profiles: [], profileVariables: [], tests: [] },
   replay: { status: 'idle', steps: [] },
+  replayHistory: [],
+  verifyAssertion: 'visible',
 };
 
 const assertionOptions: { value: VerifyAssertion; label: string }[] = [
@@ -28,6 +30,8 @@ const assertionOptions: { value: VerifyAssertion; label: string }[] = [
   { value: 'disabled', label: 'Disabled' },
   { value: 'checked', label: 'Checked' },
   { value: 'unchecked', label: 'Unchecked' },
+  { value: 'countExactly', label: 'Count exactly' },
+  { value: 'countAtLeast', label: 'Count at least' },
 ];
 
 const StepEditor = ({
@@ -75,6 +79,11 @@ const StepEditor = ({
       case 'assertElement':
         if (draft.assertion.type === 'text' || draft.assertion.type === 'value')
           setDraft({ ...draft, assertion: { ...draft.assertion, expected: value } });
+        else if (draft.assertion.type === 'count')
+          setDraft({
+            ...draft,
+            assertion: { ...draft.assertion, expected: Math.max(0, Number.parseInt(value) || 0) },
+          });
         break;
     }
   };
@@ -93,7 +102,9 @@ const StepEditor = ({
       case 'assertElement':
         return draft.assertion.type === 'text' || draft.assertion.type === 'value'
           ? draft.assertion.expected
-          : undefined;
+          : draft.assertion.type === 'count'
+            ? String(draft.assertion.expected)
+            : undefined;
       default:
         return undefined;
     }
@@ -115,7 +126,11 @@ const StepEditor = ({
                   ? `text${draft.assertion.match === 'contains' ? 'Contains' : 'Equals'}`
                   : draft.assertion.type === 'value'
                     ? 'value'
-                    : draft.assertion.type
+                    : draft.assertion.type === 'count'
+                      ? draft.assertion.operator === 'equals'
+                        ? 'countExactly'
+                        : 'countAtLeast'
+                      : draft.assertion.type
               }
               onChange={(event) => {
                 const value = event.target.value as VerifyAssertion;
@@ -126,15 +141,24 @@ const StepEditor = ({
                       ? { type: 'text' as const, match: 'equals' as const, expected: '' }
                       : value === 'value'
                         ? { type: 'value' as const, expected: '' }
-                        : {
-                            type: value as
-                              | 'visible'
-                              | 'hidden'
-                              | 'enabled'
-                              | 'disabled'
-                              | 'checked'
-                              | 'unchecked',
-                          };
+                        : value === 'countExactly' || value === 'countAtLeast'
+                          ? {
+                              type: 'count' as const,
+                              operator:
+                                value === 'countExactly'
+                                  ? ('equals' as const)
+                                  : ('atLeast' as const),
+                              expected: 0,
+                            }
+                          : {
+                              type: value as
+                                | 'visible'
+                                | 'hidden'
+                                | 'enabled'
+                                | 'disabled'
+                                | 'checked'
+                                | 'unchecked',
+                            };
                 setDraft({ ...draft, assertion: next });
               }}
             >

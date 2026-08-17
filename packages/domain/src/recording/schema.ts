@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { locatorSchema } from '../locators/schema';
 
-const targetObservationSchema = z.object({
+export const targetObservationSchema = z.object({
   locators: z.array(locatorSchema).min(1),
   fingerprint: z.string().min(1),
   sensitive: z.boolean().default(false),
@@ -10,6 +10,7 @@ const targetObservationSchema = z.object({
     .string()
     .regex(/^[A-Z][A-Z0-9_]*$/)
     .optional(),
+  variableName: z.string().trim().min(1).max(100).optional(),
   warnings: z.array(z.string().min(1)).optional(),
 });
 
@@ -34,9 +35,12 @@ export const recorderCandidateSchema = z.discriminatedUnion('kind', [
       'disabled',
       'checked',
       'unchecked',
+      'countExactly',
+      'countAtLeast',
     ]),
     observedText: z.string(),
     observedValue: z.string(),
+    observedCount: z.number().int().nonnegative().optional(),
     url: z.url(),
   }),
   z.object({

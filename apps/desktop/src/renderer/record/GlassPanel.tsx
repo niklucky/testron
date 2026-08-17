@@ -8,18 +8,10 @@ export const MAX_WIDTH = 46;
 export type ResizePhase = 'start' | 'move' | 'end';
 
 /**
- * A panel that floats over the recorded page rather than beside it: the site
- * keeps the full window, and the tester keeps their notes on top of it.
- *
- * It is the one place in the app allowed to be translucent; everywhere else, a
- * panel is a panel (see design/components/Panel.tsx).
- *
- * The frame is host-agnostic on purpose. In the browser it is an overlay in
- * the same document as the page mock; in the packaged app it fills a
- * transparent WebContentsView stacked above the website view. `width` is
- * always a percentage of whatever box it sits in, and the resize edge always
- * reports a percentage of the *window*, which is the one number both hosts
- * understand.
+ * An opaque panel docked beside the recorded page. The site is resized into
+ * the remaining centre space, so forms and text are never hidden underneath.
+ * The frame is host-agnostic: inline in the browser study and a dedicated
+ * WebContentsView in Electron.
  */
 export const GlassPanel = ({
   side,
@@ -51,16 +43,13 @@ export const GlassPanel = ({
 
   return (
     <aside
-      // The blur only does anything in the browser host, where the page is in the
-      // same document. Over a WebContentsView there is nothing for it to sample,
-      // and --ui-glass carries the whole effect on its own.
-      className={`absolute inset-y-0 z-20 flex flex-col border-glass-line bg-glass backdrop-blur-xl ${
+      className={`absolute inset-y-0 z-20 flex flex-col border-line bg-surface shadow-xl ${
         side === 'left' ? 'left-0 border-r' : 'right-0 border-l'
       }`}
       style={{ width: `${width}%` }}
       aria-label={title}
     >
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-glass-line px-3">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
         <h2 className="text-md font-semibold">{title}</h2>
         {subtitle && <span className="ui-mono truncate text-xs text-ink-3">{subtitle}</span>}
         <div className="ml-auto flex shrink-0 items-center gap-1">

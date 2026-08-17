@@ -6,6 +6,8 @@ export const locatorSchema = z.discriminatedUnion('strategy', [
     attribute: z.string().min(1),
     value: z.string().min(1),
   }),
+  z.object({ strategy: z.literal('id'), value: z.string().min(1) }),
+  z.object({ strategy: z.literal('name'), value: z.string().min(1) }),
   z.object({ strategy: z.literal('role'), role: z.string().min(1), name: z.string().min(1) }),
   z.object({ strategy: z.literal('label'), text: z.string().min(1) }),
   z.object({ strategy: z.literal('placeholder'), text: z.string().min(1) }),
@@ -25,11 +27,13 @@ export type Target = z.infer<typeof targetSchema>;
 
 const strategyRank: Record<Locator['strategy'], number> = {
   testId: 0,
-  role: 1,
-  label: 2,
-  placeholder: 3,
-  text: 4,
-  css: 5,
+  id: 1,
+  name: 2,
+  role: 3,
+  label: 4,
+  placeholder: 5,
+  text: 6,
+  css: 7,
 };
 
 /** Stable, shared ordering used by the recorder and step editor. */

@@ -24,17 +24,17 @@ const displayDate = (value: string | undefined): string => {
   );
 };
 
-const replayRun = (snapshot: AppSnapshot, fullSteps: readonly RecordedStep[]): Run[] => {
-  const replay = snapshot.replay;
-  if (replay.status === 'idle') return [];
+const replayRun = (
+  snapshot: AppSnapshot,
+  fullSteps: readonly RecordedStep[],
+  replay: AppSnapshot['replay'],
+): Run | undefined => {
+  if (replay.status === 'idle') return undefined;
   const environment = snapshot.library.environments.find(
     (one) => one.id === snapshot.library.selectedEnvironmentId,
   );
   const failed = replay.steps.find((step) => step.status === 'failed');
-  const completed = replay.steps.filter((step) => {
-    const displayed = fullSteps[step.index];
-    return step.status === 'passed' && displayed && !displayed.kind.startsWith('assert');
-  }).length;
+  const completed = replay.steps.filter((step) => step.status === 'passed').length;
   const verdict: Run['verdict'] =
     replay.status === 'running'
       ? 'running'
@@ -44,21 +44,23 @@ const replayRun = (snapshot: AppSnapshot, fullSteps: readonly RecordedStep[]): R
           ? 'cancelled'
           : 'failed';
 
-  return [
-    {
-      id: replay.startedAt ? `run-${replay.startedAt}` : 'current-run',
-      verdict,
-      environment: environment?.name ?? 'Local',
-      seconds: (replay.durationMs ?? 0) / 1_000,
-      minutesAgo: replay.startedAt
-        ? Math.max(0, (Date.now() - Date.parse(replay.startedAt)) / 60_000)
-        : 0,
-      by: 'Local runner',
-      trigger: 'manual',
-      failedStepId: failed ? fullSteps[failed.index]?.id : undefined,
-      completed,
-    },
-  ];
+  return {
+    id: replay.startedAt ? `run-${replay.startedAt}` : 'current-run',
+    verdict,
+    environment: environment?.name ?? 'Local',
+    seconds: (replay.durationMs ?? 0) / 1_000,
+    minutesAgo: replay.startedAt
+      ? Math.max(0, (Date.now() - Date.parse(replay.startedAt)) / 60_000)
+      : 0,
+    by: 'Local runner',
+    trigger: 'manual',
+    failedStepId: failed ? fullSteps[failed.index]?.id : undefined,
+    error:
+      failed?.error ??
+      replay.error ??
+      (replay.status === 'timedOut' ? 'The run exceeded its timeout.' : undefined),
+    completed,
+  };
 };
 
 export const liveTestBoard = (
@@ -95,7 +97,15 @@ export const liveTestBoard = (
     prerequisites: [],
     steps,
     assertions,
-    runs: replayRun(snapshot, fullSteps),
+    runs: (snapshot.replayHistory.length > 0
+      ? snapshot.replayHistory
+      : snapshot.replay.status === 'idle'
+        ? []
+        : [snapshot.replay]
+    ).flatMap((replay) => {
+      const run = replayRun(snapshot, fullSteps, replay);
+      return run ? [run] : [];
+    }),
     fullSteps,
   };
 };

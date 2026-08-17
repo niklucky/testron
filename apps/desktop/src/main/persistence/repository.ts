@@ -19,6 +19,20 @@ export interface EnvironmentRecord {
   authRevision: number;
 }
 
+export interface ProfileRecord {
+  id: string;
+  environmentId: string;
+  name: string;
+  authenticationType: 'credentials';
+}
+
+export interface ProfileVariableRecord {
+  profileId: string;
+  name: string;
+  value: string;
+  sensitive: boolean;
+}
+
 export interface TestRecord {
   id: string;
   projectId: string;
@@ -31,9 +45,12 @@ export interface TestRecord {
 export interface LibrarySnapshot {
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
+  profiles: ProfileRecord[];
+  profileVariables: Array<Omit<ProfileVariableRecord, 'value'>>;
   tests: TestRecord[];
   selectedProjectId?: string;
   selectedEnvironmentId?: string;
+  selectedProfileId?: string;
   selectedTestId?: string;
 }
 
@@ -68,6 +85,22 @@ const migrations = [
     );
   `,
   `ALTER TABLE environments ADD COLUMN auth_revision INTEGER NOT NULL DEFAULT 1;`,
+  `
+    CREATE TABLE profiles (
+      id TEXT PRIMARY KEY,
+      environment_id TEXT NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      authentication_type TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE profile_variables (
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      value TEXT NOT NULL,
+      sensitive INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (profile_id, name)
+    );
+  `,
 ];
 
 interface Row {
@@ -108,6 +141,32 @@ export class TestronRepository {
         baseUrl: String(row.base_url),
         testIdAttribute: String(row.test_id_attribute),
         authRevision: Number(row.auth_revision),
+      }));
+  }
+
+  listProfiles(): ProfileRecord[] {
+    return this.database
+      .prepare(
+        'SELECT id, environment_id, name, authentication_type FROM profiles ORDER BY created_at, name',
+      )
+      .all()
+      .map((row) => ({
+        id: String(row.id),
+        environmentId: String(row.environment_id),
+        name: String(row.name),
+        authenticationType: 'credentials' as const,
+      }));
+  }
+
+  listProfileVariables(): ProfileVariableRecord[] {
+    return this.database
+      .prepare('SELECT profile_id, name, value, sensitive FROM profile_variables ORDER BY name')
+      .all()
+      .map((row) => ({
+        profileId: String(row.profile_id),
+        name: String(row.name),
+        value: String(row.value),
+        sensitive: Boolean(row.sensitive),
       }));
   }
 
@@ -164,6 +223,49 @@ export class TestronRepository {
         new Date().toISOString(),
       );
     return environment;
+  }
+
+  createProfile(
+    environmentId: string,
+    name: string,
+    variables: ReadonlyArray<{ name: string; value: string; sensitive: boolean }>,
+  ): ProfileRecord {
+    const profile: ProfileRecord = {
+      id: randomUUID(),
+      environmentId,
+      name: name.trim(),
+      authenticationType: 'credentials',
+    };
+    const insertVariable = this.database.prepare(
+      'INSERT INTO profile_variables (profile_id, name, value, sensitive) VALUES (?, ?, ?, ?)',
+    );
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database
+        .prepare(
+          `INSERT INTO profiles (id, environment_id, name, authentication_type, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          profile.id,
+          profile.environmentId,
+          profile.name,
+          profile.authenticationType,
+          new Date().toISOString(),
+        );
+      for (const variable of variables)
+        insertVariable.run(
+          profile.id,
+          variable.name.trim(),
+          variable.value,
+          variable.sensitive ? 1 : 0,
+        );
+      this.database.exec('COMMIT');
+      return profile;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   rotateAuthenticationRevision(environmentId: string): number {

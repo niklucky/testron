@@ -4,6 +4,7 @@ import type { AppSnapshot } from '../../src/preload/api';
 import { liveTestBoard } from '../../src/renderer/test-view/live';
 
 const snapshot: AppSnapshot = {
+  verifyAssertion: 'visible',
   recording: false,
   status: 'finished',
   currentUrl: 'http://127.0.0.1:4174/welcome',
@@ -45,6 +46,8 @@ const snapshot: AppSnapshot = {
     },
   ],
   library: {
+    profiles: [],
+    profileVariables: [],
     projects: [{ id: 'project', name: 'Accounts' }],
     environments: [
       {
@@ -80,6 +83,7 @@ const snapshot: AppSnapshot = {
       { index: 2, action: 'Click Continue', status: 'pending' },
     ],
   },
+  replayHistory: [],
 };
 
 describe('live test board', () => {
@@ -101,7 +105,29 @@ describe('live test board', () => {
         seconds: 1.2,
         completed: 1,
         failedStepId: board.fullSteps[1].id,
+        error: 'not visible',
       },
     ]);
+  });
+
+  it('keeps a separate card for every replay in the current session', () => {
+    const previous = {
+      status: 'passed' as const,
+      startedAt: '2026-08-16T10:05:00.000Z',
+      durationMs: 800,
+      steps: snapshot.steps.map((_, index) => ({
+        index,
+        action: `Step ${index + 1}`,
+        status: 'passed' as const,
+      })),
+    };
+    const board = liveTestBoard({
+      ...snapshot,
+      replayHistory: [snapshot.replay, previous],
+    });
+
+    expect(board.runs).toHaveLength(2);
+    expect(board.runs.map((run) => run.verdict)).toEqual(['failed', 'passed']);
+    expect(board.runs[0].id).not.toBe(board.runs[1].id);
   });
 });

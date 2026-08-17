@@ -54,6 +54,46 @@ describe('live record presentation', () => {
     ]);
   });
 
+  it('presents id and name locators emitted when Tab commits a real login field', () => {
+    const displayed = presentRecordedSteps([
+      {
+        version: 1,
+        kind: 'fill',
+        target: {
+          primary: { strategy: 'id', value: 'username' },
+          alternatives: [{ strategy: 'name', value: 'username' }],
+        },
+        value: 'Administrator',
+        metadata: { recordedAt: at },
+      },
+      {
+        version: 1,
+        kind: 'press',
+        target: {
+          primary: { strategy: 'id', value: 'username' },
+          alternatives: [{ strategy: 'name', value: 'username' }],
+        },
+        key: 'Tab',
+        metadata: { recordedAt: '2026-08-16T10:00:01.000Z' },
+      },
+    ]);
+
+    expect(displayed).toMatchObject([
+      {
+        kind: 'fill',
+        locator: "locator('[id=\\'username\\']')",
+        alternatives: ["locator('[name=\\'username\\']')"],
+        value: 'Administrator',
+      },
+      {
+        kind: 'press',
+        locator: "locator('[id=\\'username\\']')",
+        alternatives: ["locator('[name=\\'username\\']')"],
+        value: 'Tab',
+      },
+    ]);
+  });
+
   it('tags canonical generated action lines without replacing backend source', () => {
     const displayed = presentRecordedSteps([
       {
@@ -75,5 +115,22 @@ describe('live record presentation', () => {
     const lines = presentSource(source, displayed);
     expect(lines.map((line) => line.text).join('\n')).toBe(source.trimEnd());
     expect(lines[3].stepId).toBe(displayed[0].id);
+  });
+
+  it('presents collection count assertions with editable numeric values', () => {
+    const displayed = presentRecordedSteps([
+      {
+        version: 1,
+        kind: 'assertElement',
+        target: {
+          primary: { strategy: 'css', selector: 'table > tbody > tr', fragile: true },
+          alternatives: [],
+        },
+        assertion: { type: 'count', operator: 'atLeast', expected: 20 },
+        metadata: { recordedAt: at },
+      },
+    ]);
+
+    expect(displayed).toMatchObject([{ kind: 'assert', assertion: 'countAtLeast', value: '20' }]);
   });
 });

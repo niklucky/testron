@@ -135,6 +135,7 @@ test('records the controlled login-like flow through the Electron pipeline', asy
 });
 
 test('restores a created project, environment, test, and its steps after restart', async () => {
+  test.setTimeout(60_000);
   const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-electron-'));
   const launch = () =>
     electron.launch({

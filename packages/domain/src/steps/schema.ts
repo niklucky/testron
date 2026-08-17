@@ -7,6 +7,11 @@ const metadataSchema = z.object({ recordedAt: z.iso.datetime() });
 export const elementAssertionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.enum(['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked']) }),
   z.object({
+    type: z.literal('count'),
+    operator: z.enum(['equals', 'atLeast']),
+    expected: z.number().int().nonnegative(),
+  }),
+  z.object({
     type: z.literal('text'),
     match: z.enum(['contains', 'equals']),
     expected: z.string(),
@@ -34,6 +39,7 @@ export const stepSchema = z.discriminatedUnion('kind', [
     kind: z.literal('fill'),
     target: targetSchema,
     value: z.string(),
+    variable: z.object({ name: z.string().trim().min(1).max(100) }).optional(),
     secret: z.object({ environmentVariable: z.string().regex(/^[A-Z][A-Z0-9_]*$/) }).optional(),
     metadata: metadataSchema,
   }),
@@ -76,4 +82,6 @@ export const stepsSchema = z.array(stepSchema);
 export type Step = z.infer<typeof stepSchema>;
 
 export const redactStepSecrets = (step: Step): Step =>
-  step.kind === 'fill' && step.secret && step.value !== '' ? { ...step, value: '' } : step;
+  step.kind === 'fill' && (step.secret || step.variable) && step.value !== ''
+    ? { ...step, value: '' }
+    : step;

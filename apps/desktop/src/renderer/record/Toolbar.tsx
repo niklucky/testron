@@ -1,6 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react';
 
 import { Badge, Button, Icon, IconButton, Kbd, PulseDot, type Theme } from '../design';
+import type { VerifyAssertion } from '../../preload/api';
 import { clock } from './codegen';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
@@ -19,6 +20,14 @@ export const SessionBar = ({
   project,
   suite,
   environment,
+  environments,
+  environmentId,
+  onEnvironment,
+  profile,
+  profiles,
+  profileId,
+  onProfile,
+  onConfigureProfile,
   test,
 }: {
   status: RecordStatus;
@@ -31,6 +40,14 @@ export const SessionBar = ({
   project: string;
   suite: string;
   environment: string;
+  environments: Array<{ id: string; name: string }>;
+  environmentId?: string;
+  onEnvironment: (id: string) => void;
+  profile?: string;
+  profiles: Array<{ id: string; name: string }>;
+  profileId?: string;
+  onProfile: (id: string) => void;
+  onConfigureProfile: () => void;
   test: string;
 }) => {
   return (
@@ -47,9 +64,45 @@ export const SessionBar = ({
           {suite}
         </Button>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <Button variant="ghost" size="sm" iconEnd="caret" icon="grid">
-          {environment}
-        </Button>
+        <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+          <Icon name="grid" size={13} />
+          <select
+            aria-label="Recording environment"
+            value={environmentId ?? ''}
+            onChange={(event) => onEnvironment(event.target.value)}
+            className="max-w-36 bg-transparent py-1 outline-none"
+          >
+            {environments.length === 0 && <option value="">{environment}</option>}
+            {environments.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
+        <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+          <span className="text-ink-3">Profile</span>
+          <select
+            aria-label="Recording profile"
+            value={profileId ?? ''}
+            onChange={(event) => onProfile(event.target.value)}
+            className="max-w-36 bg-transparent py-1 outline-none"
+          >
+            <option value="">{profiles.length ? 'Choose profile' : 'No profile'}</option>
+            {profiles.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <IconButton
+          icon="pencil"
+          size="sm"
+          label={profile ? `Configure ${profile}` : 'Create authentication profile'}
+          onClick={onConfigureProfile}
+        />
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <Button variant="ghost" size="sm" icon="pencil" className="min-w-0">
           <span className="truncate">{test}</span>
@@ -95,6 +148,8 @@ export const BrowserBar = ({
   status,
   mode,
   onMode,
+  assertion,
+  onAssertion,
   canUndo,
   canRedo,
   onUndo,
@@ -103,6 +158,7 @@ export const BrowserBar = ({
   onPause,
   onFinish,
   steps,
+  editingExisting = false,
   panels,
   onPanel,
 }: {
@@ -114,6 +170,8 @@ export const BrowserBar = ({
   status: RecordStatus;
   mode: CaptureMode;
   onMode: (mode: CaptureMode) => void;
+  assertion: VerifyAssertion;
+  onAssertion: (assertion: VerifyAssertion) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -122,6 +180,7 @@ export const BrowserBar = ({
   onPause: () => void;
   onFinish: () => void;
   steps: number;
+  editingExisting?: boolean;
   panels: Record<PanelId, boolean>;
   onPanel: (panel: PanelId) => void;
 }) => {
@@ -168,7 +227,7 @@ export const BrowserBar = ({
 
       {status === 'idle' || status === 'paused' ? (
         <Button variant="primary" icon="record" onClick={onRecord} kbd="R">
-          {status === 'paused' ? 'Resume' : 'Record'}
+          {status === 'paused' ? 'Resume' : editingExisting ? 'Continue recording' : 'Record'}
         </Button>
       ) : (
         <Button icon="pause" onClick={onPause} kbd="R">
@@ -188,6 +247,26 @@ export const BrowserBar = ({
       >
         Assert
       </Button>
+      {mode === 'assert' && (
+        <select
+          aria-label="Assertion type"
+          value={assertion}
+          onChange={(event) => onAssertion(event.target.value as VerifyAssertion)}
+          className="h-8 max-w-40 rounded-md border border-line bg-plane px-2 text-sm text-ink outline-none focus:border-accent"
+        >
+          <option value="visible">Visible</option>
+          <option value="hidden">Hidden</option>
+          <option value="textContains">Text contains</option>
+          <option value="textEquals">Text equals</option>
+          <option value="value">Input value</option>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+          <option value="checked">Checked</option>
+          <option value="unchecked">Unchecked</option>
+          <option value="countExactly">Count exactly</option>
+          <option value="countAtLeast">Count at least</option>
+        </select>
+      )}
 
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 

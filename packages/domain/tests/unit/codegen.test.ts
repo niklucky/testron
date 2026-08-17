@@ -37,6 +37,27 @@ describe('Playwright generation', () => {
     expect(source).toContain("page.locator('[data-qa=\\'control\\']').press('Enter')");
   });
 
+  it('generates explicit id and name locators', () => {
+    const metadata = { recordedAt: '2026-01-01T00:00:00.000Z' };
+    const source = generatePlaywright('picked attributes', [
+      {
+        version: 1,
+        kind: 'click',
+        target: { primary: { strategy: 'id', value: 'sign-in' }, alternatives: [] },
+        metadata,
+      },
+      {
+        version: 1,
+        kind: 'fill',
+        target: { primary: { strategy: 'name', value: 'username' }, alternatives: [] },
+        value: 'qa',
+        metadata,
+      },
+    ]);
+    expect(source).toContain("page.locator('[id=\\'sign-in\\']').click()");
+    expect(source).toContain("page.locator('[name=\\'username\\']').fill('qa')");
+  });
+
   it('generates all Phase 2 assertions and keeps secrets out of source', () => {
     const metadata = { recordedAt: '2026-01-01T00:00:00.000Z' };
     const target = {
@@ -94,5 +115,53 @@ describe('Playwright generation', () => {
     expect(source).toContain('.toBeChecked()');
     expect(source).toContain('.not.toBeChecked()');
     expect(source).toContain("url.pathname === '/welcome'");
+  });
+
+  it('generates profile-backed fills as runtime variable references', () => {
+    const source = generatePlaywright('profile sign in', [
+      {
+        version: 1,
+        kind: 'fill',
+        target: {
+          primary: { strategy: 'name', value: 'username' },
+          alternatives: [],
+        },
+        value: '',
+        variable: { name: 'username' },
+        metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+      },
+    ]);
+
+    expect(source).toContain("requiredEnv('username')");
+    expect(source).not.toContain('Administrator');
+  });
+
+  it('generates exact and minimum collection count assertions', () => {
+    const target = {
+      primary: { strategy: 'css' as const, selector: 'tbody > tr', fragile: true as const },
+      alternatives: [],
+    };
+    const metadata = { recordedAt: '2026-01-01T00:00:00.000Z' };
+    const source = generatePlaywright('table counts', [
+      {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        assertion: { type: 'count', operator: 'equals', expected: 20 },
+        metadata,
+      },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        assertion: { type: 'count', operator: 'atLeast', expected: 20 },
+        metadata,
+      },
+    ]);
+
+    expect(source).toContain("page.locator('tbody > tr')).toHaveCount(20)");
+    expect(source).toContain(
+      "expect.poll(() => page.locator('tbody > tr').count()).toBeGreaterThanOrEqual(20)",
+    );
   });
 });

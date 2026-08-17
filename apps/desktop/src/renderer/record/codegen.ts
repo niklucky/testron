@@ -18,7 +18,7 @@ export const sentence = (step: RecordedStep): string => {
       return `Click “${step.label}”`;
     case 'fill':
       return step.secret
-        ? `Fill “${step.label}” with the secret ${step.secret}`
+        ? `Fill “${step.label}” with {{${step.secret}}}`
         : `Fill “${step.label}” with “${step.value ?? ''}”`;
     case 'select':
       return `Select “${step.value ?? ''}” in “${step.label}”`;
@@ -46,6 +46,10 @@ export const sentence = (step: RecordedStep): string => {
           return `Expect “${step.label}” to be checked`;
         case 'unchecked':
           return `Expect “${step.label}” to be unchecked`;
+        case 'countExactly':
+          return `Expect “${step.label}” to have exactly ${step.value ?? '0'} matches`;
+        case 'countAtLeast':
+          return `Expect “${step.label}” to have at least ${step.value ?? '0'} matches`;
         case 'hidden':
           return `Expect “${step.label}” to be hidden`;
         default:
@@ -64,7 +68,7 @@ const call = (step: RecordedStep): string => {
       return `await ${target}.click();`;
     case 'fill':
       return step.secret
-        ? `await ${target}.fill(process.env.${step.secret}!);`
+        ? `await ${target}.fill(requiredEnv(${quote(step.secret)}));`
         : `await ${target}.fill(${quote(step.value ?? '')});`;
     case 'select':
       return `await ${target}.selectOption(${quote(step.value ?? '')});`;
@@ -92,6 +96,10 @@ const call = (step: RecordedStep): string => {
           return `await expect(${target}).toBeChecked();`;
         case 'unchecked':
           return `await expect(${target}).not.toBeChecked();`;
+        case 'countExactly':
+          return `await expect(${target}).toHaveCount(${Number(step.value ?? 0)});`;
+        case 'countAtLeast':
+          return `await expect.poll(() => ${target}.count()).toBeGreaterThanOrEqual(${Number(step.value ?? 0)});`;
         case 'hidden':
           return `await expect(${target}).toBeHidden();`;
         default:

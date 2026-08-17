@@ -64,6 +64,18 @@ export class RecorderNormalizer {
               };
             case 'value':
               return { type: 'value' as const, expected: candidate.observedValue };
+            case 'countExactly':
+              return {
+                type: 'count' as const,
+                operator: 'equals' as const,
+                expected: candidate.observedCount ?? 0,
+              };
+            case 'countAtLeast':
+              return {
+                type: 'count' as const,
+                operator: 'atLeast' as const,
+                expected: candidate.observedCount ?? 0,
+              };
             default:
               return { type: candidate.assertion };
           }
@@ -98,8 +110,14 @@ export class RecorderNormalizer {
       version: 1,
       kind: 'fill',
       target: targetFrom(buffered.candidate),
-      value: buffered.candidate.target.sensitive ? '' : buffered.candidate.value,
-      ...(buffered.candidate.target.sensitive
+      value:
+        buffered.candidate.target.sensitive || buffered.candidate.target.variableName
+          ? ''
+          : buffered.candidate.value,
+      ...(buffered.candidate.target.variableName
+        ? { variable: { name: buffered.candidate.target.variableName } }
+        : {}),
+      ...(buffered.candidate.target.sensitive && !buffered.candidate.target.variableName
         ? {
             secret: {
               environmentVariable: buffered.candidate.target.secretName ?? 'TESTRON_PASSWORD',

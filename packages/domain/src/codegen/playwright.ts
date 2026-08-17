@@ -16,6 +16,10 @@ export const generateLocator = (locator: Locator): string => {
       return locator.attribute === 'data-testid'
         ? `page.getByTestId(${quote(locator.value)})`
         : `page.locator(${quote(`[${locator.attribute}=${quote(locator.value)}]`)})`;
+    case 'id':
+      return `page.locator(${quote(`[id=${quote(locator.value)}]`)})`;
+    case 'name':
+      return `page.locator(${quote(`[name=${quote(locator.value)}]`)})`;
     case 'role':
       return `page.getByRole(${quote(locator.role)}, { name: ${quote(locator.name)} })`;
     case 'label':
@@ -31,7 +35,7 @@ export const generateLocator = (locator: Locator): string => {
 
 export const generatePlaywright = (title: string, steps: readonly Step[]): string => {
   const hasAssertions = steps.some((step) => step.kind.startsWith('assert'));
-  const hasSecrets = steps.some((step) => step.kind === 'fill' && step.secret);
+  const hasSecrets = steps.some((step) => step.kind === 'fill' && (step.secret || step.variable));
   const body = steps.map((step) => {
     switch (step.kind) {
       case 'navigate':
@@ -40,7 +44,11 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.click();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${
-          step.secret ? `requiredEnv(${quote(step.secret.environmentVariable)})` : quote(step.value)
+          step.variable
+            ? `requiredEnv(${quote(step.variable.name)})`
+            : step.secret
+              ? `requiredEnv(${quote(step.secret.environmentVariable)})`
+              : quote(step.value)
         });`;
       case 'selectOption':
         return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
@@ -71,6 +79,10 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
               : `  await expect(${locator}).toContainText(${quote(step.assertion.expected)});`;
           case 'value':
             return `  await expect(${locator}).toHaveValue(${quote(step.assertion.expected)});`;
+          case 'count':
+            return step.assertion.operator === 'equals'
+              ? `  await expect(${locator}).toHaveCount(${step.assertion.expected});`
+              : `  await expect.poll(() => ${locator}.count()).toBeGreaterThanOrEqual(${step.assertion.expected});`;
         }
         throw new Error('Unsupported assertion type.');
       }

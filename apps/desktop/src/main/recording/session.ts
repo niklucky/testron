@@ -1,4 +1,5 @@
 import { generatePlaywright } from '@testron/domain/codegen/playwright';
+import type { Target } from '@testron/domain/locators/schema';
 import { RecorderNormalizer } from '@testron/domain/recording/normalizer';
 import type { RecorderCandidate } from '@testron/domain/recording/schema';
 import { presentStep } from '@testron/domain/steps/present';
@@ -47,18 +48,19 @@ export class RecordingSession {
     });
   }
 
-  start(): void {
+  start(append = false): void {
     this.normalizer.dispose();
-    this.steps = this.currentUrl
-      ? [
-          {
-            version: 1,
-            kind: 'navigate',
-            url: this.currentUrl,
-            metadata: { recordedAt: new Date().toISOString() },
-          },
-        ]
-      : [];
+    if (!append)
+      this.steps = this.currentUrl
+        ? [
+            {
+              version: 1,
+              kind: 'navigate',
+              url: this.currentUrl,
+              metadata: { recordedAt: new Date().toISOString() },
+            },
+          ]
+        : [];
     this.future = [];
     this.status = 'recording';
     this.captureMode = 'record';
@@ -194,6 +196,12 @@ export class RecordingSession {
       ...step,
       target: { primary: replacement, alternatives },
     });
+  }
+
+  repickTarget(index: number, target: Target): void {
+    const step = this.steps[index];
+    if (!step || !('target' in step)) return;
+    this.updateStep(index, { ...step, target });
   }
 
   load(title: string, steps: readonly Step[]): void {

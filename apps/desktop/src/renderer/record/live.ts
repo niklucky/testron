@@ -1,4 +1,3 @@
-import { generateLocator } from '@testron/domain/codegen/playwright';
 import type { Locator } from '@testron/domain/locators/schema';
 import type { Step } from '@testron/domain/steps/schema';
 
@@ -10,6 +9,9 @@ const labelFor = (locator: Locator): string => {
   switch (locator.strategy) {
     case 'testId':
       return locator.value;
+    case 'id':
+    case 'name':
+      return locator.value;
     case 'role':
       return locator.name;
     case 'label':
@@ -19,14 +21,47 @@ const labelFor = (locator: Locator): string => {
     case 'css':
       return locator.selector;
   }
+  return 'element';
 };
 
-export const presentLocator = (locator: Locator): string =>
-  generateLocator(locator).replace(/^page\./, '');
+const quote = (value: string): string =>
+  `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
+
+/**
+ * Keep panel presentation independent from the generated-code formatter.
+ * During development Vite may briefly serve an older optimized domain module
+ * after the recorder preload learns a new locator strategy. A total local
+ * formatter keeps that version skew from ever taking down the record screen.
+ */
+export const presentLocator = (locator: Locator): string => {
+  switch (locator.strategy) {
+    case 'testId':
+      return locator.attribute === 'data-testid'
+        ? `getByTestId(${quote(locator.value)})`
+        : `locator(${quote(`[${locator.attribute}=${quote(locator.value)}]`)})`;
+    case 'id':
+      return `locator(${quote(`[id=${quote(locator.value)}]`)})`;
+    case 'name':
+      return `locator(${quote(`[name=${quote(locator.value)}]`)})`;
+    case 'role':
+      return `getByRole(${quote(locator.role)}, { name: ${quote(locator.name)} })`;
+    case 'label':
+      return `getByLabel(${quote(locator.text)})`;
+    case 'placeholder':
+      return `getByPlaceholder(${quote(locator.text)})`;
+    case 'text':
+      return `getByText(${quote(locator.text)}, { exact: true })`;
+    case 'css':
+      return `locator(${quote(locator.selector)})`;
+  }
+  return "locator('unknown-locator')";
+};
 
 const assertionFor = (
   step: Extract<Step, { kind: 'assertElement' }>,
 ): RecordedStep['assertion'] => {
+  if (step.assertion.type === 'count')
+    return step.assertion.operator === 'equals' ? 'countExactly' : 'countAtLeast';
   if (step.assertion.type !== 'text') return step.assertion.type;
   return step.assertion.match === 'contains' ? 'textContains' : 'textEquals';
 };
@@ -64,7 +99,7 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           label: labelFor(step.target.primary),
           locator: presentLocator(step.target.primary),
           value: step.value,
-          secret: step.secret?.environmentVariable,
+          secret: step.variable?.name ?? step.secret?.environmentVariable,
         };
       case 'selectOption':
         return {
@@ -98,8 +133,10 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           locator: presentLocator(step.target.primary),
           assertion: assertionFor(step),
           value:
-            step.assertion.type === 'text' || step.assertion.type === 'value'
-              ? step.assertion.expected
+            step.assertion.type === 'text' ||
+            step.assertion.type === 'value' ||
+            step.assertion.type === 'count'
+              ? String(step.assertion.expected)
               : undefined,
         };
       case 'assertUrlPath':

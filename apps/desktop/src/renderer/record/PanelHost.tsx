@@ -11,9 +11,8 @@ import type { RecordedStep } from './types';
 /**
  * What a panel view runs.
  *
- * This is a whole renderer whose window *is* the panel: a transparent
- * WebContentsView stacked over the website view, so the page shows through
- * without the site's own compositor getting a say. It owns nothing — the
+ * This is a whole renderer whose window *is* the panel: an opaque block in a
+ * WebContentsView docked beside the resized website view. It owns nothing — the
  * record screen pushes the state, and every interaction goes back as an event.
  *
  * The one exception is the resize drag. It starts here (the edge is in this
@@ -28,8 +27,8 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
   const send = (event: RecordPanelEvent) => window.testron?.sendRecordEvent(event);
 
   useEffect(() => {
-    // The view is transparent; the document has to be too, or the page behind
-    // it is painted over by our own plane colour.
+    // The document stays transparent so a temporarily widened resize view does
+    // not cover the centre; GlassPanel itself is the opaque panel block.
     document.documentElement.style.background = 'transparent';
     document.body.style.background = 'transparent';
     const stop = window.testron?.onRecordState(setState);
@@ -99,9 +98,14 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
             status={state?.status ?? 'idle'}
             selectedId={state?.selectedId}
             expandedId={state?.expandedId}
+            repickingId={state?.repickingId}
             onSelect={(id) => send({ type: 'select', id })}
             onExpand={(id) => send({ type: 'expand', id })}
             onUseAlternative={(id, locator) => send({ type: 'use-alternative', id, locator })}
+            onEditLocator={(id, locator) => send({ type: 'edit-locator', id, locator })}
+            onRepick={(id) => send({ type: 'repick', id })}
+            onCancelRepick={() => send({ type: 'cancel-repick' })}
+            onConvertToAssertion={(id) => send({ type: 'convert-to-assertion', id })}
             onDelete={(id) => send({ type: 'delete', id })}
           />
         ) : (

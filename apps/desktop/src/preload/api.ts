@@ -13,16 +13,21 @@ export type VerifyAssertion =
   | 'enabled'
   | 'disabled'
   | 'checked'
-  | 'unchecked';
+  | 'unchecked'
+  | 'countExactly'
+  | 'countAtLeast';
 
 export interface AppSnapshot extends RecordingSnapshot {
+  verifyAssertion: VerifyAssertion;
+  repickIndex?: number;
   library: LibrarySnapshot;
   replay: ReplaySnapshot;
+  replayHistory: ReplaySnapshot[];
 }
 
 export type AppCommand =
   | { type: 'set-shell-route'; route: 'dashboard' | 'recorder' }
-  | { type: 'start-recording' }
+  | { type: 'start-recording'; append?: boolean }
   | { type: 'stop-recording' }
   | { type: 'pause-recording' }
   | { type: 'resume-recording' }
@@ -35,6 +40,7 @@ export type AppCommand =
   | { type: 'update-step'; index: number; step: Step }
   | { type: 'replace-steps'; steps: Step[] }
   | { type: 'use-alternative-locator'; index: number; alternativeIndex: number }
+  | { type: 'set-repick-step'; index?: number }
   | { type: 'set-capture-mode'; mode: 'record' | 'verify'; assertion: VerifyAssertion }
   | { type: 'add-url-path-assertion'; expected: string }
   | { type: 'navigate'; url: string }
@@ -51,6 +57,14 @@ export type AppCommand =
   | { type: 'create-test'; projectId: string; environmentId: string; title: string }
   | { type: 'select-project'; projectId: string }
   | { type: 'select-environment'; environmentId: string }
+  | {
+      type: 'create-profile';
+      environmentId: string;
+      name: string;
+      authenticationType: 'credentials';
+      variables: Array<{ name: string; value: string; sensitive: boolean }>;
+    }
+  | { type: 'select-profile'; profileId: string }
   | { type: 'select-test'; testId: string }
   | { type: 'rename-test'; testId: string; title: string }
   | { type: 'prepare-new-test' }

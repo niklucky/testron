@@ -4,6 +4,7 @@ import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
 import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../design';
 import { presentSource } from '../record/live';
+import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
 import { AssertionCard, DetailCard, RunCard, StepArrow, StepCard } from './columns';
@@ -23,8 +24,10 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   stepWarnings: [],
   canUndo: false,
   canRedo: false,
-  library: { projects: [], environments: [], tests: [] },
+  library: { projects: [], environments: [], profiles: [], profileVariables: [], tests: [] },
   replay: { status: 'idle', steps: [] },
+  replayHistory: [],
+  verifyAssertion: 'visible',
 };
 
 const isAssertion = (step: Step): boolean => step.kind.startsWith('assert');
@@ -36,6 +39,7 @@ export const TestView = () => {
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
   useEffect(() => {
@@ -48,6 +52,14 @@ export const TestView = () => {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 1921px)');
+    const update = () => setWideSourceLayout(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
   const board = useMemo(() => liveTestBoard(snapshot), [snapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
   const lines = useMemo(
@@ -56,6 +68,14 @@ export const TestView = () => {
   );
   const selectedTestId = snapshot.library.selectedTestId;
   const running = snapshot.replay.status === 'running';
+  const selectedReplay = useMemo(() => {
+    if (!selectedRun) return snapshot.replay;
+    if (selectedRun === 'current-run') return snapshot.replay;
+    const startedAt = selectedRun.slice('run-'.length);
+    return (
+      snapshot.replayHistory.find((replay) => replay.startedAt === startedAt) ?? snapshot.replay
+    );
+  }, [selectedRun, snapshot.replay, snapshot.replayHistory]);
 
   useEffect(() => {
     if (runs[0]) setSelectedRun(runs[0].id);
@@ -78,16 +98,33 @@ export const TestView = () => {
     const index = originalIndex(displayed.id);
     const current = snapshot.steps[index];
     if (!current) return;
+    const target =
+      'target' in current && next.locator !== displayed.locator
+        ? replacePrimaryLocator(current.target, next.locator)
+        : 'target' in current
+          ? current.target
+          : undefined;
+    if ('target' in current && !target) {
+      setLog('Locator cannot be empty');
+      return;
+    }
     let updated: Step;
     switch (current.kind) {
       case 'fill':
-        updated = { ...current, value: next.value ?? '' };
+        updated = { ...current, target: target!, value: next.value ?? '' };
         break;
       case 'selectOption':
-        updated = { ...current, value: next.value ?? '' };
+        updated = { ...current, target: target!, value: next.value ?? '' };
         break;
       case 'press':
-        updated = { ...current, key: next.value || 'Enter' };
+        updated = { ...current, target: target!, key: next.value || 'Enter' };
+        break;
+      case 'navigate':
+        return;
+      case 'click':
+      case 'check':
+      case 'uncheck':
+        updated = { ...current, target: target! };
         break;
       default:
         return;
@@ -104,6 +141,14 @@ export const TestView = () => {
     if (current.kind === 'assertUrlPath') {
       updated = { ...current, expected: next.expected.startsWith('/') ? next.expected : '/' };
     } else if (current.kind === 'assertElement') {
+      const target =
+        next.locator === displayed.locator
+          ? current.target
+          : replacePrimaryLocator(current.target, next.locator);
+      if (!target) {
+        setLog('Locator cannot be empty');
+        return;
+      }
       const assertion = (() => {
         switch (next.kind) {
           case 'textContains':
@@ -119,11 +164,18 @@ export const TestView = () => {
           case 'checked':
           case 'unchecked':
             return { type: next.kind };
+          case 'countExactly':
+          case 'countAtLeast':
+            return {
+              type: 'count' as const,
+              operator: next.kind === 'countExactly' ? ('equals' as const) : ('atLeast' as const),
+              expected: Math.max(0, Number.parseInt(next.expected) || 0),
+            };
           case 'urlPath':
             return current.assertion;
         }
       })();
-      updated = { ...current, assertion };
+      updated = { ...current, target, assertion };
     } else return;
     window.testron?.command({ type: 'update-step', index, step: updated });
     setLog('Assertion saved');
@@ -285,8 +337,11 @@ export const TestView = () => {
         >
           {running ? 'Cancel run' : `Run on ${detail.environments[0] ?? 'Local'}`}
         </Button>
-        <Button icon="code" onClick={() => setSourceOpen(true)}>
-          View source
+        <Button icon="code" pressed={sourceOpen} onClick={() => setSourceOpen((open) => !open)}>
+          {sourceOpen && wideSourceLayout ? 'Hide source' : 'View source'}
+        </Button>
+        <Button icon="pencil" onClick={() => (window.location.hash = '#/record')}>
+          Edit in recorder
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
         <Button icon="suite" disabled>
@@ -304,132 +359,150 @@ export const TestView = () => {
         </span>
       </div>
 
-      <div className="ui-scroll relative min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-max items-stretch px-4 py-3">
-          <Lane icon="test" title="Test" width={320}>
-            <DetailCard
-              detail={detail}
-              metadataEditable={false}
-              onDetail={(next: TestDetail) => {
-                if (!selectedTestId || !next.name.trim() || next.name === detail.name) return;
-                window.testron?.command({
-                  type: 'rename-test',
-                  testId: selectedTestId,
-                  title: next.name,
-                });
-                setLog('Test renamed');
-              }}
-              onLog={setLog}
-            />
-          </Lane>
-          <Flow />
-          <Lane
-            icon="clipboard"
-            title="Prerequisites"
-            count={prerequisites.length}
-            hint="Not configured for this test."
-          >
-            <EmptyLane>Prerequisites are not persisted for this test yet.</EmptyLane>
-          </Lane>
-          <Flow />
-
-          <Lane
-            icon="steps"
-            title="Steps"
-            count={steps.length}
-            hint={`${assertions.length} assertions hang off them.`}
-            width={360}
-          >
-            {steps.map((step, index) => {
-              const branch = assertionsFor(board, index);
-              const result = snapshot.replay.steps[originalIndex(step.id)];
-              return (
-                <div key={step.id}>
-                  {index > 0 && <StepArrow />}
-                  <StepCard
-                    step={step}
-                    index={index}
-                    locatorEditable={false}
-                    failed={result?.status === 'failed'}
-                    running={result?.status === 'running'}
-                    passed={result?.status === 'passed'}
-                    onStep={(next) => updateAction(step, next)}
-                    onAddAssertion={() => addAssertion(step)}
-                    onDelete={() => {
-                      const original = originalIndex(step.id);
-                      if (original >= 0)
-                        window.testron?.command({ type: 'delete-step', index: original });
-                      setLog(`Step ${index + 1} deleted`);
-                    }}
-                  />
-                  {branch.map((assertion, position) => {
-                    const allowedKinds: AssertionKind[] =
-                      assertion.kind === 'urlPath'
-                        ? ['urlPath']
-                        : [
-                            'visible',
-                            'hidden',
-                            'textEquals',
-                            'textContains',
-                            'value',
-                            'enabled',
-                            'disabled',
-                            'checked',
-                            'unchecked',
-                          ];
-                    return (
-                      <Branch key={assertion.id} last={position === branch.length - 1}>
-                        <AssertionCard
-                          assertion={assertion}
-                          kinds={allowedKinds}
-                          subjectEditable={false}
-                          canMoveUp={index > 0}
-                          canMoveDown={index < steps.length - 1}
-                          onAssertion={(next) => updateAssertion(assertion, next)}
-                          onMove={(direction) => moveAssertion(assertion, index, direction)}
-                          onDelete={() => {
-                            const original = originalIndex(assertion.id);
-                            if (original >= 0)
-                              window.testron?.command({ type: 'delete-step', index: original });
-                            setLog('Assertion deleted');
-                          }}
-                        />
-                      </Branch>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            {steps.length === 0 && (
-              <EmptyLane>This test has no actions yet. Record it again to add steps.</EmptyLane>
-            )}
-            {steps.length > 0 && assertions.length === 0 && (
-              <EmptyLane>Nothing is proved yet. Hover a step and add an assertion.</EmptyLane>
-            )}
-          </Lane>
-          <Flow />
-
-          <Lane icon="history" title="Runs" count={runs.length} hint="Current app session.">
-            {runs.length === 0 && <EmptyLane>Never run in this session.</EmptyLane>}
-            {runs.map((entry: Run) => (
-              <RunCard
-                key={entry.id}
-                run={entry}
-                total={Math.max(steps.length, 1)}
-                selected={entry.id === selectedRun}
-                reportAvailable={false}
-                onClick={() => {
-                  setSelectedRun(entry.id);
-                  setLog(
-                    entry.verdict === 'failed'
-                      ? snapshot.replay.error || 'Failing step highlighted in the steps column'
-                      : `Run on ${entry.environment} · ${entry.seconds.toFixed(1)}s`,
-                  );
+      <div
+        className={`relative min-h-0 flex-1 ${sourceOpen && wideSourceLayout ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}
+      >
+        <div data-testid="test-board" className="ui-scroll h-full min-h-0 min-w-0 overflow-x-auto">
+          <div className="flex h-full min-w-max items-stretch px-4 py-3">
+            <Lane icon="test" title="Test" width={320}>
+              <DetailCard
+                detail={detail}
+                metadataEditable={false}
+                onDetail={(next: TestDetail) => {
+                  if (!selectedTestId || !next.name.trim() || next.name === detail.name) return;
+                  window.testron?.command({
+                    type: 'rename-test',
+                    testId: selectedTestId,
+                    title: next.name,
+                  });
+                  setLog('Test renamed');
                 }}
                 onLog={setLog}
               />
-            ))}
-          </Lane>
+            </Lane>
+            <Flow />
+            <Lane
+              icon="clipboard"
+              title="Prerequisites"
+              count={prerequisites.length}
+              hint="Not configured for this test."
+            >
+              <EmptyLane>Prerequisites are not persisted for this test yet.</EmptyLane>
+            </Lane>
+            <Flow />
+
+            <Lane
+              icon="steps"
+              title="Steps"
+              count={steps.length}
+              hint={`${assertions.length} assertions hang off them.`}
+              width={360}
+              contentTestId="steps-lane-scroll"
+            >
+              {steps.map((step, index) => {
+                const branch = assertionsFor(board, index);
+                const result = selectedReplay.steps[originalIndex(step.id)];
+                return (
+                  <div key={step.id}>
+                    {index > 0 && <StepArrow />}
+                    <StepCard
+                      step={step}
+                      index={index}
+                      locatorEditable
+                      failed={result?.status === 'failed'}
+                      running={result?.status === 'running'}
+                      passed={result?.status === 'passed'}
+                      error={result?.error}
+                      onStep={(next) => updateAction(step, next)}
+                      onRepick={() => {
+                        const original = originalIndex(step.id);
+                        if (original < 0) return;
+                        window.testron?.command({ type: 'set-repick-step', index: original });
+                        window.location.hash = '#/record';
+                      }}
+                      onAddAssertion={() => addAssertion(step)}
+                      onDelete={() => {
+                        const original = originalIndex(step.id);
+                        if (original >= 0)
+                          window.testron?.command({ type: 'delete-step', index: original });
+                        setLog(`Step ${index + 1} deleted`);
+                      }}
+                    />
+                    {branch.map((assertion, position) => {
+                      const assertionResult = selectedReplay.steps[originalIndex(assertion.id)];
+                      const allowedKinds: AssertionKind[] =
+                        assertion.kind === 'urlPath'
+                          ? ['urlPath']
+                          : [
+                              'visible',
+                              'hidden',
+                              'textEquals',
+                              'textContains',
+                              'value',
+                              'enabled',
+                              'disabled',
+                              'checked',
+                              'unchecked',
+                              'countExactly',
+                              'countAtLeast',
+                            ];
+                      return (
+                        <Branch key={assertion.id} last={position === branch.length - 1}>
+                          <AssertionCard
+                            assertion={assertion}
+                            kinds={allowedKinds}
+                            subjectEditable={false}
+                            locatorEditable
+                            status={assertionResult?.status}
+                            error={assertionResult?.error}
+                            canMoveUp={index > 0}
+                            canMoveDown={index < steps.length - 1}
+                            onAssertion={(next) => updateAssertion(assertion, next)}
+                            onMove={(direction) => moveAssertion(assertion, index, direction)}
+                            onDelete={() => {
+                              const original = originalIndex(assertion.id);
+                              if (original >= 0)
+                                window.testron?.command({ type: 'delete-step', index: original });
+                              setLog('Assertion deleted');
+                            }}
+                          />
+                        </Branch>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {steps.length === 0 && (
+                <EmptyLane>This test has no actions yet. Record it again to add steps.</EmptyLane>
+              )}
+              {steps.length > 0 && assertions.length === 0 && (
+                <EmptyLane>Nothing is proved yet. Hover a step and add an assertion.</EmptyLane>
+              )}
+            </Lane>
+            <Flow />
+
+            <Lane icon="history" title="Runs" count={runs.length} hint="Current app session.">
+              {runs.length === 0 && <EmptyLane>Never run in this session.</EmptyLane>}
+              {runs.map((entry: Run) => (
+                <RunCard
+                  key={entry.id}
+                  run={entry}
+                  total={Math.max(fullSteps.length, 1)}
+                  selected={entry.id === selectedRun}
+                  reportAvailable={false}
+                  onClick={() => {
+                    setSelectedRun(entry.id);
+                    setLog(
+                      entry.verdict === 'failed'
+                        ? entry.error || 'Failing step highlighted in the steps column'
+                        : `Run on ${entry.environment} · ${entry.seconds.toFixed(1)}s`,
+                    );
+                  }}
+                  onLog={setLog}
+                />
+              ))}
+            </Lane>
+          </div>
         </div>
 
         {sourceOpen && (
@@ -445,6 +518,7 @@ export const TestView = () => {
             onCopy={() => window.testron?.command({ type: 'copy-source' })}
             onClose={() => setSourceOpen(false)}
             onLog={setLog}
+            layout={wideSourceLayout ? 'docked' : 'modal'}
           />
         )}
       </div>
@@ -456,7 +530,7 @@ export const TestView = () => {
           <span>{lines.length} lines</span>
           <span>updated {detail.updatedAt}</span>
           <a href="#/record" className="text-ink-3 no-underline hover:text-ink">
-            Record again
+            Edit in recorder
           </a>
         </span>
       </footer>

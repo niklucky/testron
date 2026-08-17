@@ -16,6 +16,7 @@ export const Lane = ({
   hint,
   onAdd,
   addLabel,
+  contentTestId,
   children,
   width = 300,
 }: {
@@ -26,6 +27,7 @@ export const Lane = ({
   hint?: string;
   onAdd?: () => void;
   addLabel?: string;
+  contentTestId?: string;
   children: ReactNode;
   width?: number;
 }) => (
@@ -45,7 +47,12 @@ export const Lane = ({
       )}
     </header>
     {hint && <p className="mb-2 mt-0.5 text-sm leading-4 text-ink-3">{hint}</p>}
-    <div className="ui-scroll min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1">{children}</div>
+    <div
+      data-testid={contentTestId}
+      className="ui-scroll min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1"
+    >
+      {children}
+    </div>
   </section>
 );
 

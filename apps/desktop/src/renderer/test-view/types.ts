@@ -29,6 +29,8 @@ export type AssertionKind =
   | 'disabled'
   | 'checked'
   | 'unchecked'
+  | 'countExactly'
+  | 'countAtLeast'
   | 'urlPath';
 
 export type Assertion = {
@@ -57,6 +59,8 @@ export type Run = {
   trigger: 'manual' | 'ci' | 'schedule';
   /** Set when the run failed: which step card to point at. */
   failedStepId?: string;
+  /** The real runner or failing-step message shown without opening developer tools. */
+  error?: string;
   /** How far it got, for the progress ribbon. */
   completed: number;
 };
@@ -95,12 +99,19 @@ export const assertionLabels: Record<AssertionKind, string> = {
   disabled: 'is disabled',
   checked: 'is checked',
   unchecked: 'is unchecked',
+  countExactly: 'count is exactly',
+  countAtLeast: 'count is at least',
   urlPath: 'URL path equals',
 };
 
 /** The assertions that need something typed next to them. */
 export const assertionNeedsValue = (kind: AssertionKind) =>
-  kind === 'textEquals' || kind === 'textContains' || kind === 'value' || kind === 'urlPath';
+  kind === 'textEquals' ||
+  kind === 'textContains' ||
+  kind === 'value' ||
+  kind === 'countExactly' ||
+  kind === 'countAtLeast' ||
+  kind === 'urlPath';
 
 export const prerequisiteLabels: Record<PrerequisiteKind, string> = {
   auth: 'Signed-in state',

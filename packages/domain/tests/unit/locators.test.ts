@@ -10,9 +10,11 @@ describe('locator ranking', () => {
         css,
         { strategy: 'text', text: 'Continue' },
         { strategy: 'role', role: 'button', name: 'Continue' },
+        { strategy: 'name', value: 'continue' },
+        { strategy: 'id', value: 'continue-button' },
         { strategy: 'testId', attribute: 'data-testid', value: 'continue' },
         css,
       ]).map((locator) => locator.strategy),
-    ).toEqual(['testId', 'role', 'text', 'css']);
+    ).toEqual(['testId', 'id', 'name', 'role', 'text', 'css']);
   });
 });

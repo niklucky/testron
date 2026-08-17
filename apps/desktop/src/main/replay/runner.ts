@@ -50,6 +50,10 @@ const locatorDescription = (locator: Locator): string => {
   switch (locator.strategy) {
     case 'testId':
       return `${locator.attribute}=${JSON.stringify(locator.value)}`;
+    case 'id':
+      return `id=${JSON.stringify(locator.value)}`;
+    case 'name':
+      return `name=${JSON.stringify(locator.value)}`;
     case 'role':
       return `role=${JSON.stringify(locator.role)}, name=${JSON.stringify(locator.name)}`;
     case 'label':
@@ -69,6 +73,10 @@ const resolveLocator = (page: Page, locator: Locator): PwLocator => {
       return locator.attribute === 'data-testid'
         ? page.getByTestId(locator.value)
         : page.locator(`[${locator.attribute}=${JSON.stringify(locator.value)}]`);
+    case 'id':
+      return page.locator(`[id=${JSON.stringify(locator.value)}]`);
+    case 'name':
+      return page.locator(`[name=${JSON.stringify(locator.value)}]`);
     case 'role':
       return page.getByRole(locator.role as Parameters<Page['getByRole']>[0], {
         name: locator.name,
@@ -97,12 +105,11 @@ const executeStep = async (
       await resolveLocator(page, step.target.primary).click();
       break;
     case 'fill': {
-      const value = step.secret
-        ? environmentVariables[step.secret.environmentVariable]
-        : step.value;
-      if (value === undefined || (step.secret && value === ''))
+      const variableName = step.variable?.name ?? step.secret?.environmentVariable;
+      const value = variableName ? environmentVariables[variableName] : step.value;
+      if (value === undefined || (variableName !== undefined && value === ''))
         throw new Error(
-          `Missing required environment variable: ${step.secret?.environmentVariable}`,
+          `Missing required ${step.variable ? 'profile variable' : 'environment variable'}: ${variableName}`,
         );
       await resolveLocator(page, step.target.primary).fill(value);
       break;
@@ -147,6 +154,14 @@ const executeStep = async (
           break;
         case 'value':
           await expect(locator).toHaveValue(step.assertion.expected);
+          break;
+        case 'count':
+          if (step.assertion.operator === 'equals')
+            await expect(locator).toHaveCount(step.assertion.expected);
+          else
+            await expect
+              .poll(() => locator.count())
+              .toBeGreaterThanOrEqual(step.assertion.expected);
           break;
       }
       break;

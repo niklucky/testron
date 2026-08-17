@@ -64,6 +64,7 @@ export const SourceSheet = ({
   onLog,
   canDetach = true,
   onCopy,
+  layout = 'modal',
 }: {
   lines: CodeLine[];
   file: string;
@@ -76,73 +77,110 @@ export const SourceSheet = ({
   onLog: (message: string) => void;
   canDetach?: boolean;
   onCopy?: () => void;
-}) => (
-  <Sheet title="Auto test source" subtitle={file} width={620} onClose={onClose}>
-    <div className="ui-scroll min-h-0 flex-1 overflow-auto border-b border-line-soft bg-plane">
-      {detached ? (
-        <textarea
-          aria-label="Test source"
-          value={source}
-          spellCheck={false}
-          onChange={(event) => onSource(event.target.value)}
-          className="ui-mono h-[420px] w-full resize-none bg-transparent p-3 text-base leading-[19px] text-ink outline-none"
-        />
-      ) : (
-        <CodePanel lines={lines} onSelectStep={() => undefined} />
-      )}
-    </div>
+  layout?: 'modal' | 'docked';
+}) => {
+  const content = (
+    <>
+      <header className="flex shrink-0 items-start gap-3 border-b border-line-soft px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="text-md font-semibold">Auto test source</h2>
+          <p className="mt-0.5 truncate text-sm text-ink-3">{file}</p>
+        </div>
+        <IconButton icon="close" size="sm" label="Close" className="ml-auto" onClick={onClose} />
+      </header>
+      <div className="ui-scroll min-h-0 flex-1 overflow-auto border-b border-line-soft bg-plane">
+        {detached ? (
+          <textarea
+            aria-label="Test source"
+            value={source}
+            spellCheck={false}
+            onChange={(event) => onSource(event.target.value)}
+            className="ui-mono h-[420px] w-full resize-none bg-transparent p-3 text-base leading-[19px] text-ink outline-none"
+          />
+        ) : (
+          <CodePanel lines={lines} onSelectStep={() => undefined} />
+        )}
+      </div>
 
-    <footer className="flex shrink-0 items-center gap-2 px-4 py-3">
-      {detached ? (
-        <>
-          <Badge tone="warning" icon="alert">
-            Detached
-          </Badge>
-          <span className="text-sm text-ink-3">Board edits no longer reach this file.</span>
-          <Button
-            className="ml-auto"
-            icon="rerun"
-            onClick={() => {
-              onReattach();
-              onLog('Source regenerated from the board · hand edits discarded');
-            }}
-          >
-            Regenerate from board
-          </Button>
-        </>
-      ) : (
-        <>
-          <Badge tone="good" icon="check">
-            In sync
-          </Badge>
-          <span className="text-sm text-ink-3">Regenerated from the board on every edit.</span>
-          <Button
-            className="ml-auto"
-            icon="copy"
-            onClick={() => {
-              if (onCopy) onCopy();
-              else void navigator.clipboard?.writeText(sourceText(lines));
-              onLog('Spec copied to the clipboard');
-            }}
-          >
-            Copy
-          </Button>
-          {canDetach && (
+      <footer className="flex shrink-0 items-center gap-2 px-4 py-3">
+        {detached ? (
+          <>
+            <Badge tone="warning" icon="alert">
+              Detached
+            </Badge>
+            <span className="text-sm text-ink-3">Board edits no longer reach this file.</span>
             <Button
-              icon="pencil"
+              className="ml-auto"
+              icon="rerun"
               onClick={() => {
-                onDetach();
-                onLog('Source detached · the board no longer regenerates it');
+                onReattach();
+                onLog('Source regenerated from the board · hand edits discarded');
               }}
             >
-              Edit by hand
+              Regenerate from board
             </Button>
-          )}
-        </>
-      )}
-    </footer>
-  </Sheet>
-);
+          </>
+        ) : (
+          <>
+            <Badge tone="good" icon="check">
+              In sync
+            </Badge>
+            <span className="text-sm text-ink-3">Regenerated from the board on every edit.</span>
+            <Button
+              className="ml-auto"
+              icon="copy"
+              onClick={() => {
+                if (onCopy) onCopy();
+                else void navigator.clipboard?.writeText(sourceText(lines));
+                onLog('Spec copied to the clipboard');
+              }}
+            >
+              Copy
+            </Button>
+            {canDetach && (
+              <Button
+                icon="pencil"
+                onClick={() => {
+                  onDetach();
+                  onLog('Source detached · the board no longer regenerates it');
+                }}
+              >
+                Edit by hand
+              </Button>
+            )}
+          </>
+        )}
+      </footer>
+    </>
+  );
+
+  if (layout === 'docked')
+    return (
+      <aside
+        aria-label="Auto test source"
+        className="flex min-h-0 min-w-0 flex-col border-l border-line bg-surface"
+      >
+        {content}
+      </aside>
+    );
+
+  return (
+    <div
+      className="absolute inset-0 z-40 grid place-items-center p-4"
+      style={{ background: 'var(--ui-overlay)' }}
+      onClick={onClose}
+    >
+      <section
+        role="dialog"
+        aria-label="Auto test source"
+        className="flex h-full min-h-0 w-full flex-col rounded-xl border border-line bg-surface shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {content}
+      </section>
+    </div>
+  );
+};
 
 /** Editing one prerequisite. Small enough to be inline, structured enough not to be. */
 export const PrerequisiteSheet = ({

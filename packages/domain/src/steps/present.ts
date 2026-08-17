@@ -5,6 +5,10 @@ const locatorName = (locator: Locator): string => {
   switch (locator.strategy) {
     case 'testId':
       return `[${locator.attribute}="${locator.value}"]`;
+    case 'id':
+      return `[id="${locator.value}"]`;
+    case 'name':
+      return `[name="${locator.value}"]`;
     case 'role':
       return `${locator.role} “${locator.name}”`;
     case 'label':
@@ -25,9 +29,11 @@ export const presentStep = (step: Step): string => {
     case 'click':
       return `Click ${locatorName(step.target.primary)}`;
     case 'fill':
-      return step.secret
-        ? `Fill ${locatorName(step.target.primary)} with secret $${step.secret.environmentVariable}`
-        : `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
+      return step.variable
+        ? `Fill ${locatorName(step.target.primary)} with {{${step.variable.name}}}`
+        : step.secret
+          ? `Fill ${locatorName(step.target.primary)} with secret $${step.secret.environmentVariable}`
+          : `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
     case 'selectOption':
       return `Select “${step.value}” in ${locatorName(step.target.primary)}`;
     case 'check':
@@ -43,6 +49,8 @@ export const presentStep = (step: Step): string => {
           return `Verify ${target} text ${step.assertion.match} “${step.assertion.expected}”`;
         case 'value':
           return `Verify ${target} has value “${step.assertion.expected}”`;
+        case 'count':
+          return `Verify ${target} has ${step.assertion.operator === 'equals' ? 'exactly' : 'at least'} ${step.assertion.expected} matches`;
         default:
           return `Verify ${target} is ${step.assertion.type}`;
       }

@@ -65,6 +65,23 @@ describe('RecorderNormalizer', () => {
     expect(JSON.stringify(steps)).not.toContain('do-not-store');
   });
 
+  it('records a profile variable reference without its resolved value', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    normalizer.accept({
+      ...input('Administrator'),
+      target: { ...input('').target, variableName: 'username' },
+    });
+    normalizer.flush();
+
+    expect(steps[0]).toMatchObject({
+      kind: 'fill',
+      value: '',
+      variable: { name: 'username' },
+    });
+    expect(JSON.stringify(steps)).not.toContain('Administrator');
+  });
+
   it('commits a pending fill when its field loses focus', () => {
     const steps: Step[] = [];
     const normalizer = new RecorderNormalizer((step) => steps.push(step));
@@ -140,5 +157,38 @@ describe('RecorderNormalizer', () => {
         warnings: ['Primary locator is ambiguous (2 matches).'],
       },
     });
+  });
+
+  it('records exact and minimum collection counts from the observed matches', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    const target = {
+      fingerprint: 'rows',
+      sensitive: false,
+      locators: [{ strategy: 'css' as const, selector: 'tbody > tr', fragile: true as const }],
+    };
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'countExactly',
+      observedText: '',
+      observedValue: '',
+      observedCount: 20,
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'countAtLeast',
+      observedText: '',
+      observedValue: '',
+      observedCount: 20,
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+
+    expect(steps.map((step) => ('assertion' in step ? step.assertion : undefined))).toEqual([
+      { type: 'count', operator: 'equals', expected: 20 },
+      { type: 'count', operator: 'atLeast', expected: 20 },
+    ]);
   });
 });

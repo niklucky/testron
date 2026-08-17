@@ -4,9 +4,11 @@ import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { clock, sourceText } from './codegen';
+import { convertStepToAssertion } from './assertion';
 import { CodePanel } from './CodePanel';
 import { GlassPanel } from './GlassPanel';
 import { presentRecordedSteps, presentSource, recordingContext } from './live';
+import { replacePrimaryLocator } from './locator-edit';
 import { StepsPanel } from './StepsPanel';
 import { TargetPage, type PageState } from './TargetPage';
 import { BrowserBar, SessionBar } from './Toolbar';
@@ -23,17 +25,18 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   stepWarnings: [],
   canUndo: false,
   canRedo: false,
-  library: { projects: [], environments: [], tests: [] },
+  library: { projects: [], environments: [], profiles: [], profileVariables: [], tests: [] },
   replay: { status: 'idle', steps: [] },
+  replayHistory: [],
+  verifyAssertion: 'visible',
 };
 
 /**
  * Recording a test.
  *
- * The window is a browser: chrome on top, the site underneath, and the two
- * readings of the take floating over it on glass. Nothing about the recorder
- * sits between the tester and the page — they drive the site the way a user
- * would, and the panels fill themselves in.
+ * The window is a browser: chrome on top, the site in the centre, and the two
+ * readings of the take docked at its edges. Opening a panel gives it real
+ * space and resizes the tested page instead of covering its forms and text.
  *
  * Both panels are generated from one step list, so the manual steps and the
  * spec can never drift. Selecting in either lights up the other and points at
@@ -61,6 +64,7 @@ export const RecordScreen = () => {
   const [widths, setWidths] = useState<Record<PanelId, number>>({ steps: 25, code: 25 });
   /** Set while the finish sheet is open, so "keep recording" picks the take back up. */
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
+  const [configuringProfile, setConfiguringProfile] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
@@ -68,12 +72,25 @@ export const RecordScreen = () => {
   const stepCountRef = useRef(0);
   /** The panel being dragged, whose view is widened to the whole plane. */
   const [resizing, setResizing] = useState<PanelId | null>(null);
+  const [verifyAssertion, setVerifyAssertion] = useState<VerifyAssertion>('visible');
 
   const steps = useMemo(() => presentRecordedSteps(snapshot.steps), [snapshot.steps]);
   const status: RecordStatus = snapshot.status;
   const mode: CaptureMode = snapshot.captureMode === 'verify' ? 'assert' : 'act';
   const context = useMemo(() => recordingContext(snapshot), [snapshot]);
+  const selectedEnvironmentId = snapshot.library.selectedEnvironmentId;
+  const environments = snapshot.library.environments.filter(
+    (environment) => environment.projectId === snapshot.library.selectedProjectId,
+  );
+  const profiles = snapshot.library.profiles.filter(
+    (profile) => profile.environmentId === selectedEnvironmentId,
+  );
+  const selectedProfile = profiles.find(
+    (profile) => profile.id === snapshot.library.selectedProfileId,
+  );
   const lines = useMemo(() => presentSource(snapshot.source, steps), [snapshot.source, steps]);
+  const repickingId =
+    snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
 
   useEffect(() => {
     // The legacy recorder shell's own layout stays parked: from here on the
@@ -102,6 +119,8 @@ export const RecordScreen = () => {
   useEffect(() => {
     setName(context.title);
   }, [snapshot.library.selectedTestId, context.title]);
+
+  useEffect(() => setVerifyAssertion(snapshot.verifyAssertion), [snapshot.verifyAssertion]);
 
   useEffect(() => {
     if (selectedId && !steps.some((step) => step.id === selectedId)) setSelectedId(undefined);
@@ -135,6 +154,9 @@ export const RecordScreen = () => {
   const record = () => {
     window.testron?.command({
       type: status === 'paused' ? 'resume-recording' : 'start-recording',
+      ...(status !== 'paused' && snapshot.library.selectedTestId && steps.length > 0
+        ? { append: true }
+        : {}),
     });
     if (status === 'idle' || status === 'finished') setElapsed(0);
     setLog(steps.length === 0 ? 'Recording · every interaction becomes a step' : 'Resumed');
@@ -161,6 +183,45 @@ export const RecordScreen = () => {
     setLog(`Locator swapped · ${locator}`);
   };
 
+  const editLocator = (id: string, locator: string) => {
+    const index = steps.findIndex((step) => step.id === id);
+    const current = snapshot.steps[index];
+    if (index < 0 || !current || !('target' in current)) return;
+    const target = replacePrimaryLocator(current.target, locator);
+    if (!target) {
+      setLog('Locator cannot be empty');
+      return;
+    }
+    window.testron?.command({ type: 'update-step', index, step: { ...current, target } });
+    setLog(`Locator saved · ${locator}`);
+  };
+
+  const repick = (id: string) => {
+    const index = steps.findIndex((step) => step.id === id);
+    if (index < 0 || !('target' in snapshot.steps[index])) return;
+    window.testron?.command({ type: 'set-repick-step', index });
+    setSelectedId(id);
+    setLog(`Repick step ${index + 1} · click the correct element in the website`);
+  };
+
+  const cancelRepick = () => {
+    window.testron?.command({ type: 'set-repick-step' });
+    setLog('Repick cancelled');
+  };
+
+  const convertToAssertion = (id: string) => {
+    const index = steps.findIndex((step) => step.id === id);
+    const current = snapshot.steps[index];
+    if (index < 0 || !current) return;
+    window.testron?.command({
+      type: 'update-step',
+      index,
+      step: convertStepToAssertion(current, snapshot.currentUrl),
+    });
+    setSelectedId(id);
+    setLog(`Step ${index + 1} converted to an assertion`);
+  };
+
   const navigate = (action: 'back' | 'forward' | 'reload' | 'stop') => {
     window.testron?.command({ type: 'browser-navigation', action });
     setLoading(action !== 'stop');
@@ -181,7 +242,8 @@ export const RecordScreen = () => {
     }
   };
 
-  const setCaptureMode = (next: CaptureMode, assertion: VerifyAssertion = 'visible') => {
+  const setCaptureMode = (next: CaptureMode, assertion: VerifyAssertion = verifyAssertion) => {
+    setVerifyAssertion(assertion);
     window.testron?.command({
       type: 'set-capture-mode',
       mode: next === 'assert' ? 'verify' : 'record',
@@ -235,9 +297,13 @@ export const RecordScreen = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [status, steps.length, finishing, mode]);
+  }, [status, steps.length, finishing, mode, verifyAssertion]);
 
   const selected = steps.find((step) => step.id === selectedId);
+  const websiteInset = {
+    left: panels.steps ? `${widths.steps}%` : '0%',
+    right: panels.code ? `${widths.code}%` : '0%',
+  };
 
   /**
    * Where the three views belong. The plane is measured rather than computed
@@ -249,7 +315,8 @@ export const RecordScreen = () => {
    * window is ours again for as long as the sheet is up.
    */
   const layout = (): RecordLayout => {
-    const rect = finishing ? undefined : planeRef.current?.getBoundingClientRect();
+    const rect =
+      finishing || configuringProfile ? undefined : planeRef.current?.getBoundingClientRect();
     return {
       plane: rect
         ? {
@@ -281,6 +348,7 @@ export const RecordScreen = () => {
         file: context.file,
         selectedId,
         expandedId,
+        repickingId,
         steps,
         lines,
         layout: current,
@@ -302,12 +370,14 @@ export const RecordScreen = () => {
     elapsed,
     selectedId,
     expandedId,
+    repickingId,
     steps,
     lines,
     panels,
     widths,
     resizing,
     finishing,
+    configuringProfile,
   ]);
 
   // The plane moves when the window does, and the panels have to follow.
@@ -333,6 +403,18 @@ export const RecordScreen = () => {
           break;
         case 'use-alternative':
           useAlternative(event.id, event.locator);
+          break;
+        case 'edit-locator':
+          editLocator(event.id, event.locator);
+          break;
+        case 'repick':
+          repick(event.id);
+          break;
+        case 'cancel-repick':
+          cancelRepick();
+          break;
+        case 'convert-to-assertion':
+          convertToAssertion(event.id);
           break;
         case 'delete':
           remove(event.id);
@@ -374,6 +456,18 @@ export const RecordScreen = () => {
         project={context.project}
         suite={context.suite}
         environment={context.environment}
+        environments={environments}
+        environmentId={selectedEnvironmentId}
+        onEnvironment={(environmentId) =>
+          window.testron?.command({ type: 'select-environment', environmentId })
+        }
+        profile={selectedProfile?.name}
+        profiles={profiles}
+        profileId={snapshot.library.selectedProfileId}
+        onProfile={(profileId) => {
+          if (profileId) window.testron?.command({ type: 'select-profile', profileId });
+        }}
+        onConfigureProfile={() => setConfiguringProfile(true)}
         test={name}
         onBack={() => {
           window.location.hash = '#/';
@@ -388,6 +482,8 @@ export const RecordScreen = () => {
         status={status}
         mode={mode}
         onMode={setCaptureMode}
+        assertion={verifyAssertion}
+        onAssertion={(assertion) => setCaptureMode('assert', assertion)}
         canUndo={snapshot.canUndo}
         canRedo={snapshot.canRedo}
         onUndo={undo}
@@ -401,30 +497,36 @@ export const RecordScreen = () => {
           if (status === 'recording') pause();
         }}
         steps={steps.length}
+        editingExisting={Boolean(snapshot.library.selectedTestId && steps.length > 0)}
         panels={panels}
         onPanel={togglePanel}
       />
 
-      {/* The browser plane. Everything below the chrome belongs to the site;
-          the panels sit on top of it rather than taking width from it.
-          In the packaged app this rectangle is deliberately left empty — its
-          measurements are what the native views are positioned by. */}
+      {/* The browser plane is divided into three blocks: optional steps, the
+          resized website, and optional generated code. In Electron this outer
+          rectangle is measured for the three native views; in the browser
+          study the same insets are applied directly. */}
       <div ref={planeRef} data-plane className="relative min-h-0 flex-1">
         {!hosted && (
-          <TargetPage
-            state={pageState}
-            active={selected?.spot}
-            mode={mode}
-            tag={selected?.locator}
-            recording={status === 'recording'}
-          />
+          <div className="absolute inset-y-0" style={websiteInset}>
+            <TargetPage
+              state={pageState}
+              active={selected?.spot}
+              mode={mode}
+              tag={selected?.locator}
+              recording={status === 'recording'}
+            />
+          </div>
         )}
 
         {status === 'recording' && !hosted && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 z-30"
-            style={{ boxShadow: 'inset 0 0 0 2px var(--ui-critical)' }}
+            className="pointer-events-none absolute inset-y-0 z-30"
+            style={{
+              ...websiteInset,
+              boxShadow: 'inset 0 0 0 2px var(--ui-critical)',
+            }}
           />
         )}
 
@@ -449,9 +551,14 @@ export const RecordScreen = () => {
               status={status}
               selectedId={selectedId}
               expandedId={expandedId}
+              repickingId={repickingId}
               onSelect={setSelectedId}
               onExpand={(id) => setExpandedId((current) => (current === id ? undefined : id))}
               onUseAlternative={useAlternative}
+              onEditLocator={editLocator}
+              onRepick={repick}
+              onCancelRepick={cancelRepick}
+              onConvertToAssertion={convertToAssertion}
               onDelete={remove}
             />
           </GlassPanel>
@@ -490,6 +597,25 @@ export const RecordScreen = () => {
               setFinishing(undefined);
               setLog(`Saved · ${steps.length} steps → test view`);
               window.location.hash = '#/test';
+            }}
+          />
+        )}
+        {configuringProfile && (
+          <ProfileSheet
+            environment={context.environment}
+            disabled={!selectedEnvironmentId}
+            onCancel={() => setConfiguringProfile(false)}
+            onSave={(profileName, variables) => {
+              if (!selectedEnvironmentId) return;
+              window.testron?.command({
+                type: 'create-profile',
+                environmentId: selectedEnvironmentId,
+                name: profileName,
+                authenticationType: 'credentials',
+                variables,
+              });
+              setConfiguringProfile(false);
+              setLog(`Profile ${profileName} selected · ${variables.length} variables available`);
             }}
           />
         )}
@@ -569,3 +695,151 @@ const FinishSheet = ({
     </section>
   </div>
 );
+
+const ProfileSheet = ({
+  environment,
+  disabled,
+  onCancel,
+  onSave,
+}: {
+  environment: string;
+  disabled: boolean;
+  onCancel: () => void;
+  onSave: (
+    name: string,
+    variables: Array<{ name: string; value: string; sensitive: boolean }>,
+  ) => void;
+}) => {
+  const [name, setName] = useState('Administrator');
+  const [variables, setVariables] = useState([
+    { name: 'username', value: '', sensitive: false },
+    { name: 'password', value: '', sensitive: true },
+  ]);
+  const validVariables = variables.filter((variable) => variable.name.trim());
+  const unique =
+    new Set(validVariables.map((variable) => variable.name.trim())).size === validVariables.length;
+  const complete = validVariables.every((variable) => variable.value.length > 0);
+
+  return (
+    <div
+      className="absolute inset-0 z-40 grid place-items-center"
+      style={{ background: 'var(--ui-overlay)' }}
+    >
+      <section
+        role="dialog"
+        aria-label="Authentication profile"
+        className="w-[560px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold">New profile</h2>
+        <p className="mt-1 text-base text-ink-3">
+          Credentials for {environment}. Recorded tests store variable names, never these values.
+        </p>
+
+        <label className="mt-4 block">
+          <span className="text-sm text-ink-3">Profile name</span>
+          <input
+            aria-label="Profile name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
+          />
+        </label>
+        <label className="mt-3 block">
+          <span className="text-sm text-ink-3">Authentication type</span>
+          <select
+            aria-label="Authentication type"
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none"
+          >
+            <option value="credentials">Login / password</option>
+            <option disabled>OAuth — coming later</option>
+            <option disabled>Authentication header — coming later</option>
+            <option disabled>Cookie — coming later</option>
+          </select>
+        </label>
+
+        <div className="mt-4">
+          <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-sm text-ink-3">
+            <span>Name</span>
+            <span>Value</span>
+            <span />
+          </div>
+          {variables.map((variable, index) => (
+            <div key={index} className="mb-2 grid grid-cols-[1fr_1.35fr_70px] gap-2">
+              <input
+                aria-label={`Variable ${index + 1} name`}
+                value={variable.name}
+                onChange={(event) =>
+                  setVariables((current) =>
+                    current.map((entry, entryIndex) =>
+                      entryIndex === index
+                        ? {
+                            ...entry,
+                            name: event.target.value,
+                            sensitive: /password|secret|token/i.test(event.target.value),
+                          }
+                        : entry,
+                    ),
+                  )
+                }
+                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
+              />
+              <input
+                aria-label={`Variable ${index + 1} value`}
+                type={variable.sensitive ? 'password' : 'text'}
+                value={variable.value}
+                onChange={(event) =>
+                  setVariables((current) =>
+                    current.map((entry, entryIndex) =>
+                      entryIndex === index ? { ...entry, value: event.target.value } : entry,
+                    ),
+                  )
+                }
+                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setVariables((current) => current.filter((_, entryIndex) => entryIndex !== index))
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setVariables((current) => [...current, { name: '', value: '', sensitive: false }])
+            }
+          >
+            + Variable
+          </Button>
+          {!unique && <p className="mt-2 text-sm text-critical">Variable names must be unique.</p>}
+        </div>
+
+        <div className="mt-5 flex items-center gap-2">
+          <Button
+            variant="primary"
+            icon="check"
+            disabled={
+              disabled || !name.trim() || validVariables.length === 0 || !unique || !complete
+            }
+            onClick={() =>
+              onSave(
+                name.trim(),
+                validVariables.map((variable) => ({ ...variable, name: variable.name.trim() })),
+              )
+            }
+          >
+            Create and select
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+};

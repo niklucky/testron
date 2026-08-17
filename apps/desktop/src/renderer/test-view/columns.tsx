@@ -161,7 +161,9 @@ export const StepCard = ({
   failed,
   running,
   passed,
+  error,
   onStep,
+  onRepick,
   onAddAssertion,
   onDelete,
   locatorEditable = true,
@@ -171,7 +173,9 @@ export const StepCard = ({
   failed: boolean;
   running: boolean;
   passed: boolean;
+  error?: string;
   onStep: (step: RecordedStep) => void;
+  onRepick?: () => void;
   onAddAssertion: () => void;
   onDelete: () => void;
   locatorEditable?: boolean;
@@ -205,13 +209,33 @@ export const StepCard = ({
             </span>
           )}
           {step.locator && locatorEditable && (
-            <InlineText
-              label={`Step ${index + 1} locator`}
-              mono
-              value={step.locator}
-              onChange={(locator) => onStep({ ...step, locator })}
-              className="mt-1 text-xs text-ink-3"
-            />
+            <>
+              <InlineText
+                label={`Step ${index + 1} locator`}
+                mono
+                value={step.locator}
+                onChange={(locator) => onStep({ ...step, locator })}
+                className="mt-1 text-xs text-ink-3"
+              />
+              {step.alternatives.length > 0 && (
+                <select
+                  aria-label={`Step ${index + 1} recorded locator alternatives`}
+                  defaultValue=""
+                  onChange={(event) => {
+                    if (event.target.value) onStep({ ...step, locator: event.target.value });
+                    event.target.value = '';
+                  }}
+                  className="ui-mono mt-1 w-full rounded border border-line bg-plane px-1 py-1 text-xs text-ink-3 outline-none hover:border-accent"
+                >
+                  <option value="">Use a recorded alternative…</option>
+                  {step.alternatives.map((locator) => (
+                    <option key={locator} value={locator}>
+                      {locator}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
           {step.locator && !locatorEditable && (
             <span className="ui-mono mt-1 block truncate text-xs text-ink-3">{step.locator}</span>
@@ -222,9 +246,19 @@ export const StepCard = ({
             </Badge>
           )}
           {failed && (
-            <Badge tone="critical" icon="alert" size="sm" className="mt-1.5">
-              Failed here
-            </Badge>
+            <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
+              <Badge tone="critical" icon="alert" size="sm">
+                Failed here
+              </Badge>
+              {error && (
+                <pre
+                  aria-label="Step error"
+                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
+                >
+                  {error}
+                </pre>
+              )}
+            </div>
           )}
           {passed && !failed && (
             <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
@@ -233,6 +267,14 @@ export const StepCard = ({
           )}
         </span>
         <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+          {step.locator && onRepick && (
+            <IconButton
+              icon="focus"
+              size="sm"
+              label={`Repick element for step ${index + 1}`}
+              onClick={onRepick}
+            />
+          )}
           {/* An assertion is added where it belongs — under the step that
               earns it — rather than at the bottom of a separate list. */}
           <IconButton
@@ -273,7 +315,10 @@ export const AssertionCard = ({
   onMove,
   onDelete,
   subjectEditable = true,
+  locatorEditable = false,
   kinds,
+  status,
+  error,
 }: {
   assertion: Assertion;
   canMoveUp: boolean;
@@ -282,9 +327,21 @@ export const AssertionCard = ({
   onMove: (direction: -1 | 1) => void;
   onDelete: () => void;
   subjectEditable?: boolean;
+  locatorEditable?: boolean;
   kinds?: AssertionKind[];
+  status?: 'pending' | 'running' | 'passed' | 'failed';
+  error?: string;
 }) => (
-  <Card className="group">
+  <Card
+    className="group"
+    tone={
+      status === 'failed'
+        ? 'var(--ui-critical)'
+        : status === 'running'
+          ? 'var(--ui-accent)'
+          : undefined
+    }
+  >
     <div className="flex items-start gap-2">
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
@@ -314,7 +371,11 @@ export const AssertionCard = ({
           />
           {assertionNeedsValue(assertion.kind) && (
             <InlineText
-              label="Expected value"
+              label={
+                assertion.kind === 'countExactly' || assertion.kind === 'countAtLeast'
+                  ? 'Expected count'
+                  : 'Expected value'
+              }
               mono
               value={assertion.expected}
               onChange={(expected) => onAssertion({ ...assertion, expected })}
@@ -323,9 +384,38 @@ export const AssertionCard = ({
           )}
         </span>
 
-        {assertion.locator && (
+        {assertion.locator && locatorEditable && (
+          <InlineText
+            label="Assertion locator"
+            mono
+            value={assertion.locator}
+            onChange={(locator) => onAssertion({ ...assertion, locator })}
+            className="mt-1 text-xs text-ink-3"
+          />
+        )}
+        {assertion.locator && !locatorEditable && (
           <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
             {assertion.locator}
+          </span>
+        )}
+        {status === 'failed' && (
+          <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
+            <Badge tone="critical" icon="alert" size="sm">
+              Assertion failed
+            </Badge>
+            {error && (
+              <pre
+                aria-label="Assertion error"
+                className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
+              >
+                {error}
+              </pre>
+            )}
+          </div>
+        )}
+        {status === 'passed' && (
+          <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
+            <Icon name="check" size={11} /> passed
           </span>
         )}
       </span>
@@ -400,6 +490,20 @@ export const RunCard = ({
         <span style={{ color: toneFill.neutral }}>{run.environment}</span>·
         <span className="truncate">{run.by}</span>·<span>{age(run.minutesAgo)}</span>
       </Meta>
+
+      {run.error && run.verdict !== 'running' && (
+        <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
+          <p className="text-xs font-medium text-critical">
+            {run.failedStepId ? 'Failed step' : 'Runner error'}
+          </p>
+          <pre
+            aria-label="Run error"
+            className="ui-mono mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-xs text-ink-2"
+          >
+            {run.error}
+          </pre>
+        </div>
+      )}
 
       {reportAvailable && run.verdict !== 'running' && (
         <button
