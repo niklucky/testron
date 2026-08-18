@@ -288,7 +288,10 @@ and CLI deployments must define supported version ranges. Migrations should be
 tested with fixtures from prior released versions.
 
 Electron IPC is a separate trust boundary and must not be reused as the server
-protocol merely because some domain payloads look similar.
+protocol merely because some domain payloads look similar. Desktop IPC schemas
+may compose the same protocol-owned leaf invariants for canonical fields such as
+IDs, names, titles, and HTTP URLs; their command envelopes and inferred types
+remain desktop-owned.
 
 ## Deployment boundaries
 
@@ -303,6 +306,12 @@ Desktop distribution and server/web deployment are separate release tracks:
 
 Compatibility checks should fail clearly before a write when a client or format
 version is unsupported.
+
+The accepted protocol v1 resource invariants, operation schemas, conflict
+outcome, idempotency rules, and migration policy are recorded in
+[`protocol-v1.md`](protocol-v1.md). That decision is the implementation input
+for the Phase 4 server transport; handlers and database records must adapt to it
+rather than redefine it.
 
 ## Architecture guardrails
 

@@ -3,24 +3,13 @@ import { ipcRenderer } from 'electron';
 import { rankLocators, type Locator } from '@testron/domain/locators/schema';
 import type { RecorderCandidate } from '@testron/domain/recording/schema';
 import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
+import type { VerifyAssertion } from './verify-assertion';
 
 let testIdAttribute = 'data-testid';
 let captureMode: 'record' | 'verify' = 'record';
 let recordingActive = false;
 let repicking = false;
 let profileVariables: Array<{ name: string; value: string }> = [];
-type VerifyAssertion =
-  | 'visible'
-  | 'hidden'
-  | 'textContains'
-  | 'textEquals'
-  | 'value'
-  | 'enabled'
-  | 'disabled'
-  | 'checked'
-  | 'unchecked'
-  | 'countExactly'
-  | 'countAtLeast';
 let assertion: VerifyAssertion = 'visible';
 
 ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {

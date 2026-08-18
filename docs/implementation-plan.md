@@ -142,6 +142,8 @@ not persisted, and unsupported interactions are visible.
 
 ## Phase 3: Domain model and server protocol v1
 
+**Status:** Complete (2026-08-17)
+
 ### Goal
 
 Turn the model proven by the desktop authoring loop into explicit, versioned
