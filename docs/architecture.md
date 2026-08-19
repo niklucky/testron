@@ -27,8 +27,8 @@ packages/
   test-fixtures/
 ```
 
-- `apps/desktop` owns Electron, recording, local replay, artifacts, and a
-  recoverable local working cache.
+- `apps/desktop` owns Electron, recording, local replay, artifacts, and
+  recoverable local drafts.
 - `apps/web` owns browser-based project, revision, and run-result management.
 - `apps/server` owns canonical persistence, authentication, authorization, and
   revision APIs.
@@ -52,7 +52,10 @@ The validated desktop stack is:
 - TypeScript and React.
 - Vite for renderer and Electron bundle development.
 - Plain CSS and CSS variables.
-- `node:sqlite` for the desktop working cache.
+- `node:sqlite` for recoverable desktop drafts and local run state.
+- PostgreSQL and Drizzle ORM for canonical server persistence and migrations.
+- tRPC for typed client/server calls, with shared Zod schemas at every
+  procedure boundary.
 - Zod at persistence, IPC, API, and file-format boundaries.
 - Playwright Test for local replay and generated-source validation.
 - Vitest for domain and unit tests.
@@ -76,7 +79,8 @@ The server owns synchronized:
 The desktop owns local-only:
 
 - In-progress recording observations before normalization.
-- Unsynchronized drafts and an outbox of intended writes.
+- Unsynchronized and conflicted drafts, including their last acknowledged base
+  revision when one exists.
 - Local Playwright run processes and cancellation state.
 - Screenshots, traces, and reusable local authentication state unless a future
   feature explicitly uploads them.
@@ -187,23 +191,22 @@ and traces. Generated output uses public locator and assertion APIs.
 
 ## Desktop drafts and synchronization
 
-The current SQLite repository becomes a working cache rather than canonical
-storage. Its future synchronization model should include:
+The desktop SQLite repository stores authoring drafts rather than a canonical
+server cache. Canonical workspace reads are held in Electron main-process memory
+for the signed-in session and discarded on logout or exit. A canonical object
+is materialized locally only when the user edits it; that draft carries its
+server ID and last acknowledged revision pointer.
 
-- The last acknowledged server revision for each cached object.
-- Recoverable local drafts.
-- An explicit outbox of pending create, update, and delete operations.
-- Idempotency keys for retried writes.
-- Sync status and structured conflict state.
-- A clear distinction between server data, local edits, and transient run data.
-
-Recording must survive a crash or temporary disconnect. Reconnection may upload
-the draft only after comparing its base revision with the current server
-revision. A client must never silently replace newer server work.
+Writes go directly through tRPC while online. An unsent or failed write remains
+a recoverable draft, and its stable local identity produces a stable
+idempotency key for retries without a persisted transport outbox. A conflict
+marks the draft and preserves its contents; the current server snapshot remains
+in memory and is never silently replaced. Local recording and replay do not
+depend on the server being reachable.
 
 ## Server boundaries
 
-The server exposes versioned operations for:
+The server exposes versioned tRPC procedures for:
 
 - Authentication and client sessions.
 - Project and membership access.
@@ -212,10 +215,10 @@ The server exposes versioned operations for:
 - Batch pull and push used by the CLI.
 - Run summaries when remote result storage is introduced.
 
-Every operation validates its payload and authorizes access to the target
-project. Canonical writes are transactional and return the committed revision.
-API transport types belong in `packages/protocol`; database records and framework
-request objects do not.
+Every procedure validates both input and output with schemas from
+`packages/protocol` and authorizes access to the target project. Canonical
+writes are transactional and return the committed revision. Database records,
+tRPC context, and HTTP request objects remain server-private.
 
 The server initially stores structured tests, not arbitrary executable code or
 secret values. Server-side test execution requires a separate threat model,
@@ -288,7 +291,10 @@ and CLI deployments must define supported version ranges. Migrations should be
 tested with fixtures from prior released versions.
 
 Electron IPC is a separate trust boundary and must not be reused as the server
-protocol merely because some domain payloads look similar.
+protocol merely because some domain payloads look similar. Desktop IPC schemas
+may compose the same protocol-owned leaf invariants for canonical fields such as
+IDs, names, titles, and HTTP URLs; their command envelopes and inferred types
+remain desktop-owned.
 
 ## Deployment boundaries
 
@@ -303,6 +309,12 @@ Desktop distribution and server/web deployment are separate release tracks:
 
 Compatibility checks should fail clearly before a write when a client or format
 version is unsupported.
+
+The accepted protocol v1 resource invariants, operation schemas, conflict
+outcome, idempotency rules, and migration policy are recorded in
+[`protocol-v1.md`](protocol-v1.md). That decision is the implementation input
+for the Phase 4 server transport; handlers and database records must adapt to it
+rather than redefine it.
 
 ## Architecture guardrails
 
@@ -329,6 +341,33 @@ cancellation, timeouts, and reusable local authentication state. A sandboxed
 `WebContentsView` retains its recorder preload across navigation and exposes no
 Node, Electron, Testron, or `require` global to tested content.
 
-Continue using the embedded `WebContentsView` for desktop recording. The next
-architecture checkpoint is a thin server-and-CLI vertical slice that proves
-revision-aware pull and push before broader web or collaboration work.
+Continue using the embedded `WebContentsView` for desktop recording.
+
+## Validated server-backed checkpoint
+
+Status: accepted on 2026-08-18.
+
+The first canonical service lives entirely in `apps/server`. It uses tRPC over
+the Node HTTP adapter, PostgreSQL for canonical persistence, and Drizzle ORM
+with checked-in generated SQL migrations. Revision saves lock the test row in a
+transaction; idempotent writes use a transaction-scoped PostgreSQL advisory lock
+plus a durable outcome record, so concurrent writers cannot bypass the exact
+base-revision comparison.
+
+Desktop authentication is a browser/device-style flow. A pre-provisioned user
+approves a short-lived code in the system browser, the desktop polls once for
+an opaque session token, and Electron `safeStorage` encrypts that token at rest.
+Only the Electron main process constructs authenticated requests. The
+application renderer receives status and user-code fields, never credentials.
+
+The desktop SQLite database stores only local authoring data, server ID
+mappings, and test drafts with stable step IDs and an acknowledged base pointer.
+There are no acknowledged-snapshot, canonical-cache, outbox, or persisted
+conflict-snapshot tables. Network failures leave the draft intact. A stale save
+marks that draft conflicted while the returned canonical snapshot stays in
+memory for presentation.
+
+The bounded authenticated workspace query returns active projects,
+environments, and current test snapshots owned by the caller. The result lives
+only in process memory, so a fresh desktop can show canonical work without
+duplicating the server database locally.

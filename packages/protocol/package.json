@@ -1,0 +1,25 @@
+{
+  "name": "@testron/protocol",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./compatibility": "./src/compatibility.ts",
+    "./errors": "./src/errors.ts",
+    "./operations": "./src/operations.ts",
+    "./resources": "./src/resources.ts",
+    "./version": "./src/version.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@testron/domain": "0.0.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

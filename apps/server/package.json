@@ -1,0 +1,30 @@
+{
+  "name": "@testron/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./router": "./src/trpc/router.ts"
+  },
+  "scripts": {
+    "start": "vite-node src/cli.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@testron/protocol": "0.0.1",
+    "@trpc/server": "^11.18.0",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.23.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@trpc/client": "^11.18.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.10",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

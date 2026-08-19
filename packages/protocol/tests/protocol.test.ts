@@ -1,0 +1,123 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { describe, expect, it } from 'vitest';
+
+import { inspectCompatibility } from '../src/compatibility';
+import { revisionConflictResponseSchema } from '../src/errors';
+import { saveTestRevisionRequestSchema } from '../src/operations';
+import { testRevisionSchema, testSnapshotSchema } from '../src/resources';
+
+const fixture = (name: string): unknown =>
+  JSON.parse(
+    readFileSync(fileURLToPath(new URL(`fixtures/${name}`, import.meta.url)), 'utf8'),
+  ) as unknown;
+
+const ids = {
+  request: '00000000-0000-4000-8000-000000000101',
+  actor: '00000000-0000-4000-8000-000000000102',
+  project: '00000000-0000-4000-8000-000000000103',
+  test: '00000000-0000-4000-8000-000000000104',
+  environment: '00000000-0000-4000-8000-000000000105',
+  revision: '00000000-0000-4000-8000-000000000106',
+};
+
+const revision = {
+  id: ids.revision,
+  testId: ids.test,
+  projectId: ids.project,
+  number: 1,
+  parentRevision: null,
+  content: {
+    stepSchemaVersion: 1,
+    title: 'empty test',
+    environmentId: ids.environment,
+    steps: [],
+  },
+  createdAt: '2026-01-01T00:00:00.000Z',
+  createdBy: ids.actor,
+};
+
+const snapshot = {
+  test: {
+    id: ids.test,
+    projectId: ids.project,
+    currentRevision: { id: ids.revision, number: 1 },
+    createdAt: '2026-01-01T00:00:00.000Z',
+    createdBy: ids.actor,
+    deletion: { status: 'active' },
+  },
+  currentRevision: revision,
+};
+
+describe('protocol v1 fixtures', () => {
+  it('accepts a valid revision-aware save and preserves its content', () => {
+    const parsed = saveTestRevisionRequestSchema.parse(fixture('valid-save-request.json'));
+    expect(parsed.baseRevision.number).toBe(7);
+    expect(parsed.content.steps).toHaveLength(2);
+  });
+
+  it('rejects a synchronized secret value even when the domain step is otherwise valid', () => {
+    const parsed = saveTestRevisionRequestSchema.safeParse(fixture('invalid-secret-request.json'));
+    expect(parsed.success).toBe(false);
+    if (!parsed.success)
+      expect(parsed.error.issues.some((issue) => issue.path.at(-1) === 'value')).toBe(true);
+  });
+
+  it('classifies old and unsupported future protocol payloads before parsing them', () => {
+    expect(inspectCompatibility(fixture('old-protocol-request.json'))).toMatchObject({
+      status: 'protocol-too-old',
+      received: 0,
+    });
+    expect(inspectCompatibility(fixture('future-protocol-request.json'))).toMatchObject({
+      status: 'protocol-too-new',
+      received: 2,
+    });
+    expect(inspectCompatibility(fixture('future-step-request.json'))).toMatchObject({
+      status: 'unsupported-step-version',
+      received: 2,
+      supported: [1],
+    });
+  });
+});
+
+describe('revision invariants', () => {
+  it('requires an immutable revision to point to its immediate predecessor', () => {
+    expect(
+      testRevisionSchema.safeParse({
+        ...revision,
+        id: '00000000-0000-4000-8000-000000000107',
+        number: 3,
+        parentRevision: { id: ids.revision, number: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires the current pointer and included revision to agree', () => {
+    expect(testSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+    expect(
+      testSnapshotSchema.safeParse({
+        ...snapshot,
+        test: { ...snapshot.test, currentRevision: { id: ids.revision, number: 2 } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('returns the current canonical snapshot in a stale-write conflict', () => {
+    const conflict = revisionConflictResponseSchema.parse({
+      meta: { protocolVersion: 1, requestId: ids.request },
+      ok: false,
+      error: {
+        code: 'revision_conflict',
+        message: 'The test changed after the submitted base revision.',
+        testId: ids.test,
+        submittedBaseRevision: {
+          id: '00000000-0000-4000-8000-000000000108',
+          number: 1,
+        },
+        current: snapshot,
+      },
+    });
+    expect(conflict.error.current.currentRevision.id).toBe(ids.revision);
+  });
+});

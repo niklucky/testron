@@ -4,6 +4,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { redactStepSecrets, stepSchema, type Step } from '@testron/domain/steps/schema';
+import { testSnapshotSchema, type RevisionStep, type TestSnapshot } from '@testron/protocol';
+import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
 export interface ProjectRecord {
   id: string;
@@ -52,6 +54,15 @@ export interface LibrarySnapshot {
   selectedEnvironmentId?: string;
   selectedProfileId?: string;
   selectedTestId?: string;
+  sync?: { pending: number; conflicts: number };
+  server?: {
+    configured: boolean;
+    authentication: 'signedOut' | 'authorizing' | 'signedIn';
+    status: 'idle' | 'syncing' | 'synced' | 'offline' | 'conflicted' | 'error';
+    userCode?: string;
+    verificationUri?: string;
+    message?: string;
+  };
 }
 
 const migrations = [
@@ -101,6 +112,24 @@ const migrations = [
       PRIMARY KEY (profile_id, name)
     );
   `,
+  `
+    CREATE TABLE server_resource_mappings (
+      resource_kind TEXT NOT NULL CHECK (resource_kind IN ('project', 'environment', 'test')),
+      local_id TEXT NOT NULL,
+      server_id TEXT NOT NULL,
+      PRIMARY KEY (resource_kind, local_id),
+      UNIQUE (resource_kind, server_id)
+    );
+    CREATE TABLE test_drafts (
+      local_test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+      payload TEXT NOT NULL
+    );
+  `,
+  `
+    DROP TABLE IF EXISTS sync_conflicts;
+    DROP TABLE IF EXISTS sync_outbox;
+    DROP TABLE IF EXISTS acknowledged_tests;
+  `,
 ];
 
 interface Row {
@@ -115,6 +144,7 @@ export class TestronRepository {
     this.database = new DatabaseSync(databasePath);
     this.database.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
     this.migrate();
+    this.backfillDrafts();
   }
 
   close(): void {
@@ -184,6 +214,18 @@ export class TestronRepository {
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
       }));
+  }
+
+  getProject(id: string): ProjectRecord | undefined {
+    return this.listProjects().find((project) => project.id === id);
+  }
+
+  getEnvironment(id: string): EnvironmentRecord | undefined {
+    return this.listEnvironments().find((environment) => environment.id === id);
+  }
+
+  getTest(id: string): TestRecord | undefined {
+    return this.listTests().find((test) => test.id === id);
   }
 
   createProject(name: string): ProjectRecord {
@@ -289,19 +331,47 @@ export class TestronRepository {
       createdAt: now,
       updatedAt: now,
     };
-    this.database
-      .prepare(
-        `INSERT INTO tests (id, project_id, environment_id, title, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(test.id, projectId, environmentId, test.title, now, now);
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database
+        .prepare(
+          `INSERT INTO tests (id, project_id, environment_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(test.id, projectId, environmentId, test.title, now, now);
+      this.writeDraft(
+        test.id,
+        desktopTestDraftSchema.parse({
+          draftId: randomUUID(),
+          projectId,
+          baseRevision: null,
+          content: { stepSchemaVersion: 1, title: test.title, environmentId, steps: [] },
+          localCreatedAt: now,
+          localUpdatedAt: now,
+          syncStatus: 'local',
+        }),
+      );
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
     return test;
   }
 
   renameTest(testId: string, title: string): void {
+    const now = new Date().toISOString();
     this.database
       .prepare('UPDATE tests SET title = ?, updated_at = ? WHERE id = ?')
-      .run(title.trim(), new Date().toISOString(), testId);
+      .run(title.trim(), now, testId);
+    const draft = this.getDraft(testId);
+    if (draft)
+      this.writeDraft(testId, {
+        ...draft,
+        content: { ...draft.content, title: title.trim() },
+        localUpdatedAt: now,
+        syncStatus: draft.testId ? 'pending' : 'local',
+      });
   }
 
   loadSteps(testId: string): Step[] {
@@ -313,21 +383,256 @@ export class TestronRepository {
 
   replaceSteps(testId: string, steps: readonly Step[]): void {
     const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
-    const remove = this.database.prepare('DELETE FROM test_steps WHERE test_id = ?');
-    const insert = this.database.prepare(
-      'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
-    );
+    const previous = this.getDraft(testId);
+    const now = new Date().toISOString();
     this.database.exec('BEGIN IMMEDIATE');
     try {
-      remove.run(testId);
+      this.database.prepare('DELETE FROM test_steps WHERE test_id = ?').run(testId);
+      const insert = this.database.prepare(
+        'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
+      );
       validated.forEach((step, position) => insert.run(testId, position, JSON.stringify(step)));
-      this.database
-        .prepare('UPDATE tests SET updated_at = ? WHERE id = ?')
-        .run(new Date().toISOString(), testId);
+      this.database.prepare('UPDATE tests SET updated_at = ? WHERE id = ?').run(now, testId);
+      if (previous)
+        this.writeDraft(testId, {
+          ...previous,
+          content: {
+            ...previous.content,
+            steps: this.reconcileRevisionSteps(previous.content.steps, validated),
+          },
+          localUpdatedAt: now,
+          syncStatus: previous.testId ? 'pending' : 'local',
+        });
       this.database.exec('COMMIT');
     } catch (error) {
       this.database.exec('ROLLBACK');
       throw error;
+    }
+  }
+
+  getServerId(kind: 'project' | 'environment' | 'test', localId: string): string | undefined {
+    const row = this.database
+      .prepare(
+        'SELECT server_id FROM server_resource_mappings WHERE resource_kind = ? AND local_id = ?',
+      )
+      .get(kind, localId);
+    return row ? String(row.server_id) : undefined;
+  }
+
+  setServerId(kind: 'project' | 'environment' | 'test', localId: string, serverId: string): void {
+    this.database
+      .prepare(
+        `INSERT INTO server_resource_mappings (resource_kind, local_id, server_id) VALUES (?, ?, ?)
+         ON CONFLICT(resource_kind, local_id) DO UPDATE SET server_id = excluded.server_id`,
+      )
+      .run(kind, localId, serverId);
+  }
+
+  getDraft(localTestId: string): DesktopTestDraft | undefined {
+    const row = this.database
+      .prepare('SELECT payload FROM test_drafts WHERE local_test_id = ?')
+      .get(localTestId);
+    return row ? desktopTestDraftSchema.parse(JSON.parse(String(row.payload))) : undefined;
+  }
+
+  listDraftsNeedingSync(): Array<{ localTestId: string; draft: DesktopTestDraft }> {
+    return this.database
+      .prepare('SELECT local_test_id, payload FROM test_drafts ORDER BY rowid')
+      .all()
+      .map((row) => ({
+        localTestId: String(row.local_test_id),
+        draft: desktopTestDraftSchema.parse(JSON.parse(String(row.payload))),
+      }))
+      .filter(({ draft }) => draft.syncStatus === 'local' || draft.syncStatus === 'pending');
+  }
+
+  acknowledgeTest(localTestId: string, value: TestSnapshot): void {
+    const snapshot = testSnapshotSchema.parse(value);
+    const current = this.getDraft(localTestId);
+    if (!current) throw new Error('The local test draft was not found.');
+    this.setServerId('test', localTestId, snapshot.test.id);
+    this.writeDraft(localTestId, {
+      ...current,
+      testId: snapshot.test.id,
+      baseRevision: snapshot.test.currentRevision,
+      content: {
+        ...snapshot.currentRevision.content,
+        environmentId: current.content.environmentId,
+      },
+      localUpdatedAt: new Date().toISOString(),
+      syncStatus: 'synced',
+    });
+  }
+
+  recordConflict(localTestId: string): void {
+    const draft = this.getDraft(localTestId);
+    if (draft) this.writeDraft(localTestId, { ...draft, syncStatus: 'conflicted' });
+  }
+
+  getSyncSummary(): { pending: number; conflicts: number } {
+    const rows = this.database.prepare('SELECT payload FROM test_drafts').all();
+    const statuses = rows.map(
+      (row) => desktopTestDraftSchema.parse(JSON.parse(String(row.payload))).syncStatus,
+    );
+    return {
+      pending: statuses.filter((status) => status === 'local' || status === 'pending').length,
+      conflicts: statuses.filter((status) => status === 'conflicted').length,
+    };
+  }
+
+  checkoutRemoteProject(project: ProjectRecord): ProjectRecord {
+    this.database
+      .prepare('INSERT OR IGNORE INTO projects (id, name, created_at) VALUES (?, ?, ?)')
+      .run(project.id, project.name, new Date().toISOString());
+    this.setServerId('project', project.id, project.id);
+    return project;
+  }
+
+  checkoutRemoteEnvironment(environment: EnvironmentRecord): EnvironmentRecord {
+    this.database
+      .prepare(
+        `INSERT OR IGNORE INTO environments
+          (id, project_id, name, base_url, test_id_attribute, created_at, auth_revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        environment.id,
+        environment.projectId,
+        environment.name,
+        environment.baseUrl,
+        environment.testIdAttribute,
+        new Date().toISOString(),
+        environment.authRevision,
+      );
+    this.setServerId('environment', environment.id, environment.id);
+    return environment;
+  }
+
+  checkoutRemoteTest(
+    project: ProjectRecord,
+    environment: EnvironmentRecord,
+    snapshotValue: TestSnapshot,
+  ): TestRecord {
+    const snapshot = testSnapshotSchema.parse(snapshotValue);
+    const revision = snapshot.currentRevision;
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database
+        .prepare('INSERT OR IGNORE INTO projects (id, name, created_at) VALUES (?, ?, ?)')
+        .run(project.id, project.name, snapshot.test.createdAt);
+      this.database
+        .prepare(
+          `INSERT OR IGNORE INTO environments
+            (id, project_id, name, base_url, test_id_attribute, created_at, auth_revision)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          environment.id,
+          project.id,
+          environment.name,
+          environment.baseUrl,
+          environment.testIdAttribute,
+          snapshot.test.createdAt,
+          environment.authRevision,
+        );
+      this.database
+        .prepare(
+          `INSERT OR REPLACE INTO tests
+            (id, project_id, environment_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          snapshot.test.id,
+          project.id,
+          environment.id,
+          revision.content.title,
+          snapshot.test.createdAt,
+          revision.createdAt,
+        );
+      this.database.prepare('DELETE FROM test_steps WHERE test_id = ?').run(snapshot.test.id);
+      const insert = this.database.prepare(
+        'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
+      );
+      revision.content.steps.forEach((entry, index) =>
+        insert.run(snapshot.test.id, index, JSON.stringify(entry.payload)),
+      );
+      this.setServerId('project', project.id, snapshot.test.projectId);
+      this.setServerId('environment', environment.id, revision.content.environmentId);
+      this.setServerId('test', snapshot.test.id, snapshot.test.id);
+      const now = new Date().toISOString();
+      this.writeDraft(snapshot.test.id, {
+        draftId: randomUUID(),
+        projectId: project.id,
+        testId: snapshot.test.id,
+        baseRevision: snapshot.test.currentRevision,
+        content: { ...revision.content, environmentId: environment.id },
+        localCreatedAt: now,
+        localUpdatedAt: now,
+        syncStatus: 'synced',
+      });
+      this.database.exec('COMMIT');
+      return {
+        id: snapshot.test.id,
+        projectId: project.id,
+        environmentId: environment.id,
+        title: revision.content.title,
+        createdAt: snapshot.test.createdAt,
+        updatedAt: revision.createdAt,
+      };
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private writeDraft(localTestId: string, value: DesktopTestDraft): void {
+    const draft = desktopTestDraftSchema.parse(value);
+    this.database
+      .prepare(
+        `INSERT INTO test_drafts (local_test_id, payload) VALUES (?, ?)
+         ON CONFLICT(local_test_id) DO UPDATE SET payload = excluded.payload`,
+      )
+      .run(localTestId, JSON.stringify(draft));
+  }
+
+  private reconcileRevisionSteps(
+    previous: readonly RevisionStep[],
+    steps: readonly Step[],
+  ): RevisionStep[] {
+    const remaining = new Set(previous.map((_, index) => index));
+    return steps.map((payload, index) => {
+      const serialized = JSON.stringify(payload);
+      const exact = previous.findIndex(
+        (entry, candidate) =>
+          remaining.has(candidate) && JSON.stringify(entry.payload) === serialized,
+      );
+      const chosen =
+        exact >= 0 ? exact : remaining.has(index) ? index : (remaining.values().next().value ?? -1);
+      if (chosen >= 0) {
+        remaining.delete(chosen);
+        return { id: previous[chosen]!.id, payload };
+      }
+      return { id: randomUUID(), payload };
+    });
+  }
+
+  private backfillDrafts(): void {
+    for (const test of this.listTests()) {
+      if (this.getDraft(test.id)) continue;
+      this.writeDraft(test.id, {
+        draftId: randomUUID(),
+        projectId: test.projectId,
+        baseRevision: null,
+        content: {
+          stepSchemaVersion: 1,
+          title: test.title,
+          environmentId: test.environmentId,
+          steps: this.loadSteps(test.id).map((payload) => ({ id: randomUUID(), payload })),
+        },
+        localCreatedAt: test.createdAt,
+        localUpdatedAt: test.updatedAt,
+        syncStatus: 'local',
+      });
     }
   }
 
@@ -342,11 +647,11 @@ export class TestronRepository {
       (this.database.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as Row)
         .version ?? 0,
     );
-    migrations.slice(current).forEach((sql, offset) => {
+    migrations.slice(current).forEach((migration, offset) => {
       const version = current + offset + 1;
       this.database.exec('BEGIN IMMEDIATE');
       try {
-        this.database.exec(sql);
+        this.database.exec(migration);
         this.database
           .prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)')
           .run(version, new Date().toISOString());

@@ -142,6 +142,8 @@ not persisted, and unsupported interactions are visible.
 
 ## Phase 3: Domain model and server protocol v1
 
+**Status:** Complete (2026-08-17)
+
 ### Goal
 
 Turn the model proven by the desktop authoring loop into explicit, versioned
@@ -189,6 +191,8 @@ stale writes have a defined conflict outcome.
 
 ## Phase 4: Server-backed vertical slice
 
+**Status:** Complete (2026-08-18)
+
 ### Goal
 
 Make one desktop-authored test canonical on the server, including authentication,
@@ -218,8 +222,10 @@ authentication
 
 ### Work
 
-- Select the server framework, database, migration tooling, and authentication
-  approach from the v1 protocol requirements.
+- Use PostgreSQL for canonical persistence, Drizzle ORM for typed queries, and
+  checked-in Drizzle SQL migrations.
+- Expose application operations through tRPC, with explicit Zod input and
+  output schemas owned by `packages/protocol`.
 - Implement interactive desktop authentication and secure local token storage.
 - Authenticate every operation and authorize access at the project boundary.
 - Implement the minimum create/read operations needed for one project and one
@@ -229,7 +235,8 @@ authentication
 - Reject stale base revisions with the defined structured conflict response.
 - Make retried writes idempotent.
 - Convert the desktop SQLite database from sole persistence into a recoverable
-  working cache with acknowledged revisions, drafts, and an outbox.
+  draft store. Read canonical server data on demand and keep it in memory; do
+  not persist a second complete server dataset or an outbox.
 - Synchronize without exposing server credentials to the renderer or tested
   website.
 - Preserve local recording and local replay during temporary disconnection.
@@ -238,10 +245,27 @@ authentication
 ### Exit criterion
 
 An authenticated user can open an authorized project and environment, author a
-test in the desktop application, save it as a server revision, restart or use a
-fresh desktop cache, and retrieve the same canonical test. A stale save produces
-a visible conflict and never silently overwrites the newer revision. Local
-recording remains recoverable during a temporary network failure.
+test in the desktop application, save it as a server revision, restart with an
+empty local draft store, and retrieve the same canonical test directly from the
+server. A stale save produces a visible conflict and never silently overwrites
+the newer revision. Unsaved local recording remains recoverable during a
+temporary network failure.
+
+### Outcome
+
+- `apps/server` provides an authenticated tRPC API backed by PostgreSQL,
+  Drizzle models and migrations, project-bound authorization, immutable
+  revisions, revision history, structured conflicts, and transactional
+  idempotency.
+- Desktop browser login stores its opaque bearer token with Electron
+  `safeStorage`; the renderer and tested website never receive it.
+- The desktop database retains stable-ID drafts, their acknowledged base
+  pointers, local-to-server ID mappings, and draft conflict status. It does not
+  retain canonical server snapshots or an outbox.
+- A bounded workspace query populates process memory after login and is
+  discarded on logout or application exit.
+- Cross-boundary tests cover authentication, authorization, retry behavior,
+  draft recovery, memory-only hydration, and stale-write conflicts.
 
 ## Phase 5: Product and collaboration expansion
 

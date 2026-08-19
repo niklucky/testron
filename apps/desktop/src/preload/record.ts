@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { verifyAssertionSchema } from './verify-assertion';
+
 /**
  * The contract between the record screen and its two panel views.
  *
@@ -67,21 +69,7 @@ export const recordedStepSchema = z.object({
   value: z.string().optional(),
   secret: z.string().optional(),
   url: z.string().optional(),
-  assertion: z
-    .enum([
-      'visible',
-      'hidden',
-      'textContains',
-      'textEquals',
-      'value',
-      'enabled',
-      'disabled',
-      'checked',
-      'unchecked',
-      'countExactly',
-      'countAtLeast',
-    ])
-    .optional(),
+  assertion: verifyAssertionSchema.optional(),
   warning: z.string().optional(),
   at: z.number().nonnegative(),
 });

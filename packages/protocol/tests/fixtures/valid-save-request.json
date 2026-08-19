@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "protocolVersion": 1,
+    "requestId": "00000000-0000-4000-8000-000000000001",
+    "client": { "kind": "desktop", "version": "0.0.1" },
+    "supportedStepVersions": [1],
+    "idempotencyKey": "save-test-00000001"
+  },
+  "testId": "00000000-0000-4000-8000-000000000002",
+  "baseRevision": {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "number": 7
+  },
+  "content": {
+    "stepSchemaVersion": 1,
+    "title": "sign in",
+    "environmentId": "00000000-0000-4000-8000-000000000004",
+    "steps": [
+      {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "payload": {
+          "version": 1,
+          "kind": "navigate",
+          "url": "https://example.test/sign-in",
+          "metadata": { "recordedAt": "2026-01-01T00:00:00.000Z" }
+        }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "payload": {
+          "version": 1,
+          "kind": "fill",
+          "target": {
+            "primary": { "strategy": "name", "value": "password" },
+            "alternatives": []
+          },
+          "value": "",
+          "secret": { "environmentVariable": "TESTRON_PASSWORD" },
+          "metadata": { "recordedAt": "2026-01-01T00:00:01.000Z" }
+        }
+      }
+    ]
+  }
+}

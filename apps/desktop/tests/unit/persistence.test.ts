@@ -157,4 +157,53 @@ describe('TestronRepository', () => {
     expect(String(row?.payload)).toContain('username');
     database.close();
   });
+
+  it('backfills legacy authoring rows as drafts without a canonical cache or outbox', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-backfill-'));
+    temporaryDirectories.push(directory);
+    const databasePath = path.join(directory, 'testron.sqlite');
+    const repository = new TestronRepository(databasePath);
+    const project = repository.createProject('Legacy');
+    const environment = repository.createEnvironment(
+      project.id,
+      'Local',
+      'http://127.0.0.1:4174/',
+      'data-testid',
+    );
+    const test = repository.createTest(project.id, environment.id, 'legacy test');
+    repository.replaceSteps(test.id, [
+      {
+        version: 1,
+        kind: 'navigate',
+        url: environment.baseUrl,
+        metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+      },
+    ]);
+    repository.close();
+
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      DELETE FROM test_drafts;
+      DELETE FROM server_resource_mappings;
+    `);
+    database.close();
+
+    const migrated = new TestronRepository(databasePath);
+    expect(migrated.getDraft(test.id)).toMatchObject({
+      content: { title: 'legacy test', steps: [{ payload: { kind: 'navigate' } }] },
+      syncStatus: 'local',
+    });
+    expect(migrated.getSyncSummary()).toEqual({ pending: 1, conflicts: 0 });
+    migrated.close();
+
+    const inspected = new DatabaseSync(databasePath, { readOnly: true });
+    const tables = inspected
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all()
+      .map((row) => String(row.name));
+    expect(tables).not.toContain('sync_outbox');
+    expect(tables).not.toContain('acknowledged_tests');
+    expect(tables).not.toContain('sync_conflicts');
+    inspected.close();
+  });
 });
