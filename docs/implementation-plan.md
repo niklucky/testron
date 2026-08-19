@@ -257,8 +257,9 @@ temporary network failure.
   Drizzle models and migrations, project-bound authorization, immutable
   revisions, revision history, structured conflicts, and transactional
   idempotency.
-- Desktop browser login stores its opaque bearer token with Electron
-  `safeStorage`; the renderer and tested website never receive it.
+- Desktop email/password registration and login return an opaque bearer token
+  stored with Electron `safeStorage`; the tested website never receives
+  credentials or session state.
 - The desktop database retains stable-ID drafts, their acknowledged base
   pointers, local-to-server ID mappings, and draft conflict status. It does not
   retain canonical server snapshots or an outbox.

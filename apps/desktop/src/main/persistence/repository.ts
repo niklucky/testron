@@ -57,10 +57,9 @@ export interface LibrarySnapshot {
   sync?: { pending: number; conflicts: number };
   server?: {
     configured: boolean;
-    authentication: 'signedOut' | 'authorizing' | 'signedIn';
+    authentication: 'signedOut' | 'authenticating' | 'signedIn';
+    workspace: 'loading' | 'loaded' | 'unavailable';
     status: 'idle' | 'syncing' | 'synced' | 'offline' | 'conflicted' | 'error';
-    userCode?: string;
-    verificationUri?: string;
     message?: string;
   };
 }

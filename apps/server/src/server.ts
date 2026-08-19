@@ -25,10 +25,7 @@ export const startTestronServer = async (options: {
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
     await database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
-  const authentication = new AuthenticationService(
-    database.db,
-    options.publicBaseUrl ?? 'http://127.0.0.1',
-  );
+  const authentication = new AuthenticationService(database.db);
   const repository = new CanonicalRepository(database.db);
   const router = createAppRouter({ authentication, repository });
   const server = createHttpServer({ router, authentication });
@@ -38,7 +35,6 @@ export const startTestronServer = async (options: {
   });
   const address = server.address() as AddressInfo;
   const url = options.publicBaseUrl ?? `http://${address.address}:${address.port}`;
-  if (!options.publicBaseUrl) authentication.setPublicBaseUrl(url);
   return {
     url,
     database,

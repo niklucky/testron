@@ -336,31 +336,34 @@ export const TestView = () => {
               >
                 {snapshot.library.server.status === 'conflicted'
                   ? 'Sync conflict'
-                  : snapshot.library.server.authentication === 'authorizing'
-                    ? `Code ${snapshot.library.server.userCode}`
-                    : snapshot.library.server.authentication === 'signedOut'
-                      ? 'Server signed out'
-                      : snapshot.library.server.status}
+                  : snapshot.library.server.status}
               </Badge>
-              {snapshot.library.server.authentication === 'signedOut' ? (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const email = window.prompt('Email for your Testron server account');
-                    if (email) window.testron?.command({ type: 'login-server', email });
-                  }}
-                >
+              {snapshot.library.server.authentication === 'signedIn' && (
+                <>
+                  <Button
+                    size="sm"
+                    icon="rerun"
+                    onClick={() => window.testron?.command({ type: 'sync-now' })}
+                  >
+                    Sync
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      window.testron?.command({ type: 'logout-server' });
+                      window.location.hash = '#/';
+                    }}
+                  >
+                    Sign out
+                  </Button>
+                </>
+              )}
+              {snapshot.library.server.authentication === 'signedOut' && (
+                <Button size="sm" onClick={() => (window.location.hash = '#/')}>
                   Sign in
                 </Button>
-              ) : snapshot.library.server.authentication === 'signedIn' ? (
-                <Button
-                  size="sm"
-                  icon="rerun"
-                  onClick={() => window.testron?.command({ type: 'sync-now' })}
-                >
-                  Sync
-                </Button>
-              ) : null}
+              )}
             </>
           )}
           <IconButton

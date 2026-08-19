@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
 
@@ -9,14 +10,13 @@ import {
   dialog,
   ipcMain,
   safeStorage,
-  shell,
   WebContentsView,
 } from 'electron';
 import { z } from 'zod';
 
 import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
 import type { Step } from '@testron/domain/steps/schema';
-import type { WorkspaceSnapshot } from '@testron/protocol';
+import { createProjectRequestSchema, type WorkspaceSnapshot } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
 import { recordPanelEventSchema, type PanelId, type RecordLayout } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
@@ -66,10 +66,13 @@ let tokenStore: SecureTokenStore | undefined;
 let serverClient: DesktopServerClient | undefined;
 let syncCoordinator: DesktopSyncCoordinator | undefined;
 let remoteWorkspace: WorkspaceSnapshot | undefined;
+const localMode = process.env.TESTRON_LOCAL_MODE === '1';
 let serverState: NonNullable<LibrarySnapshot['server']> = {
   configured: false,
-  authentication: 'signedOut',
+  authentication: localMode ? 'signedIn' : 'signedOut',
+  workspace: localMode ? 'loaded' : 'loading',
   status: 'idle',
+  ...(localMode ? {} : { message: 'A remote server URL is required before you can sign in.' }),
 };
 
 const safeUrl = (value: string): string => {
@@ -280,6 +283,43 @@ const createWindow = async (): Promise<void> => {
     .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
   let selectedTestId = tests.find((test) => test.projectId === selectedProjectId)?.id;
 
+  const reconcileLibrarySelection = (): void => {
+    const projects = allProjects();
+    if (!selectedProjectId || !projects.some((project) => project.id === selectedProjectId))
+      selectedProjectId = projects[0]?.id;
+    if (!selectedProjectId) {
+      selectedEnvironmentId = undefined;
+      selectedProfileId = undefined;
+      selectedTestId = undefined;
+      return;
+    }
+    const environments = allEnvironments().filter(
+      (environment) => environment.projectId === selectedProjectId,
+    );
+    if (
+      !selectedEnvironmentId ||
+      !environments.some((environment) => environment.id === selectedEnvironmentId)
+    )
+      selectedEnvironmentId = environments[0]?.id;
+    if (
+      !selectedTestId ||
+      !allTests().some((test) => test.id === selectedTestId && test.projectId === selectedProjectId)
+    )
+      selectedTestId = allTests().find((test) => test.projectId === selectedProjectId)?.id;
+    if (
+      !selectedProfileId ||
+      !store
+        .listProfiles()
+        .some(
+          (profile) =>
+            profile.id === selectedProfileId && profile.environmentId === selectedEnvironmentId,
+        )
+    )
+      selectedProfileId = store
+        .listProfiles()
+        .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
+  };
+
   const librarySnapshot = () => ({
     projects: allProjects(),
     environments: allEnvironments(),
@@ -329,19 +369,32 @@ const createWindow = async (): Promise<void> => {
       store.replaceSteps(selectedTestId, steps);
   });
   let syncRetry: ReturnType<typeof setTimeout> | undefined;
+  let loginAttempt = 0;
   const applySyncResult = (result: SyncResult): void => {
-    if (result.workspace) remoteWorkspace = result.workspace;
+    if (result.workspace) {
+      remoteWorkspace = result.workspace;
+      reconcileLibrarySelection();
+    }
     if (syncRetry) clearTimeout(syncRetry);
     const state = { ...serverState };
     delete state.message;
     serverState = {
       ...state,
       ...(result.authenticationRequired ? { authentication: 'signedOut' as const } : {}),
+      workspace: result.authenticationRequired
+        ? 'loading'
+        : result.workspace
+          ? 'loaded'
+          : state.workspace === 'loading' && result.status !== 'synced'
+            ? 'unavailable'
+            : state.workspace,
       status: result.status,
       ...(result.message ? { message: result.message } : {}),
     };
-    if (result.authenticationRequired) void tokenStore?.clear();
-    else if (result.status === 'offline' && serverState.authentication === 'signedIn')
+    if (result.authenticationRequired) {
+      remoteWorkspace = undefined;
+      void tokenStore?.clear();
+    } else if (result.status === 'offline' && serverState.authentication === 'signedIn')
       syncRetry = setTimeout(() => void synchronize(), 2_000);
     if (result.status === 'conflicted')
       session.warn(result.message ?? 'The server has a newer revision. Your local draft was kept.');
@@ -359,9 +412,19 @@ const createWindow = async (): Promise<void> => {
         applySyncResult(hydrated);
         return;
       }
-      if (hydrated.workspace) remoteWorkspace = hydrated.workspace;
+      if (hydrated.workspace) {
+        remoteWorkspace = hydrated.workspace;
+        reconcileLibrarySelection();
+      }
     }
-    applySyncResult(await syncCoordinator.flush());
+    const flushed = await syncCoordinator.flush();
+    if (flushed.status !== 'synced') {
+      applySyncResult(flushed);
+      return;
+    }
+    // Mutations return individual resources. Refresh once after flushing so
+    // every renderer snapshot is rebuilt from the canonical server workspace.
+    applySyncResult(await syncCoordinator.hydrate());
   };
   const selectedContext = () => {
     const selectedTest = allTests().find((test) => test.id === selectedTestId);
@@ -552,6 +615,74 @@ const createWindow = async (): Promise<void> => {
         else if (command.action === 'stop') websiteView.webContents.stop();
         break;
       case 'create-project': {
+        if (serverClient && serverState.authentication === 'signedIn') {
+          const state = { ...serverState };
+          delete state.message;
+          serverState = {
+            ...state,
+            status: 'syncing',
+            message: 'Creating project…',
+          };
+          sendSnapshot(session.snapshot());
+          const request = createProjectRequestSchema.parse({
+            meta: {
+              protocolVersion: 1,
+              requestId: randomUUID(),
+              idempotencyKey: `desktop-project-create-${randomUUID()}`,
+              client: { kind: 'desktop', version: app.getVersion() },
+              supportedStepVersions: [1],
+            },
+            name: command.name,
+          });
+          const authenticationAttempt = loginAttempt;
+          void serverClient
+            .createProject(request)
+            .then((project) => {
+              if (
+                authenticationAttempt !== loginAttempt ||
+                serverState.authentication !== 'signedIn'
+              )
+                return;
+              remoteWorkspace = {
+                projects: [
+                  ...(remoteWorkspace?.projects.filter((entry) => entry.id !== project.id) ?? []),
+                  project,
+                ],
+                environments: remoteWorkspace?.environments ?? [],
+                tests: remoteWorkspace?.tests ?? [],
+              };
+              selectedProjectId = project.id;
+              selectedEnvironmentId = undefined;
+              selectedProfileId = undefined;
+              selectedTestId = undefined;
+              session.load('recorded test', []);
+              serverState = {
+                configured: true,
+                authentication: 'signedIn',
+                workspace: 'loaded',
+                status: 'synced',
+              };
+              sendSnapshot(session.snapshot());
+            })
+            .catch((error: unknown) => {
+              if (
+                authenticationAttempt !== loginAttempt ||
+                serverState.authentication !== 'signedIn'
+              )
+                return;
+              const applicationError =
+                typeof error === 'object' && error !== null && 'data' in error;
+              serverState = {
+                configured: true,
+                authentication: 'signedIn',
+                workspace: serverState.workspace,
+                status: applicationError ? 'error' : 'offline',
+                message: error instanceof Error ? error.message : String(error),
+              };
+              sendSnapshot(session.snapshot());
+            });
+          break;
+        }
         const project = store.createProject(command.name);
         selectedProjectId = project.id;
         selectedEnvironmentId = undefined;
@@ -598,6 +729,7 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'select-project':
+        if (!allProjects().some((project) => project.id === command.projectId)) break;
         selectedProjectId = command.projectId;
         selectedEnvironmentId = allEnvironments().find(
           (environment) => environment.projectId === command.projectId,
@@ -798,52 +930,46 @@ const createWindow = async (): Promise<void> => {
         });
         break;
       }
-      case 'login-server': {
+      case 'login-server':
+      case 'register-server': {
         if (!serverClient || !tokenStore) {
           session.warn('Set TESTRON_SERVER_URL before signing in.');
           break;
         }
-        void serverClient
-          .startLogin(command.email)
-          .then(async (flow) => {
+        const attempt = ++loginAttempt;
+        serverState = {
+          configured: true,
+          authentication: 'authenticating',
+          workspace: 'loading',
+          status: 'syncing',
+          message: command.type === 'login-server' ? 'Signing in…' : 'Creating your account…',
+        };
+        sendSnapshot(session.snapshot());
+        const operation =
+          command.type === 'login-server'
+            ? serverClient.login(command.email, command.password)
+            : serverClient.register(command.email, command.password);
+        void operation
+          .then(async (result) => {
+            if (attempt !== loginAttempt) return;
+            await tokenStore!.save(result.accessToken);
+            if (attempt !== loginAttempt) return;
             serverState = {
-              ...serverState,
-              authentication: 'authorizing',
+              configured: true,
+              authentication: 'signedIn',
+              workspace: 'loading',
               status: 'idle',
-              userCode: flow.userCode,
-              verificationUri: flow.verificationUri,
-              message: `Enter code ${flow.userCode} in the browser.`,
             };
-            sendSnapshot(session.snapshot());
-            await shell.openExternal(flow.verificationUri);
-            const deadline = Date.now() + flow.expiresInSeconds * 1_000;
-            while (Date.now() < deadline && serverState.authentication === 'authorizing') {
-              await new Promise((resolve) => setTimeout(resolve, flow.intervalSeconds * 1_000));
-              const result = await serverClient!.pollLogin(flow.deviceCode);
-              if (result.status === 'pending') continue;
-              if (result.status === 'expired') break;
-              await tokenStore!.save(result.accessToken);
-              serverState = {
-                configured: true,
-                authentication: 'signedIn',
-                status: 'idle',
-              };
-              await synchronize(true);
-              return;
-            }
+            await synchronize(true);
+          })
+          .catch((error: unknown) => {
+            if (attempt !== loginAttempt) return;
+            const applicationError = typeof error === 'object' && error !== null && 'data' in error;
             serverState = {
               configured: true,
               authentication: 'signedOut',
-              status: 'error',
-              message: 'The desktop sign-in request expired.',
-            };
-            sendSnapshot(session.snapshot());
-          })
-          .catch((error: unknown) => {
-            serverState = {
-              ...serverState,
-              authentication: 'signedOut',
-              status: 'offline',
+              workspace: 'loading',
+              status: applicationError ? 'error' : 'offline',
               message: error instanceof Error ? error.message : String(error),
             };
             sendSnapshot(session.snapshot());
@@ -851,10 +977,12 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'logout-server':
+        loginAttempt += 1;
         remoteWorkspace = undefined;
         serverState = {
           configured: Boolean(serverClient),
           authentication: 'signedOut',
+          workspace: 'loading',
           status: 'idle',
         };
         void tokenStore?.clear();
@@ -865,7 +993,6 @@ const createWindow = async (): Promise<void> => {
     }
     if (
       [
-        'create-project',
         'create-environment',
         'create-test',
         'rename-test',
@@ -904,6 +1031,7 @@ const createWindow = async (): Promise<void> => {
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.on('closed', () => {
+    loginAttempt += 1;
     if (syncRetry) clearTimeout(syncRetry);
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
@@ -959,6 +1087,7 @@ app.whenReady().then(async () => {
     serverState = {
       configured: true,
       authentication: token ? 'signedIn' : 'signedOut',
+      workspace: 'loading',
       status: 'idle',
     };
     if (token) {
@@ -971,6 +1100,7 @@ app.whenReady().then(async () => {
       serverState = {
         ...serverState,
         ...(result.authenticationRequired ? { authentication: 'signedOut' as const } : {}),
+        workspace: result.workspace ? 'loaded' : 'unavailable',
         status: result.status,
         ...(result.message ? { message: result.message } : {}),
       };

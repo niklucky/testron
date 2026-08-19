@@ -18,30 +18,19 @@ import {
   workspaceSnapshotSchema,
 } from './resources';
 
-export const desktopLoginStartInputSchema = z.object({ email: z.email() }).strict();
-export const desktopLoginStartOutputSchema = z
+const accountCredentialsFields = {
+  email: z.email().transform((email) => email.toLowerCase()),
+  password: z.string().min(12).max(200),
+} as const;
+
+export const authLoginInputSchema = z.object(accountCredentialsFields).strict();
+export const authRegisterInputSchema = z.object(accountCredentialsFields).strict();
+export const authSessionOutputSchema = z
   .object({
-    deviceCode: z.string().min(40),
-    userCode: z.string().length(8),
-    verificationUri: z.url(),
-    expiresInSeconds: z.number().int().positive(),
-    intervalSeconds: z.number().int().positive(),
+    accessToken: z.string().min(40),
+    expiresAt: timestampSchema,
   })
   .strict();
-export const desktopLoginPollInputSchema = z
-  .object({ deviceCode: z.string().min(40).max(200) })
-  .strict();
-export const desktopLoginPollOutputSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('pending') }).strict(),
-  z.object({ status: z.literal('expired') }).strict(),
-  z
-    .object({
-      status: z.literal('authorized'),
-      accessToken: z.string().min(40),
-      expiresAt: timestampSchema,
-    })
-    .strict(),
-]);
 
 export const createProjectProcedure = {
   input: createProjectRequestSchema,
@@ -90,6 +79,7 @@ export const saveTestRevisionProcedure = {
   output: saveTestRevisionOutputSchema,
 } as const;
 
-export type DesktopLoginStartOutput = z.infer<typeof desktopLoginStartOutputSchema>;
-export type DesktopLoginPollOutput = z.infer<typeof desktopLoginPollOutputSchema>;
+export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;
+export type AuthRegisterInput = z.infer<typeof authRegisterInputSchema>;
+export type AuthSessionOutput = z.infer<typeof authSessionOutputSchema>;
 export type SaveTestRevisionOutput = z.infer<typeof saveTestRevisionOutputSchema>;

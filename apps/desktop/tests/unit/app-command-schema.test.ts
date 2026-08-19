@@ -28,4 +28,32 @@ describe('desktop application command schema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('validates the desktop login commands', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'login-server',
+        email: 'Owner@Example.test',
+        password: 'correct horse battery staple',
+      }),
+    ).toEqual({
+      type: 'login-server',
+      email: 'owner@example.test',
+      password: 'correct horse battery staple',
+    });
+    expect(
+      appCommandSchema.parse({
+        type: 'register-server',
+        email: 'new@example.test',
+        password: 'another correct password',
+      }),
+    ).toMatchObject({ type: 'register-server', email: 'new@example.test' });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'login-server',
+        email: 'not-an-email',
+        password: 'correct horse battery staple',
+      }).success,
+    ).toBe(false);
+  });
 });

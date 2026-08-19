@@ -19,7 +19,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await server.database.db.execute(sql`
     truncate table idempotency_records, test_revisions, tests, environments, projects,
-      sessions, desktop_login_flows, users restart identity cascade
+      sessions, users restart identity cascade
   `);
 });
 
@@ -65,12 +65,8 @@ const client = (token?: string) =>
   });
 
 const signIn = async (email = 'owner@example.test', password = 'correct horse battery staple') => {
-  await server.authentication.provisionUser(email, password);
-  const flow = await client().auth.start.mutate({ email });
-  await server.authentication.approveDesktopLogin({ userCode: flow.userCode, email, password });
-  const result = await client().auth.poll.mutate({ deviceCode: flow.deviceCode });
-  if (result.status !== 'authorized') throw new Error('Expected the desktop login to complete.');
-  return { token: result.accessToken, api: client(result.accessToken) };
+  const session = await client().auth.register.mutate({ email, password });
+  return { token: session.accessToken, api: client(session.accessToken) };
 };
 
 const createSlice = async (api: ReturnType<typeof client>) => {
@@ -91,6 +87,23 @@ const createSlice = async (api: ReturnType<typeof client>) => {
 };
 
 describe('PostgreSQL tRPC vertical slice', () => {
+  it('registers and logs in without a browser device flow', async () => {
+    const email = 'owner@example.test';
+    const password = 'correct horse battery staple';
+    const registration = await client().auth.register.mutate({ email, password });
+    await expect(client().auth.register.mutate({ email, password })).rejects.toMatchObject({
+      data: { code: 'CONFLICT' },
+    });
+    await expect(
+      client().auth.login.mutate({ email, password: 'incorrect password value' }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+    const login = await client().auth.login.mutate({ email, password });
+    expect(login.accessToken).not.toBe(registration.accessToken);
+    await expect(
+      client(login.accessToken).workspace.get.query({ meta: requestMeta() }),
+    ).resolves.toMatchObject({ projects: [] });
+  });
+
   it('authenticates every protected procedure and hydrates the typed workspace', async () => {
     await expect(client().workspace.get.query({ meta: requestMeta() })).rejects.toMatchObject({
       data: { code: 'UNAUTHORIZED' },
