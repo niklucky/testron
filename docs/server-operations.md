@@ -8,25 +8,29 @@ npm run server:db:up
 ```
 
 The Compose service listens on `127.0.0.1:55432` with the development database
-URL below. Start the server with an initial user:
+URL below. Start the server:
 
 ```sh
 DATABASE_URL='postgresql://testron:testron@127.0.0.1:55432/testron' \
-TESTRON_BOOTSTRAP_EMAIL=owner@example.com \
-TESTRON_BOOTSTRAP_PASSWORD='at-least-twelve-characters' \
 npm run start:server
 ```
 
 The server applies checked-in migrations before listening. The default listener
-is `http://127.0.0.1:4400`; configure `HOST`, `PORT`, and
-`TESTRON_PUBLIC_URL` when its public browser-login URL differs. `DATABASE_URL`
-is required.
+is `http://127.0.0.1:4400`; configure `HOST` and `PORT` when needed.
+`DATABASE_URL` is required.
 
-Start the desktop with `TESTRON_SERVER_URL` set to that public server URL. The
-test view exposes sign-in and synchronization controls. Sign-in opens the
-system browser; the account password is entered only into the server page. The
+Start the desktop with `TESTRON_SERVER_URL` set to that public server URL. Its
+landing screen supports direct email/password registration and login. The
 opaque returned session token is encrypted through Electron `safeStorage`
-before local persistence.
+before local persistence; passwords are never stored.
+
+For alpha deployments, the optional `TESTRON_BOOTSTRAP_EMAIL` and
+`TESTRON_BOOTSTRAP_PASSWORD` variables still provision an initial account at
+startup. Normal users can register from the desktop without them.
+
+Without `TESTRON_SERVER_URL`, the desktop remains on a server-configuration
+landing state. `TESTRON_LOCAL_MODE=1` bypasses remote authentication only for
+isolated recorder development and tests; it is not a deployment mode.
 
 ## Migrations
 
@@ -55,17 +59,17 @@ you intentionally want to erase development data.
 Application calls use tRPC under `/trpc`, with shared strict Zod input and
 output schemas exported by `@testron/protocol`:
 
-- `auth.start` and `auth.poll` implement the desktop device-style login.
+- `auth.register` creates an account and first session; `auth.login` creates a
+  new session for an existing account.
 - `project.create` and `environment.create` create the bounded hierarchy.
 - `workspace.get` reads the signed-in user's active canonical workspace.
 - `test.create`, `test.get`, `test.history`, and `test.saveRevision` manage
   immutable test revisions and exact-base conflict checks.
 
-The interactive browser approval form remains a normal `GET|POST
-/auth/desktop` endpoint, and `GET /health` is the unauthenticated health probe.
-All protected tRPC procedures require an opaque bearer session. Authorization
-is checked at the project boundary. Mutation idempotency is scoped to principal,
-procedure, and key.
+`GET /health` is the unauthenticated health probe. All protected tRPC
+procedures require an opaque bearer session. Authorization is checked at the
+project boundary. Mutation idempotency is scoped to principal, procedure, and
+key.
 
 ## Verification
 

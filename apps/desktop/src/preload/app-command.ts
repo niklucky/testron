@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { stepSchema, stepsSchema } from '@testron/domain/steps/schema';
 import {
+  authLoginInputSchema,
+  authRegisterInputSchema,
   entityIdSchema,
   environmentNameSchema,
   httpUrlSchema,
@@ -114,7 +116,8 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('clear-auth-state') }),
-  z.object({ type: z.literal('login-server'), email: z.email() }),
+  authLoginInputSchema.extend({ type: z.literal('login-server') }),
+  authRegisterInputSchema.extend({ type: z.literal('register-server') }),
   z.object({ type: z.literal('logout-server') }),
   z.object({ type: z.literal('sync-now') }),
   z.object({ type: z.literal('set-record-layout'), layout: recordLayoutSchema }),
