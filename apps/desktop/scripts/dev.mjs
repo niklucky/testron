@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
 
 const children = [
-  spawn('npm', ['run', 'start', '--workspace', '@testron/test-fixtures'], {
+  spawn('pnpm', ['--filter', '@testron/test-fixtures', 'start'], {
     stdio: 'inherit',
   }),
-  spawn('npm', ['run', 'start:app'], { stdio: 'inherit' }),
+  spawn('pnpm', ['start:app'], { stdio: 'inherit' }),
 ];
 
 const stop = () => {

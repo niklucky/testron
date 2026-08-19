@@ -10,7 +10,6 @@ test('a configured remote server gates the product behind desktop sign-in', asyn
     env: {
       ...process.env,
       TESTRON_DATA_DIR: dataDirectory,
-      TESTRON_SERVER_URL: 'http://127.0.0.1:1',
     },
   });
 

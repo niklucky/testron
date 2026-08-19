@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@testron/domain": "0.0.1",
+    "@testron/domain": "workspace:*",
     "zod": "4.4.3"
   },
   "devDependencies": {

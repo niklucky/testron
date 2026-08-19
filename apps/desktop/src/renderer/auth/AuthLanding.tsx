@@ -244,8 +244,7 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                 </p>
               ) : (
                 <div className="mt-5 border-t border-line-soft pt-5 text-center text-sm leading-5 text-ink-3">
-                  Configure <span className="ui-mono text-ink-2">TESTRON_SERVER_URL</span> with your
-                  remote server address, then restart Testron.
+                  This build does not have a server address configured.
                 </div>
               )}
             </form>

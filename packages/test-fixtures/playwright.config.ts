@@ -7,7 +7,7 @@ export default defineConfig({
   reporter: 'line',
   use: { headless: true },
   webServer: {
-    command: 'npm run start',
+    command: 'pnpm start',
     url: 'http://127.0.0.1:4174',
     reuseExistingServer: true,
   },

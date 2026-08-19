@@ -53,9 +53,7 @@ test('an empty remote workspace onboards and the selector creates server project
     repository: repository as never,
   });
   const server = createHttpServer({ router, authentication: authentication as never });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Test server did not bind.');
+  await new Promise<void>((resolve) => server.listen(4400, '127.0.0.1', resolve));
 
   const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-project-onboarding-'));
   const electronApp = await electron.launch({
@@ -63,7 +61,6 @@ test('an empty remote workspace onboards and the selector creates server project
     env: {
       ...process.env,
       TESTRON_DATA_DIR: dataDirectory,
-      TESTRON_SERVER_URL: `http://127.0.0.1:${address.port}`,
     },
   });
 

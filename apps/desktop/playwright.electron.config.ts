@@ -11,7 +11,7 @@ export default defineConfig({
   reporter: 'line',
   timeout: 30_000,
   webServer: {
-    command: 'npm run start --workspace @testron/test-fixtures',
+    command: 'pnpm --filter @testron/test-fixtures start',
     url: 'http://127.0.0.1:4174',
     reuseExistingServer: true,
   },

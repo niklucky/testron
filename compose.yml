@@ -1,0 +1,45 @@
+services:
+  server:
+    image: ${TESTRON_SERVER_IMAGE:?TESTRON_SERVER_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-testron}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-testron}
+      HOST: 0.0.0.0
+      PORT: 4400
+      TESTRON_PUBLIC_URL: ${TESTRON_PUBLIC_URL:?TESTRON_PUBLIC_URL is required}
+      TESTRON_BOOTSTRAP_EMAIL: ${TESTRON_BOOTSTRAP_EMAIL:-}
+      TESTRON_BOOTSTRAP_PASSWORD: ${TESTRON_BOOTSTRAP_PASSWORD:-}
+    ports:
+      - '127.0.0.1:4400:4400'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4400/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-testron}
+      POSTGRES_USER: ${POSTGRES_USER:-testron}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports:
+      - '127.0.0.1:4401:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - /data/testron/db:/var/lib/postgresql/data

@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  define: {
+    __TESTRON_DEFAULT_SERVER_URL__: JSON.stringify(
+      process.env.TESTRON_SERVER_URL ?? 'http://127.0.0.1:4400',
+    ),
+  },
   build: {
     sourcemap: true,
     rollupOptions: {

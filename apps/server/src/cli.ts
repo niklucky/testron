@@ -1,5 +1,11 @@
 import { startTestronServer } from './server.js';
 
+try {
+  process.loadEnvFile(new URL('../../../.env', import.meta.url));
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+}
+
 const port = Number(process.env.PORT ?? 4400);
 const host = process.env.HOST ?? '127.0.0.1';
 const publicBaseUrl = process.env.TESTRON_PUBLIC_URL ?? `http://${host}:${port}`;

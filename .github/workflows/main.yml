@@ -1,0 +1,142 @@
+name: Main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: testron
+          POSTGRES_USER: testron
+          POSTGRES_PASSWORD: testron
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U testron -d testron"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build desktop application
+        run: pnpm build
+        env:
+          TESTRON_SERVER_URL: ${{ vars.TESTRON_PUBLIC_URL }}
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set image reference
+        id: image
+        run: echo "reference=ghcr.io/${GITHUB_REPOSITORY}/server:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.server
+          push: true
+          tags: |
+            ${{ steps.image.outputs.reference }}
+            ghcr.io/${{ github.repository }}/server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ${{ needs.image.outputs.image }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TESTRON_BOOTSTRAP_EMAIL: ${{ secrets.TESTRON_BOOTSTRAP_EMAIL }}
+      TESTRON_BOOTSTRAP_PASSWORD: ${{ secrets.TESTRON_BOOTSTRAP_PASSWORD }}
+      VPS_HOST: ${{ vars.VPS_HOST }}
+      VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+      VPS_USER: ${{ vars.VPS_USER || 'github' }}
+      VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/opt/testron' }}
+      TESTRON_PUBLIC_URL: ${{ vars.TESTRON_PUBLIC_URL }}
+      GHCR_USER: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Create deployment environment
+        run: |
+          umask 077
+          {
+            printf 'TESTRON_SERVER_IMAGE=%s\n' "$IMAGE"
+            printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+            printf 'TESTRON_PUBLIC_URL=%s\n' "$TESTRON_PUBLIC_URL"
+            printf 'TESTRON_BOOTSTRAP_EMAIL=%s\n' "$TESTRON_BOOTSTRAP_EMAIL"
+            printf 'TESTRON_BOOTSTRAP_PASSWORD=%s\n' "$TESTRON_BOOTSTRAP_PASSWORD"
+          } > deploy.env
+      - name: Copy deployment files
+        run: |
+          SSH_TARGET="$VPS_USER@$VPS_HOST"
+          ssh -p "$VPS_PORT" "$SSH_TARGET" "mkdir -p '$VPS_DEPLOY_PATH'"
+          scp -P "$VPS_PORT" compose.yml deploy.env "$SSH_TARGET:$VPS_DEPLOY_PATH/"
+      - name: Deploy
+        run: |
+          SSH_TARGET="$VPS_USER@$VPS_HOST"
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$VPS_PORT" "$SSH_TARGET" \
+            "docker login ghcr.io --username '$GHCR_USER' --password-stdin"
+          ssh -p "$VPS_PORT" "$SSH_TARGET" \
+            "cd '$VPS_DEPLOY_PATH' && mv deploy.env .env && chmod 600 .env && docker compose pull && docker compose up --detach --wait --remove-orphans"

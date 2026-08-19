@@ -933,7 +933,7 @@ const createWindow = async (): Promise<void> => {
       case 'login-server':
       case 'register-server': {
         if (!serverClient || !tokenStore) {
-          session.warn('Set TESTRON_SERVER_URL before signing in.');
+          session.warn('The configured server is unavailable.');
           break;
         }
         const attempt = ++loginAttempt;
@@ -1074,8 +1074,8 @@ app.whenReady().then(async () => {
   }
   const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
-  const serverUrl = process.env.TESTRON_SERVER_URL;
-  if (serverUrl) {
+  if (!localMode) {
+    const serverUrl = safeUrl(__TESTRON_DEFAULT_SERVER_URL__);
     tokenStore = new SecureTokenStore(path.join(dataDirectory, 'credentials'), {
       isAvailable: () => safeStorage.isEncryptionAvailable(),
       encrypt: (value) => safeStorage.encryptString(value),

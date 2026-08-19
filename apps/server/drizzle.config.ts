@@ -1,5 +1,11 @@
 import { defineConfig } from 'drizzle-kit';
 
+try {
+  process.loadEnvFile(new URL('../../.env', import.meta.url));
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+}
+
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/database/schema.ts',

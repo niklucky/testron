@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+
+# Electron Forge packages runtime dependencies from a hoisted node_modules tree.
+nodeLinker: hoisted
+
+# Electron Forge currently reaches @electron/node-gyp through a Git dependency.
+blockExoticSubdeps: false
