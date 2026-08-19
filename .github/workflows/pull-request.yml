@@ -39,6 +39,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @testron/desktop exec playwright install --with-deps chromium
       - name: Check formatting
         run: pnpm format:check
       - name: Lint
