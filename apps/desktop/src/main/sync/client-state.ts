@@ -2,10 +2,8 @@ import { z } from 'zod';
 
 import {
   entityIdSchema,
-  idempotencyKeySchema,
   revisionPointerSchema,
   testRevisionContentSchema,
-  testSnapshotSchema,
   timestampSchema,
 } from '@testron/protocol';
 
@@ -20,23 +18,6 @@ export const desktopTestDraftSchema = z
     localCreatedAt: timestampSchema,
     localUpdatedAt: timestampSchema,
     syncStatus: z.enum(['local', 'pending', 'synced', 'conflicted']),
-  })
-  .strict();
-
-/** The last server value acknowledged by this desktop cache. */
-export const acknowledgedTestSchema = z
-  .object({ snapshot: testSnapshotSchema, acknowledgedAt: timestampSchema })
-  .strict();
-
-/** A recoverable write intent. Authentication and request bodies are not cached here. */
-export const testOutboxEntrySchema = z
-  .object({
-    id: entityIdSchema,
-    draftId: entityIdSchema,
-    operation: z.enum(['createTest', 'saveTestRevision']),
-    idempotencyKey: idempotencyKeySchema,
-    attempts: z.number().int().nonnegative(),
-    nextAttemptAt: timestampSchema.nullable(),
   })
   .strict();
 
@@ -70,6 +51,4 @@ export const localRunSchema = z
   .strict();
 
 export type DesktopTestDraft = z.infer<typeof desktopTestDraftSchema>;
-export type AcknowledgedTest = z.infer<typeof acknowledgedTestSchema>;
-export type TestOutboxEntry = z.infer<typeof testOutboxEntrySchema>;
 export type LocalRun = z.infer<typeof localRunSchema>;

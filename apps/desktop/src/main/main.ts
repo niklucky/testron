@@ -2,16 +2,30 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, WebContentsView } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+  WebContentsView,
+} from 'electron';
 import { z } from 'zod';
 
 import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
+import type { Step } from '@testron/domain/steps/schema';
+import type { WorkspaceSnapshot } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
 import { recordPanelEventSchema, type PanelId, type RecordLayout } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
-import { TestronRepository } from './persistence/repository';
+import { TestronRepository, type LibrarySnapshot, type TestRecord } from './persistence/repository';
 import { RecordingSession } from './recording/session';
 import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
+import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
+import { DesktopServerClient } from './sync/server-client';
+import { SecureTokenStore } from './sync/token-store';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
@@ -48,6 +62,15 @@ let mainWindow: BrowserWindow | undefined;
 let websiteView: WebContentsView | undefined;
 let panelViews = new Map<PanelId, WebContentsView>();
 let repository: TestronRepository | undefined;
+let tokenStore: SecureTokenStore | undefined;
+let serverClient: DesktopServerClient | undefined;
+let syncCoordinator: DesktopSyncCoordinator | undefined;
+let remoteWorkspace: WorkspaceSnapshot | undefined;
+let serverState: NonNullable<LibrarySnapshot['server']> = {
+  configured: false,
+  authentication: 'signedOut',
+  status: 'idle',
+};
 
 const safeUrl = (value: string): string => {
   const url = new URL(value);
@@ -168,9 +191,86 @@ const createWindow = async (): Promise<void> => {
   layout();
   mainWindow.on('resize', layout);
 
-  const projects = store.listProjects();
-  const environments = store.listEnvironments();
-  const tests = store.listTests();
+  const remoteTest = (id: string | undefined) =>
+    remoteWorkspace?.tests.find((snapshot) => snapshot.test.id === id);
+  const allProjects = () => [
+    ...store.listProjects(),
+    ...(remoteWorkspace?.projects ?? [])
+      .filter(
+        (remote) =>
+          !store
+            .listProjects()
+            .some((local) => store.getServerId('project', local.id) === remote.id),
+      )
+      .map(({ id, name }) => ({ id, name })),
+  ];
+  const allEnvironments = () => [
+    ...store.listEnvironments(),
+    ...(remoteWorkspace?.environments ?? [])
+      .filter(
+        (remote) =>
+          !store
+            .listEnvironments()
+            .some((local) => store.getServerId('environment', local.id) === remote.id),
+      )
+      .map((environment) => ({ ...environment, authRevision: 1 })),
+  ];
+  const allTests = () => [
+    ...store.listTests(),
+    ...(remoteWorkspace?.tests ?? [])
+      .filter(
+        (remote) =>
+          !store
+            .listTests()
+            .some((local) => store.getServerId('test', local.id) === remote.test.id),
+      )
+      .map((snapshot) => ({
+        id: snapshot.test.id,
+        projectId: snapshot.test.projectId,
+        environmentId: snapshot.currentRevision.content.environmentId,
+        title: snapshot.currentRevision.content.title,
+        createdAt: snapshot.test.createdAt,
+        updatedAt: snapshot.currentRevision.createdAt,
+      })),
+  ];
+  const stepsFor = (testId: string): Step[] =>
+    store.getTest(testId)
+      ? store.loadSteps(testId)
+      : (remoteTest(testId)?.currentRevision.content.steps.map(({ payload }) => payload) ?? []);
+  const ensureLocalProject = (projectId: string) => {
+    const local = store.getProject(projectId);
+    if (local) return local;
+    const remote = remoteWorkspace?.projects.find((project) => project.id === projectId);
+    return remote ? store.checkoutRemoteProject({ id: remote.id, name: remote.name }) : undefined;
+  };
+  const ensureLocalEnvironment = (environmentId: string) => {
+    const local = store.getEnvironment(environmentId);
+    if (local) return local;
+    const remote = remoteWorkspace?.environments.find(
+      (environment) => environment.id === environmentId,
+    );
+    if (!remote || !ensureLocalProject(remote.projectId)) return undefined;
+    return store.checkoutRemoteEnvironment({ ...remote, authRevision: 1 });
+  };
+  const ensureLocalTest = (testId: string): TestRecord | undefined => {
+    const local = store.getTest(testId);
+    if (local) return local;
+    const snapshot = remoteTest(testId);
+    if (!snapshot) return undefined;
+    const project = remoteWorkspace?.projects.find((entry) => entry.id === snapshot.test.projectId);
+    const environment = remoteWorkspace?.environments.find(
+      (entry) => entry.id === snapshot.currentRevision.content.environmentId,
+    );
+    if (!project || !environment) return undefined;
+    return store.checkoutRemoteTest(
+      { id: project.id, name: project.name },
+      { ...environment, authRevision: 1 },
+      snapshot,
+    );
+  };
+  const projects = allProjects();
+  const environments = allEnvironments();
+  const tests = allTests();
   let selectedProjectId = projects[0]?.id;
   let selectedEnvironmentId = environments.find(
     (environment) => environment.projectId === selectedProjectId,
@@ -181,17 +281,19 @@ const createWindow = async (): Promise<void> => {
   let selectedTestId = tests.find((test) => test.projectId === selectedProjectId)?.id;
 
   const librarySnapshot = () => ({
-    projects: store.listProjects(),
-    environments: store.listEnvironments(),
+    projects: allProjects(),
+    environments: allEnvironments(),
     profiles: store.listProfiles(),
     profileVariables: store
       .listProfileVariables()
       .map(({ profileId, name, sensitive }) => ({ profileId, name, sensitive })),
-    tests: store.listTests(),
+    tests: allTests(),
     ...(selectedProjectId ? { selectedProjectId } : {}),
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
     ...(selectedProfileId ? { selectedProfileId } : {}),
     ...(selectedTestId ? { selectedTestId } : {}),
+    sync: store.getSyncSummary(),
+    server: serverState,
   });
   const runner = new LocalReplayRunner();
   let replaySnapshot: ReplaySnapshot = { status: 'idle', steps: [] };
@@ -223,13 +325,49 @@ const createWindow = async (): Promise<void> => {
       });
   };
   const session = new RecordingSession(sendSnapshot, (steps) => {
-    if (selectedTestId) store.replaceSteps(selectedTestId, steps);
+    if (selectedTestId && ensureLocalTest(selectedTestId))
+      store.replaceSteps(selectedTestId, steps);
   });
+  let syncRetry: ReturnType<typeof setTimeout> | undefined;
+  const applySyncResult = (result: SyncResult): void => {
+    if (result.workspace) remoteWorkspace = result.workspace;
+    if (syncRetry) clearTimeout(syncRetry);
+    const state = { ...serverState };
+    delete state.message;
+    serverState = {
+      ...state,
+      ...(result.authenticationRequired ? { authentication: 'signedOut' as const } : {}),
+      status: result.status,
+      ...(result.message ? { message: result.message } : {}),
+    };
+    if (result.authenticationRequired) void tokenStore?.clear();
+    else if (result.status === 'offline' && serverState.authentication === 'signedIn')
+      syncRetry = setTimeout(() => void synchronize(), 2_000);
+    if (result.status === 'conflicted')
+      session.warn(result.message ?? 'The server has a newer revision. Your local draft was kept.');
+    sendSnapshot(session.snapshot());
+  };
+  const synchronize = async (hydrate = false): Promise<void> => {
+    if (!syncCoordinator || serverState.authentication !== 'signedIn') return;
+    const state = { ...serverState };
+    delete state.message;
+    serverState = { ...state, status: 'syncing' };
+    sendSnapshot(session.snapshot());
+    if (hydrate) {
+      const hydrated = await syncCoordinator.hydrate();
+      if (hydrated.status !== 'synced') {
+        applySyncResult(hydrated);
+        return;
+      }
+      if (hydrated.workspace) remoteWorkspace = hydrated.workspace;
+    }
+    applySyncResult(await syncCoordinator.flush());
+  };
   const selectedContext = () => {
-    const selectedTest = store.listTests().find((test) => test.id === selectedTestId);
-    const environment = store
-      .listEnvironments()
-      .find((candidate) => candidate.id === (selectedTest?.environmentId ?? selectedEnvironmentId));
+    const selectedTest = allTests().find((test) => test.id === selectedTestId);
+    const environment = allEnvironments().find(
+      (candidate) => candidate.id === (selectedTest?.environmentId ?? selectedEnvironmentId),
+    );
     return { selectedTest, environment };
   };
   const applyContext = (): void => {
@@ -251,7 +389,7 @@ const createWindow = async (): Promise<void> => {
   };
   if (selectedTestId) {
     const { selectedTest } = selectedContext();
-    if (selectedTest) session.load(selectedTest.title, store.loadSteps(selectedTest.id));
+    if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
   }
 
   websiteView.webContents.setWindowOpenHandler(({ url, disposition }) => {
@@ -424,6 +562,7 @@ const createWindow = async (): Promise<void> => {
       }
       case 'create-environment': {
         const baseUrl = safeUrl(command.baseUrl);
+        if (!ensureLocalProject(command.projectId)) break;
         const environment = store.createEnvironment(
           command.projectId,
           command.name,
@@ -437,6 +576,7 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'create-profile': {
+        if (!ensureLocalEnvironment(command.environmentId)) break;
         const profile = store.createProfile(command.environmentId, command.name, command.variables);
         selectedEnvironmentId = command.environmentId;
         selectedProfileId = profile.id;
@@ -444,6 +584,11 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'create-test': {
+        if (
+          !ensureLocalProject(command.projectId) ||
+          !ensureLocalEnvironment(command.environmentId)
+        )
+          break;
         const test = store.createTest(command.projectId, command.environmentId, command.title);
         selectedProjectId = command.projectId;
         selectedEnvironmentId = command.environmentId;
@@ -454,17 +599,17 @@ const createWindow = async (): Promise<void> => {
       }
       case 'select-project':
         selectedProjectId = command.projectId;
-        selectedEnvironmentId = store
-          .listEnvironments()
-          .find((environment) => environment.projectId === command.projectId)?.id;
+        selectedEnvironmentId = allEnvironments().find(
+          (environment) => environment.projectId === command.projectId,
+        )?.id;
         selectedProfileId = store
           .listProfiles()
           .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
-        selectedTestId = store.listTests().find((test) => test.projectId === command.projectId)?.id;
+        selectedTestId = allTests().find((test) => test.projectId === command.projectId)?.id;
         replaySnapshot = historyFor(selectedTestId)[0] ?? { status: 'idle', steps: [] };
         if (selectedTestId) {
           const { selectedTest } = selectedContext();
-          if (selectedTest) session.load(selectedTest.title, store.loadSteps(selectedTest.id));
+          if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
         } else session.load('recorded test', []);
         break;
       case 'select-environment':
@@ -479,7 +624,7 @@ const createWindow = async (): Promise<void> => {
         applyContext();
         break;
       case 'select-test': {
-        const test = store.listTests().find((candidate) => candidate.id === command.testId);
+        const test = allTests().find((candidate) => candidate.id === command.testId);
         if (!test) break;
         selectedTestId = test.id;
         selectedProjectId = test.projectId;
@@ -488,12 +633,13 @@ const createWindow = async (): Promise<void> => {
           .listProfiles()
           .find((profile) => profile.environmentId === test.environmentId)?.id;
         replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
-        session.load(test.title, store.loadSteps(test.id));
+        session.load(test.title, stepsFor(test.id));
         break;
       }
       case 'rename-test': {
-        const test = store.listTests().find((candidate) => candidate.id === command.testId);
+        const test = allTests().find((candidate) => candidate.id === command.testId);
         if (!test) break;
+        if (!ensureLocalTest(test.id)) break;
         store.renameTest(test.id, command.title);
         if (selectedTestId === test.id) session.setGenerationContext(command.title);
         break;
@@ -506,24 +652,28 @@ const createWindow = async (): Promise<void> => {
       case 'save-recording': {
         session.finish();
         applyContext();
-        let project = store.listProjects().find((one) => one.id === selectedProjectId);
+        let project = allProjects().find((one) => one.id === selectedProjectId);
         if (!project) {
           project = store.createProject('My project');
           selectedProjectId = project.id;
-        }
-        let environment = store
-          .listEnvironments()
-          .find((one) => one.id === selectedEnvironmentId && one.projectId === selectedProjectId);
+        } else project = ensureLocalProject(project.id);
+        if (!project) break;
+        let environment = allEnvironments().find(
+          (one) => one.id === selectedEnvironmentId && one.projectId === selectedProjectId,
+        );
         if (!environment) {
           const origin = new URL(command.baseUrl).origin;
           environment = store.createEnvironment(project.id, 'Local', origin, 'data-testid');
           selectedEnvironmentId = environment.id;
-        }
-        let test = store.listTests().find((one) => one.id === selectedTestId);
+        } else environment = ensureLocalEnvironment(environment.id);
+        if (!project || !environment) break;
+        let test = allTests().find((one) => one.id === selectedTestId);
         if (!test) {
           test = store.createTest(project.id, environment.id, command.title);
           selectedTestId = test.id;
         } else {
+          test = ensureLocalTest(test.id);
+          if (!test) break;
           store.renameTest(test.id, command.title);
         }
         store.replaceSteps(test.id, session.snapshot().steps);
@@ -577,7 +727,7 @@ const createWindow = async (): Promise<void> => {
           selectedTest.id,
           new Date().toISOString().replaceAll(':', '-'),
         );
-        const steps = store.loadSteps(selectedTest.id);
+        const steps = stepsFor(selectedTest.id);
         const runTestId = selectedTest.id;
         const profileVariables = Object.fromEntries(
           store
@@ -648,7 +798,86 @@ const createWindow = async (): Promise<void> => {
         });
         break;
       }
+      case 'login-server': {
+        if (!serverClient || !tokenStore) {
+          session.warn('Set TESTRON_SERVER_URL before signing in.');
+          break;
+        }
+        void serverClient
+          .startLogin(command.email)
+          .then(async (flow) => {
+            serverState = {
+              ...serverState,
+              authentication: 'authorizing',
+              status: 'idle',
+              userCode: flow.userCode,
+              verificationUri: flow.verificationUri,
+              message: `Enter code ${flow.userCode} in the browser.`,
+            };
+            sendSnapshot(session.snapshot());
+            await shell.openExternal(flow.verificationUri);
+            const deadline = Date.now() + flow.expiresInSeconds * 1_000;
+            while (Date.now() < deadline && serverState.authentication === 'authorizing') {
+              await new Promise((resolve) => setTimeout(resolve, flow.intervalSeconds * 1_000));
+              const result = await serverClient!.pollLogin(flow.deviceCode);
+              if (result.status === 'pending') continue;
+              if (result.status === 'expired') break;
+              await tokenStore!.save(result.accessToken);
+              serverState = {
+                configured: true,
+                authentication: 'signedIn',
+                status: 'idle',
+              };
+              await synchronize(true);
+              return;
+            }
+            serverState = {
+              configured: true,
+              authentication: 'signedOut',
+              status: 'error',
+              message: 'The desktop sign-in request expired.',
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            serverState = {
+              ...serverState,
+              authentication: 'signedOut',
+              status: 'offline',
+              message: error instanceof Error ? error.message : String(error),
+            };
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'logout-server':
+        remoteWorkspace = undefined;
+        serverState = {
+          configured: Boolean(serverClient),
+          authentication: 'signedOut',
+          status: 'idle',
+        };
+        void tokenStore?.clear();
+        break;
+      case 'sync-now':
+        void synchronize(true);
+        break;
     }
+    if (
+      [
+        'create-project',
+        'create-environment',
+        'create-test',
+        'rename-test',
+        'save-recording',
+        'delete-step',
+        'move-step',
+        'duplicate-step',
+        'update-step',
+        'replace-steps',
+      ].includes(command.type)
+    )
+      void synchronize();
     if (
       ![
         'request-snapshot',
@@ -675,6 +904,7 @@ const createWindow = async (): Promise<void> => {
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.on('closed', () => {
+    if (syncRetry) clearTimeout(syncRetry);
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
     ipcMain.removeAllListeners(RECORD_CHANNELS.event);
@@ -716,6 +946,37 @@ app.whenReady().then(async () => {
   }
   const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
+  const serverUrl = process.env.TESTRON_SERVER_URL;
+  if (serverUrl) {
+    tokenStore = new SecureTokenStore(path.join(dataDirectory, 'credentials'), {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (value) => safeStorage.decryptString(value),
+    });
+    serverClient = new DesktopServerClient(serverUrl, () => tokenStore!.load());
+    syncCoordinator = new DesktopSyncCoordinator(repository, serverClient, app.getVersion());
+    const token = await tokenStore.load();
+    serverState = {
+      configured: true,
+      authentication: token ? 'signedIn' : 'signedOut',
+      status: 'idle',
+    };
+    if (token) {
+      const hydrated = await syncCoordinator.hydrate();
+      if (hydrated.workspace) remoteWorkspace = hydrated.workspace;
+      const flushed = hydrated.status === 'synced' ? await syncCoordinator.flush() : hydrated;
+      const refreshed = flushed.status === 'synced' ? await syncCoordinator.hydrate() : flushed;
+      if (refreshed.workspace) remoteWorkspace = refreshed.workspace;
+      const result = refreshed;
+      serverState = {
+        ...serverState,
+        ...(result.authenticationRequired ? { authentication: 'signedOut' as const } : {}),
+        status: result.status,
+        ...(result.message ? { message: result.message } : {}),
+      };
+      if (result.authenticationRequired) await tokenStore.clear();
+    }
+  }
   await createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
@@ -725,6 +986,10 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   repository?.close();
   repository = undefined;
+  tokenStore = undefined;
+  serverClient = undefined;
+  syncCoordinator = undefined;
+  remoteWorkspace = undefined;
 });
 
 app.on('window-all-closed', () => {

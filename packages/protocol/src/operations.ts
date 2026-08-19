@@ -18,6 +18,7 @@ import {
   testRevisionContentSchema,
   testRevisionSchema,
   testSnapshotSchema,
+  workspaceSnapshotSchema,
 } from './resources';
 
 export const createProjectRequestSchema = z
@@ -55,6 +56,16 @@ export const createTestRequestSchema = z
 
 export const getTestRequestSchema = z
   .object({ meta: requestMetadataSchema, testId: entityIdSchema })
+  .strict();
+
+export const getWorkspaceRequestSchema = z.object({ meta: requestMetadataSchema }).strict();
+
+export const getWorkspaceSuccessSchema = z
+  .object({
+    meta: responseMetadataSchema,
+    ok: z.literal(true),
+    workspace: workspaceSnapshotSchema,
+  })
   .strict();
 
 export const getTestRevisionHistoryRequestSchema = z
@@ -96,6 +107,7 @@ export const createEnvironmentResultSchema = z.union([
 ]);
 export const createTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const getTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
+export const getWorkspaceResultSchema = z.union([getWorkspaceSuccessSchema, errorResponseSchema]);
 export const saveTestRevisionResultSchema = z.union([
   testSnapshotSuccessSchema,
   revisionConflictResponseSchema,
@@ -110,6 +122,7 @@ export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export type CreateEnvironmentRequest = z.infer<typeof createEnvironmentRequestSchema>;
 export type CreateTestRequest = z.infer<typeof createTestRequestSchema>;
 export type GetTestRequest = z.infer<typeof getTestRequestSchema>;
+export type GetWorkspaceRequest = z.infer<typeof getWorkspaceRequestSchema>;
 export type GetTestRevisionHistoryRequest = z.infer<typeof getTestRevisionHistoryRequestSchema>;
 export type SaveTestRevisionRequest = z.infer<typeof saveTestRevisionRequestSchema>;
 export type TestSnapshotSuccess = z.infer<typeof testSnapshotSuccessSchema>;

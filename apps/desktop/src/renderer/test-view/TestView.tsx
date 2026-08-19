@@ -319,6 +319,50 @@ export const TestView = () => {
           <Badge tone="good" icon="check">
             Persisted
           </Badge>
+          {snapshot.library.server?.configured && (
+            <>
+              <Badge
+                tone={
+                  snapshot.library.server.status === 'conflicted'
+                    ? 'critical'
+                    : snapshot.library.server.status === 'offline' ||
+                        snapshot.library.server.status === 'error'
+                      ? 'warning'
+                      : snapshot.library.server.status === 'synced'
+                        ? 'good'
+                        : 'neutral'
+                }
+                icon={snapshot.library.server.status === 'conflicted' ? 'alert' : 'check'}
+              >
+                {snapshot.library.server.status === 'conflicted'
+                  ? 'Sync conflict'
+                  : snapshot.library.server.authentication === 'authorizing'
+                    ? `Code ${snapshot.library.server.userCode}`
+                    : snapshot.library.server.authentication === 'signedOut'
+                      ? 'Server signed out'
+                      : snapshot.library.server.status}
+              </Badge>
+              {snapshot.library.server.authentication === 'signedOut' ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const email = window.prompt('Email for your Testron server account');
+                    if (email) window.testron?.command({ type: 'login-server', email });
+                  }}
+                >
+                  Sign in
+                </Button>
+              ) : snapshot.library.server.authentication === 'signedIn' ? (
+                <Button
+                  size="sm"
+                  icon="rerun"
+                  onClick={() => window.testron?.command({ type: 'sync-now' })}
+                >
+                  Sync
+                </Button>
+              ) : null}
+            </>
+          )}
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"

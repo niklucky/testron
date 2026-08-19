@@ -114,6 +114,9 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('clear-auth-state') }),
+  z.object({ type: z.literal('login-server'), email: z.email() }),
+  z.object({ type: z.literal('logout-server') }),
+  z.object({ type: z.literal('sync-now') }),
   z.object({ type: z.literal('set-record-layout'), layout: recordLayoutSchema }),
   z.object({ type: z.literal('publish-record-state'), state: recordPanelStateSchema }),
 ]);

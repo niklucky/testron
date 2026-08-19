@@ -1,11 +1,14 @@
 # Testron
 
-Local-first Electron test recorder that persists structured tests and emits deterministic Playwright TypeScript.
+Server-backed Electron test recorder that persists recoverable drafts and emits
+deterministic Playwright TypeScript.
 
 ## Workspaces
 
 - `apps/desktop` — Electron application, renderer, local persistence, and replay.
+- `apps/server` — PostgreSQL/Drizzle canonical persistence and typed tRPC API.
 - `packages/domain` — platform-independent schemas and test behavior.
+- `packages/protocol` — shared Zod client/server contracts.
 - `packages/test-fixtures` — controlled websites used by recorder and replay tests.
 
 ## Run
@@ -15,7 +18,16 @@ npm install
 npm start
 ```
 
-Create a project, add an environment with its base URL and test-ID attribute, then create a test. Start recording and use the embedded page. You can pause, undo, finish, reorder or delete steps, review the human-readable or Playwright form, and copy or export the generated `.spec.ts` file. Projects and tests are restored from SQLite when Testron restarts.
+Create a project, add an environment with its base URL and test-ID attribute,
+then create a test. Start recording and use the embedded page. You can pause,
+undo, finish, reorder or delete steps, review the human-readable or Playwright
+form, and copy or export the generated `.spec.ts` file. Unsaved drafts are
+restored from SQLite when Testron restarts.
+
+For server-backed operation, start PostgreSQL with `npm run server:db:up`, then
+follow [the server runbook](docs/server-operations.md). Canonical workspace data
+is read directly from the server and kept in memory; SQLite retains local drafts
+and local replay state.
 
 ## Verify
 

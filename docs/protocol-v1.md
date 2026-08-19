@@ -50,20 +50,18 @@ wire:
   revision. Its `draftId`, `localCreatedAt`, and `localUpdatedAt` fields are
   explicitly local; a new unsynchronized test has no server test ID or base
   revision.
-- An **acknowledged cache entry** is the last complete server snapshot observed
-  by the desktop. Cached data is not authority.
-- An **outbox entry** records a write intent and idempotency key. It contains no
-  credentials or transport request object.
+- A signed-in desktop may hold the current canonical workspace in process
+  memory. It is not persisted as a second server dataset and is discarded when
+  the session ends.
 - A **local run** points to either a canonical revision or a draft. Its process
   state, cancellation, screenshot, trace, reusable browser authentication
   state, and errors stay local in v1.
 - Authentication tokens, profile values, resolved variables, and secret values
   are local state and are never protocol resources.
 
-The explicit conversions in `apps/desktop/src/main/sync/protocol-adapter.ts`
-redact resolved values, assign step IDs when Phase 2 steps first become a
-synchronized draft, retain those IDs after a pull, and carry the acknowledged
-revision into every save.
+The desktop draft repository redacts resolved values, assigns stable step IDs
+when Phase 2 steps first become synchronized, retains those IDs after a save,
+and carries the acknowledged revision into every later save.
 
 ## Revision-aware writes and conflicts
 
@@ -106,8 +104,9 @@ authenticated principal plus operation name plus key.
   `idempotency_key_expired`; it is never treated as a new mutation.
 - Concurrent identical requests converge on one transaction and one outcome.
 
-Clients create one key per intended write, persist it with the outbox entry,
-and reuse it until that write has a terminal acknowledgement.
+Clients create one deterministic key per intended draft write and reuse it
+until that write has a terminal acknowledgement. This does not require a
+persisted transport outbox.
 
 ## Version and migration policy
 
@@ -143,6 +142,8 @@ Protocol v1 defines the contracts needed by the first server slice:
 - create a project;
 - create an environment in an authorized project;
 - create a test and its first revision;
+- read the authenticated user's bounded workspace snapshot into desktop process
+  memory;
 - read a canonical test snapshot;
 - list immutable test revision history;
 - save a new test revision against an observed base revision.

@@ -142,6 +142,15 @@ export const testSnapshotSchema = z
       });
   });
 
+/** The bounded project/environment/test read used to hydrate an empty desktop cache. */
+export const workspaceSnapshotSchema = z
+  .object({
+    projects: z.array(projectSchema),
+    environments: z.array(environmentSchema),
+    tests: z.array(testSnapshotSchema),
+  })
+  .strict();
+
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
 export type RevisionStep = z.infer<typeof revisionStepSchema>;
@@ -149,3 +158,4 @@ export type TestRevisionContent = z.infer<typeof testRevisionContentSchema>;
 export type Test = z.infer<typeof testSchema>;
 export type TestRevision = z.infer<typeof testRevisionSchema>;
 export type TestSnapshot = z.infer<typeof testSnapshotSchema>;
+export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
