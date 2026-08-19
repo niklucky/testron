@@ -354,11 +354,13 @@ transaction; idempotent writes use a transaction-scoped PostgreSQL advisory lock
 plus a durable outcome record, so concurrent writers cannot bypass the exact
 base-revision comparison.
 
-Desktop authentication is a browser/device-style flow. A pre-provisioned user
-approves a short-lived code in the system browser, the desktop polls once for
-an opaque session token, and Electron `safeStorage` encrypts that token at rest.
-Only the Electron main process constructs authenticated requests. The
-application renderer receives status and user-code fields, never credentials.
+Alpha desktop authentication uses direct email/password registration and login
+through public tRPC procedures. Credentials cross the validated renderer-to-main
+IPC boundary once and are not persisted; Electron `safeStorage` encrypts the
+returned opaque session token at rest. Only the Electron main process constructs
+authenticated requests, and tested websites receive neither credentials nor
+session state. Browser OAuth, MFA, and stronger account recovery remain later
+hardening work.
 
 The desktop SQLite database stores only local authoring data, server ID
 mappings, and test drafts with stable step IDs and an acknowledged base pointer.

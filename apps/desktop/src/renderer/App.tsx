@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Dashboard } from './dashboard/Dashboard';
+import { AuthenticationBoundary } from './auth/AuthenticationBoundary';
 import { Dashboard as GlassStudy } from './design/experiments/Dashboard';
 import { Dashboard2 as CodexStudy } from './design/experiments/Dashboard2';
 import { Dashboard3 as WorkspaceStudy } from './design/experiments/Dashboard3';
@@ -28,17 +29,28 @@ export const App = () => {
     return () => window.removeEventListener('hashchange', handleRoute);
   }, []);
 
-  if (route === '#/record') return <RecordScreen />;
-  if (route === '#/test') return <TestView />;
-  if (route === '#/run') return <RunView />;
-  // One route per panel view: each is its own renderer, stacked over the site.
-  if (route === '#/panel/steps') return <PanelHost panel="steps" />;
-  if (route === '#/panel/code') return <PanelHost panel="code" />;
-  if (route === '#/recorder') return <RecorderApp />;
   if (route === '#/design') return <Showcase />;
   if (route === '#/experiments') return <DashboardIndex />;
   if (route === '#/experiments/glass') return <GlassStudy />;
   if (route === '#/experiments/codex') return <CodexStudy />;
   if (route === '#/experiments/workspace') return <WorkspaceStudy />;
-  return <Dashboard />;
+  // Panel views are hidden internal renderers. They receive their own narrow
+  // record-state channel rather than the main window's application snapshot.
+  if (route === '#/panel/steps') return <PanelHost panel="steps" />;
+  if (route === '#/panel/code') return <PanelHost panel="code" />;
+
+  const product =
+    route === '#/record' ? (
+      <RecordScreen />
+    ) : route === '#/test' ? (
+      <TestView />
+    ) : route === '#/run' ? (
+      <RunView />
+    ) : route === '#/recorder' ? (
+      <RecorderApp />
+    ) : (
+      <Dashboard />
+    );
+
+  return <AuthenticationBoundary>{product}</AuthenticationBoundary>;
 };

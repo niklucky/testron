@@ -28,12 +28,12 @@ export class DesktopServerClient {
     });
   }
 
-  startLogin(email: string) {
-    return this.api.auth.start.mutate({ email });
+  login(email: string, password: string) {
+    return this.api.auth.login.mutate({ email, password });
   }
 
-  pollLogin(deviceCode: string) {
-    return this.api.auth.poll.mutate({ deviceCode });
+  register(email: string, password: string) {
+    return this.api.auth.register.mutate({ email, password });
   }
 
   createProject(value: CreateProjectRequest) {

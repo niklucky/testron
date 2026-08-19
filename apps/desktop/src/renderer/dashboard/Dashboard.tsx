@@ -11,6 +11,7 @@ import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
 import { evidenceTabs, Triage } from './Triage';
+import { ProjectSwitcher } from '../projects/ProjectSwitcher';
 import type {
   EvidenceTab,
   Failure,
@@ -51,14 +52,12 @@ export const Dashboard = () => {
   const [overview, setOverview] = useState<OverviewState>(initialOverviewState);
   const [runsState, setRunsState] = useState<RunsState>(initialRunsState);
   const [log, setLog] = useState('Ready · 9 open failures across 6 suites');
-  const [server, setServer] = useState<AppSnapshot['library']['server']>();
+  const [library, setLibrary] = useState<AppSnapshot['library']>();
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
-    const unsubscribe = window.testron?.onSnapshot((snapshot) =>
-      setServer(snapshot.library.server),
-    );
+    const unsubscribe = window.testron?.onSnapshot((snapshot) => setLibrary(snapshot.library));
     window.testron?.command({ type: 'request-snapshot' });
     return unsubscribe;
   }, []);
@@ -208,12 +207,7 @@ export const Dashboard = () => {
         <div className="w-[74px] shrink-0" />
 
         <div className="flex items-center gap-2 [-webkit-app-region:no-drag]">
-          <span className="ui-mono grid h-6 w-6 place-items-center rounded-[6px] bg-accent text-base font-bold text-accent-ink">
-            T
-          </span>
-          <Button variant="ghost" size="lg" iconEnd="caret">
-            Commerce app
-          </Button>
+          {library && <ProjectSwitcher library={library} />}
         </div>
 
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
@@ -223,39 +217,37 @@ export const Dashboard = () => {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 [-webkit-app-region:no-drag]">
-          {server?.configured &&
-            (server.authentication === 'signedOut' ? (
+          {library?.server?.configured && library.server.authentication === 'signedIn' && (
+            <>
+              <Badge
+                tone={
+                  library.server.status === 'conflicted'
+                    ? 'critical'
+                    : library.server.status === 'offline' || library.server.status === 'error'
+                      ? 'warning'
+                      : library.server.status === 'synced'
+                        ? 'good'
+                        : 'neutral'
+                }
+                icon={library.server.status === 'conflicted' ? 'alert' : 'check'}
+              >
+                {library.server.status === 'conflicted' ? 'Sync conflict' : library.server.status}
+              </Badge>
+              <Button icon="rerun" onClick={() => window.testron?.command({ type: 'sync-now' })}>
+                Sync
+              </Button>
               <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
-                  const email = window.prompt('Email for your Testron server account');
-                  if (email) window.testron?.command({ type: 'login-server', email });
+                  window.testron?.command({ type: 'logout-server' });
+                  window.location.hash = '#/';
                 }}
               >
-                Sign in to server
+                Sign out
               </Button>
-            ) : server.authentication === 'authorizing' ? (
-              <Badge tone="accent">Authorize code {server.userCode}</Badge>
-            ) : (
-              <>
-                <Badge
-                  tone={
-                    server.status === 'conflicted'
-                      ? 'critical'
-                      : server.status === 'offline' || server.status === 'error'
-                        ? 'warning'
-                        : server.status === 'synced'
-                          ? 'good'
-                          : 'neutral'
-                  }
-                  icon={server.status === 'conflicted' ? 'alert' : 'check'}
-                >
-                  {server.status === 'conflicted' ? 'Sync conflict' : server.status}
-                </Badge>
-                <Button icon="rerun" onClick={() => window.testron?.command({ type: 'sync-now' })}>
-                  Sync
-                </Button>
-              </>
-            ))}
+            </>
+          )}
           <Button icon="search" kbd="⌘K" onClick={() => setLog('Jump to… · not wired up yet')}>
             Jump to…
           </Button>

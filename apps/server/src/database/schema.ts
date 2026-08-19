@@ -2,7 +2,6 @@ import {
   index,
   integer,
   jsonb,
-  pgEnum,
   pgTable,
   primaryKey,
   text,
@@ -15,12 +14,6 @@ import type { TestRevisionContent } from '@testron/protocol';
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: 'string' });
 
-export const desktopLoginStatus = pgEnum('desktop_login_status', [
-  'pending',
-  'approved',
-  'consumed',
-]);
-
 export const users = pgTable(
   'users',
   {
@@ -31,24 +24,6 @@ export const users = pgTable(
     createdAt: instant('created_at').defaultNow().notNull(),
   },
   (table) => [uniqueIndex('users_email_unique').on(table.email)],
-);
-
-export const desktopLoginFlows = pgTable(
-  'desktop_login_flows',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    userCode: text('user_code').notNull(),
-    deviceCodeHash: text('device_code_hash').notNull(),
-    requestedEmail: text('requested_email').notNull(),
-    userId: uuid('user_id').references(() => users.id),
-    status: desktopLoginStatus('status').default('pending').notNull(),
-    expiresAt: instant('expires_at').notNull(),
-    createdAt: instant('created_at').defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('desktop_login_flows_user_code_unique').on(table.userCode),
-    uniqueIndex('desktop_login_flows_device_code_unique').on(table.deviceCodeHash),
-  ],
 );
 
 export const sessions = pgTable(

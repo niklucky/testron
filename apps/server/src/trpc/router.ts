@@ -1,19 +1,22 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 
 import {
+  authLoginInputSchema,
+  authRegisterInputSchema,
+  authSessionOutputSchema,
   createEnvironmentProcedure,
   createProjectProcedure,
   createTestProcedure,
-  desktopLoginPollInputSchema,
-  desktopLoginPollOutputSchema,
-  desktopLoginStartInputSchema,
-  desktopLoginStartOutputSchema,
   getTestProcedure,
   getTestRevisionHistoryProcedure,
   getWorkspaceProcedure,
   saveTestRevisionProcedure,
 } from '@testron/protocol';
-import type { AuthenticatedUser, AuthenticationService } from '../auth.js';
+import {
+  AuthenticationError,
+  type AuthenticatedUser,
+  type AuthenticationService,
+} from '../auth.js';
 import { RepositoryError, type CanonicalRepository } from '../database/repository.js';
 
 export interface TrpcContext {
@@ -53,17 +56,30 @@ const call = async <T>(operation: () => Promise<T>): Promise<T> => {
   }
 };
 
+const callAuthentication = async <T>(operation: () => Promise<T>): Promise<T> => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof AuthenticationError)) throw error;
+    throw new TRPCError({
+      code: error.code === 'EMAIL_TAKEN' ? 'CONFLICT' : 'UNAUTHORIZED',
+      message: error.message,
+      cause: error,
+    });
+  }
+};
+
 export const createAppRouter = ({ authentication, repository }: RouterServices) =>
   t.router({
     auth: t.router({
-      start: publicProcedure
-        .input(desktopLoginStartInputSchema)
-        .output(desktopLoginStartOutputSchema)
-        .mutation(({ input }) => authentication.startDesktopLogin(input)),
-      poll: publicProcedure
-        .input(desktopLoginPollInputSchema)
-        .output(desktopLoginPollOutputSchema)
-        .mutation(({ input }) => authentication.pollDesktopLogin(input)),
+      register: publicProcedure
+        .input(authRegisterInputSchema)
+        .output(authSessionOutputSchema)
+        .mutation(({ input }) => callAuthentication(() => authentication.register(input))),
+      login: publicProcedure
+        .input(authLoginInputSchema)
+        .output(authSessionOutputSchema)
+        .mutation(({ input }) => callAuthentication(() => authentication.login(input))),
     }),
     project: t.router({
       create: authenticatedProcedure
