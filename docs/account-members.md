@@ -13,6 +13,9 @@ Invitations begin as `invited` and may transition once to `accepted`, `rejected`
 Only the account whose normalized email matches the invitation may accept or reject it. Accepting
 creates the project membership. Testron prevents more than one pending invitation for the same
 project and email, including under concurrent requests. Invitations do not expire in this version.
+When Resend is configured, creation also sends an idempotent notification email. The recipient still
+accepts or rejects from the desktop app; invitation emails are not authentication or magic links.
+Email-provider failures are logged without discarding the in-app invitation.
 
 ## Password session policy
 

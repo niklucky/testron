@@ -103,11 +103,13 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       TESTRON_BOOTSTRAP_EMAIL: ${{ secrets.TESTRON_BOOTSTRAP_EMAIL }}
       TESTRON_BOOTSTRAP_PASSWORD: ${{ secrets.TESTRON_BOOTSTRAP_PASSWORD }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       VPS_HOST: ${{ vars.VPS_HOST }}
       VPS_PORT: ${{ vars.VPS_PORT || '22' }}
       VPS_USER: ${{ vars.VPS_USER || 'github' }}
       VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH || '/opt/testron' }}
       TESTRON_PUBLIC_URL: ${{ vars.TESTRON_PUBLIC_URL }}
+      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
       GHCR_USER: ${{ github.actor }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -129,6 +131,8 @@ jobs:
             printf 'TESTRON_PUBLIC_URL=%s\n' "$TESTRON_PUBLIC_URL"
             printf 'TESTRON_BOOTSTRAP_EMAIL=%s\n' "$TESTRON_BOOTSTRAP_EMAIL"
             printf 'TESTRON_BOOTSTRAP_PASSWORD=%s\n' "$TESTRON_BOOTSTRAP_PASSWORD"
+            printf 'RESEND_API_KEY=%s\n' "$RESEND_API_KEY"
+            printf 'RESEND_FROM_EMAIL=%s\n' "$RESEND_FROM_EMAIL"
           } > deploy.env
       - name: Copy deployment files
         run: |

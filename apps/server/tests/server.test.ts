@@ -13,6 +13,7 @@ const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/test
 const expectedDatabase = 'testron_test';
 const expectedUser = 'testron_test';
 let server: RunningTestronServer;
+const deliveredInvitationIds: string[] = [];
 
 const assertIsolatedTestDatabase = async (): Promise<void> => {
   const result = await server.database.pool.query<{
@@ -27,12 +28,21 @@ const assertIsolatedTestDatabase = async (): Promise<void> => {
 };
 
 beforeAll(async () => {
-  server = await startTestronServer({ databaseUrl, migrate: false });
+  server = await startTestronServer({
+    databaseUrl,
+    migrate: false,
+    invitationMailer: {
+      sendInvitation: async (invitation) => {
+        deliveredInvitationIds.push(invitation.id);
+      },
+    },
+  });
   await assertIsolatedTestDatabase();
   await server.database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
 });
 
 beforeEach(async () => {
+  deliveredInvitationIds.length = 0;
   await assertIsolatedTestDatabase();
   await server.database.db.execute(sql`
     truncate table idempotency_records, test_runs, test_revisions, tests, test_suites, environments,
@@ -183,6 +193,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       inviteeName: 'Test Owner',
       status: 'invited',
     });
+    expect(deliveredInvitationIds).toContain(invitation.id);
     await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       projects: [],
       pendingInvitations: [{ id: invitation.id, status: 'invited' }],

@@ -39,6 +39,8 @@ Create an environment named `production`. Add these encrypted secrets:
 - `VPS_KNOWN_HOSTS`: pinned SSH host-key line for the VPS. Generate it from a
   trusted machine with `ssh-keyscan -H your-host` and verify its fingerprint.
 - `POSTGRES_PASSWORD`: strong URL-safe password, such as a long hex value.
+- `RESEND_API_KEY`: optional Resend key with sending access. Set it to enable
+  invitation email delivery.
 
 Add these environment variables:
 
@@ -49,10 +51,17 @@ Add these environment variables:
   empty.
 - `TESTRON_PUBLIC_URL`: public HTTPS server URL, for example
   `https://api.testron.example`.
+- `RESEND_FROM_EMAIL`: required when `RESEND_API_KEY` is set. Use a sender on a
+  domain verified in Resend, for example `Testron <invites@testron.example>`.
 
 Optional bootstrap secrets are `TESTRON_BOOTSTRAP_EMAIL` and
 `TESTRON_BOOTSTRAP_PASSWORD`. They are only needed to provision the alpha
 bootstrap account; normal account registration does not require them.
+
+Invitation records are always available in the desktop app. When both Resend
+variables are configured, creating an invitation also sends an email with an
+idempotency key derived from the invitation ID. A partial Resend configuration
+stops server startup rather than silently disabling delivery.
 
 The deployment logs in to GHCR with the workflow's short-lived `GITHUB_TOKEN`.
 The VPS does not need a permanent registry token.

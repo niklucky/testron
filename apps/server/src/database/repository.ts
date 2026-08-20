@@ -45,6 +45,7 @@ import {
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import type { AuthenticatedUser } from '../auth.js';
+import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
   environments,
@@ -88,7 +89,10 @@ const fingerprint = (value: unknown): string =>
   createHash('sha256').update(stable(value)).digest('hex');
 
 export class CanonicalRepository {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly invitationMailer: InvitationMailer = disabledInvitationMailer,
+  ) {}
 
   createProject(user: AuthenticatedUser, request: CreateProjectRequest): Promise<Project> {
     return this.idempotent(user, 'project.create', request, async (tx) => {
@@ -384,11 +388,11 @@ export class CanonicalRepository {
     return { email, name: invitee?.name ?? null };
   }
 
-  createInvitation(
+  async createInvitation(
     user: AuthenticatedUser,
     request: CreateInvitationRequest,
   ): Promise<ProjectInvitation> {
-    return this.idempotent(user, 'invitation.create', request, async (tx) => {
+    const invitation = await this.idempotent(user, 'invitation.create', request, async (tx) => {
       await this.authorizeProject(tx, user, request.projectId);
       if (request.email === user.email)
         throw new RepositoryError('CONFLICT', 'You are already a member of this project.');
@@ -446,6 +450,14 @@ export class CanonicalRepository {
       if (!row) throw new Error('Could not create the invitation.');
       return this.invitation(tx, row);
     });
+    try {
+      await this.invitationMailer.sendInvitation(invitation);
+    } catch (error) {
+      console.error(
+        error instanceof Error ? error.message : 'Invitation email delivery failed unexpectedly.',
+      );
+    }
+    return invitation;
   }
 
   respondInvitation(
