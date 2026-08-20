@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
@@ -49,6 +49,7 @@ export const TestView = () => {
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
+  const creatingFromTestId = useRef<string | undefined>(undefined);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -57,6 +58,14 @@ export const TestView = () => {
     const unsubscribe = window.testron?.onSnapshot((next) => {
       setSnapshot(next);
       setLoaded(true);
+      if (
+        creatingFromTestId.current !== undefined &&
+        next.library.selectedTestId &&
+        next.library.selectedTestId !== creatingFromTestId.current
+      ) {
+        creatingFromTestId.current = undefined;
+        window.location.hash = '#/record';
+      }
     });
     window.testron?.command({ type: 'request-snapshot' });
     return unsubscribe;
@@ -77,9 +86,14 @@ export const TestView = () => {
     [snapshot.source, fullSteps],
   );
   const selectedTestId = snapshot.library.selectedTestId;
+  const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
+  const testSuites = snapshot.library.testSuites.filter(
+    (suite) => suite.projectId === snapshot.library.selectedProjectId,
+  );
   const running = snapshot.replay.status === 'running';
   const selectedReplay = useMemo(() => {
     if (!selectedRun) return snapshot.replay;
+    if (selectedRun.startsWith('server-run-')) return { status: 'idle' as const, steps: [] };
     if (selectedRun === 'current-run') return snapshot.replay;
     const startedAt = selectedRun.slice('run-'.length);
     return (
@@ -289,8 +303,17 @@ export const TestView = () => {
           <NewTestForm
             onClose={() => setNewTestOpen(false)}
             onStart={(title) => {
-              window.testron?.command({ type: 'prepare-new-test', title });
-              window.location.hash = '#/record';
+              const projectId = snapshot.library.selectedProjectId;
+              const environmentId = snapshot.library.selectedEnvironmentId;
+              if (!projectId || !environmentId) return;
+              window.testron?.command({
+                type: 'create-test',
+                projectId,
+                environmentId,
+                title,
+              });
+              creatingFromTestId.current = snapshot.library.selectedTestId ?? 'none';
+              setNewTestOpen(false);
             }}
           />
         )}
@@ -313,9 +336,30 @@ export const TestView = () => {
             {detail.project}
           </Button>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <Button variant="ghost" size="sm" iconEnd="caret">
-            {detail.suite}
-          </Button>
+          <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+            <select
+              aria-label="Test suite"
+              value={selectedTest?.testSuiteId ?? snapshot.library.selectedTestSuiteId ?? ''}
+              onChange={(event) => {
+                const testSuiteId = event.target.value;
+                if (!testSuiteId) return;
+                window.testron?.command({ type: 'select-test-suite', testSuiteId });
+                const firstTest = snapshot.library.tests.find(
+                  (test) => test.testSuiteId === testSuiteId,
+                );
+                if (firstTest)
+                  window.testron?.command({ type: 'select-test', testId: firstTest.id });
+              }}
+              className="max-w-44 bg-transparent py-1 outline-none"
+            >
+              <option value="">No test suite</option>
+              {testSuites.map((suite) => (
+                <option key={suite.id} value={suite.id}>
+                  {suite.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <span className="flex min-w-0 items-center gap-1.5 px-1.5 text-md">
             <StatusDot
@@ -546,8 +590,8 @@ export const TestView = () => {
             </Lane>
             <Flow />
 
-            <Lane icon="history" title="Runs" count={runs.length} hint="Current app session.">
-              {runs.length === 0 && <EmptyLane>Never run in this session.</EmptyLane>}
+            <Lane icon="history" title="Runs" count={runs.length} hint="Recent server runs.">
+              {runs.length === 0 && <EmptyLane>This test has no completed runs.</EmptyLane>}
               {runs.map((entry: Run) => (
                 <RunCard
                   key={entry.id}

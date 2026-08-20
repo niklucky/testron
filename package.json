@@ -18,6 +18,7 @@
     "build": "pnpm --filter @testron/desktop build",
     "package": "pnpm --filter @testron/desktop package",
     "make": "pnpm --filter @testron/desktop make",
+    "make:win": "pnpm --filter @testron/desktop make:win",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",

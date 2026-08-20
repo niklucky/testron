@@ -9,6 +9,7 @@ import {
   type RevisionStep,
   type TestSnapshot,
   type TestSuiteSummary,
+  type TestRun,
 } from '@testron/protocol';
 import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
@@ -48,6 +49,7 @@ export interface TestRecord {
   id: string;
   projectId: string;
   environmentId: string;
+  testSuiteId?: string | null;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -61,8 +63,14 @@ export interface LibrarySnapshot {
   profileVariables: Array<Omit<ProfileVariableRecord, 'value'>>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
+  latestTestRuns?: Record<
+    string,
+    { status: 'passed' | 'failed' | 'cancelled' | 'timedOut'; durationMs: number }
+  >;
+  recentRuns?: TestRun[];
   selectedProjectId?: string;
   selectedEnvironmentId?: string;
+  selectedTestSuiteId?: string;
   selectedProfileId?: string;
   selectedTestId?: string;
   sync?: { pending: number; conflicts: number };
@@ -141,6 +149,7 @@ const migrations = [
     DROP TABLE IF EXISTS sync_outbox;
     DROP TABLE IF EXISTS acknowledged_tests;
   `,
+  `ALTER TABLE tests ADD COLUMN test_suite_id TEXT;`,
 ];
 
 interface Row {
@@ -160,6 +169,21 @@ export class TestronRepository {
 
   close(): void {
     this.database.close();
+  }
+
+  /** Remove the retired offline test cache after its pending drafts reach the server. */
+  clearLegacyTests(): void {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database
+        .prepare("DELETE FROM server_resource_mappings WHERE resource_kind = 'test'")
+        .run();
+      this.database.prepare('DELETE FROM tests').run();
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   listProjects(): ProjectRecord[] {
@@ -214,13 +238,14 @@ export class TestronRepository {
   listTests(): TestRecord[] {
     return this.database
       .prepare(
-        'SELECT id, project_id, environment_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
+        'SELECT id, project_id, environment_id, test_suite_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
       )
       .all()
       .map((row) => ({
         id: String(row.id),
         projectId: String(row.project_id),
         environmentId: String(row.environment_id),
+        testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
         title: String(row.title),
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
@@ -332,12 +357,18 @@ export class TestronRepository {
     return Number(row.auth_revision);
   }
 
-  createTest(projectId: string, environmentId: string, title: string): TestRecord {
+  createTest(
+    projectId: string,
+    environmentId: string,
+    title: string,
+    testSuiteId?: string,
+  ): TestRecord {
     const now = new Date().toISOString();
     const test = {
       id: randomUUID(),
       projectId,
       environmentId,
+      testSuiteId: testSuiteId ?? null,
       title: title.trim(),
       createdAt: now,
       updatedAt: now,
@@ -346,15 +377,17 @@ export class TestronRepository {
     try {
       this.database
         .prepare(
-          `INSERT INTO tests (id, project_id, environment_id, title, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO tests
+            (id, project_id, environment_id, test_suite_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(test.id, projectId, environmentId, test.title, now, now);
+        .run(test.id, projectId, environmentId, test.testSuiteId, test.title, now, now);
       this.writeDraft(
         test.id,
         desktopTestDraftSchema.parse({
           draftId: randomUUID(),
           projectId,
+          testSuiteId: test.testSuiteId,
           baseRevision: null,
           content: { stepSchemaVersion: 1, title: test.title, environmentId, steps: [] },
           localCreatedAt: now,
@@ -549,13 +582,14 @@ export class TestronRepository {
       this.database
         .prepare(
           `INSERT OR REPLACE INTO tests
-            (id, project_id, environment_id, title, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+            (id, project_id, environment_id, test_suite_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           snapshot.test.id,
           project.id,
           environment.id,
+          snapshot.test.testSuiteId,
           revision.content.title,
           snapshot.test.createdAt,
           revision.createdAt,
@@ -633,6 +667,7 @@ export class TestronRepository {
       this.writeDraft(test.id, {
         draftId: randomUUID(),
         projectId: test.projectId,
+        testSuiteId: test.testSuiteId,
         baseRevision: null,
         content: {
           stepSchemaVersion: 1,

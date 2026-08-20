@@ -105,12 +105,10 @@ const executeStep = async (
       await resolveLocator(page, step.target.primary).click();
       break;
     case 'fill': {
-      const variableName = step.variable?.name ?? step.secret?.environmentVariable;
+      const variableName = step.variable?.name;
       const value = variableName ? environmentVariables[variableName] : step.value;
       if (value === undefined || (variableName !== undefined && value === ''))
-        throw new Error(
-          `Missing required ${step.variable ? 'profile variable' : 'environment variable'}: ${variableName}`,
-        );
+        throw new Error(`Missing required profile variable: ${variableName}`);
       await resolveLocator(page, step.target.primary).fill(value);
       break;
     }

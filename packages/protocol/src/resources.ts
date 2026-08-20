@@ -219,6 +219,18 @@ export const workspaceSnapshotSchema = z
     profiles: z.array(profileSchema),
     testSuites: z.array(testSuiteSummarySchema),
     tests: z.array(testSnapshotSchema),
+    latestTestRuns: z
+      .record(
+        entityIdSchema,
+        z
+          .object({
+            status: testRunStatusSchema.exclude(['running']),
+            durationMs: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .optional(),
+    recentRuns: z.array(testRunSchema).optional(),
     activeRuns: z.array(testRunSchema),
   })
   .strict();

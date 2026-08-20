@@ -5,14 +5,20 @@ import { Button } from '../design';
 
 export const NewTestForm = ({
   suiteName,
+  initialTitle = '',
+  heading = 'Create test',
+  submitLabel = 'Start recording',
   onStart,
   onClose,
 }: {
   suiteName?: string;
+  initialTitle?: string;
+  heading?: string;
+  submitLabel?: string;
   onStart: (title: string) => void;
   onClose: () => void;
 }) => {
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle);
   const titleId = useId();
   const inputId = useId();
 
@@ -46,7 +52,7 @@ export const NewTestForm = ({
         className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
       >
         <h2 id={titleId} className="text-2xl font-semibold tracking-[-0.02em]">
-          Create test
+          {heading}
         </h2>
         {suiteName && <p className="mt-1 text-sm text-ink-3">In {suiteName}</p>}
 
@@ -67,7 +73,7 @@ export const NewTestForm = ({
           <div className="mt-6 flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
             <Button type="submit" variant="primary" disabled={!title.trim()}>
-              Start recording
+              {submitLabel}
             </Button>
           </div>
         </form>

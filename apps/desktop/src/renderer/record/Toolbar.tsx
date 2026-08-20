@@ -1,6 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react';
 
-import { Badge, Button, Icon, IconButton, Kbd, PulseDot, type Theme } from '../design';
+import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
 import type { VerifyAssertion } from '../../preload/api';
 import { clock } from './codegen';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
@@ -13,12 +13,16 @@ import type { CaptureMode, PanelId, RecordStatus } from './types';
 export const SessionBar = ({
   status,
   elapsed,
-  theme,
-  onTheme,
   steps,
   onBack,
   project,
+  projects,
+  projectId,
+  onProject,
   suite,
+  suites,
+  suiteId,
+  onSuite,
   environment,
   environments,
   environmentId,
@@ -29,16 +33,20 @@ export const SessionBar = ({
   onProfile,
   onConfigureProfile,
   test,
+  onTestEdit,
 }: {
   status: RecordStatus;
   elapsed: number;
-  /** Owned by the screen: the panel views are told which theme to paint in. */
-  theme: Theme;
-  onTheme: () => void;
   steps: number;
   onBack: () => void;
   project: string;
+  projects: Array<{ id: string; name: string }>;
+  projectId?: string;
+  onProject: (id: string) => void;
   suite: string;
+  suites: Array<{ id: string; name: string }>;
+  suiteId?: string;
+  onSuite: (id: string) => void;
   environment: string;
   environments: Array<{ id: string; name: string }>;
   environmentId?: string;
@@ -49,6 +57,7 @@ export const SessionBar = ({
   onProfile: (id: string) => void;
   onConfigureProfile: () => void;
   test: string;
+  onTestEdit: () => void;
 }) => {
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
@@ -56,13 +65,37 @@ export const SessionBar = ({
 
       <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
         <IconButton icon="arrowLeft" size="sm" label="Back to the dashboard" onClick={onBack} />
-        <Button variant="ghost" size="sm" iconEnd="caret">
-          {project}
-        </Button>
+        <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+          <select
+            aria-label="Recording project"
+            value={projectId ?? ''}
+            onChange={(event) => onProject(event.target.value)}
+            className="max-w-40 bg-transparent py-1 outline-none"
+          >
+            {projects.length === 0 && <option value="">{project}</option>}
+            {projects.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <Button variant="ghost" size="sm" iconEnd="caret">
-          {suite}
-        </Button>
+        <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+          <select
+            aria-label="Recording test suite"
+            value={suiteId ?? ''}
+            onChange={(event) => onSuite(event.target.value)}
+            className="max-w-40 bg-transparent py-1 outline-none"
+          >
+            <option value="">{suites.length ? 'Choose test suite' : suite}</option>
+            {suites.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
           <Icon name="grid" size={13} />
@@ -89,7 +122,7 @@ export const SessionBar = ({
             onChange={(event) => onProfile(event.target.value)}
             className="max-w-36 bg-transparent py-1 outline-none"
           >
-            <option value="">{profiles.length ? 'Choose profile' : 'No profile'}</option>
+            <option value="">No profile</option>
             {profiles.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
@@ -104,7 +137,7 @@ export const SessionBar = ({
           onClick={onConfigureProfile}
         />
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <Button variant="ghost" size="sm" icon="pencil" className="min-w-0">
+        <Button variant="ghost" size="sm" icon="pencil" className="min-w-0" onClick={onTestEdit}>
           <span className="truncate">{test}</span>
         </Button>
       </div>
@@ -123,12 +156,6 @@ export const SessionBar = ({
             </span>
           </span>
         )}
-        <IconButton
-          icon={theme === 'dark' ? 'sun' : 'moon'}
-          label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-          size="sm"
-          onClick={onTheme}
-        />
       </div>
     </header>
   );

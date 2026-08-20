@@ -12,6 +12,7 @@ import {
   type ThemePreference,
 } from '../design';
 import { SuiteTree } from './SuiteTree';
+import { ms } from './format';
 import { TriageQueue } from './TriageQueue';
 import type { Failure, Scope, SuiteRecord, TestRecord, View } from './types';
 
@@ -145,7 +146,7 @@ export const Sidebar = ({
           <SectionLabel>Test suites</SectionLabel>
           <span className="ui-mono text-xs text-ink-3">
             {suites.length} ·{' '}
-            {suites.reduce((sum, suite) => sum + (suite.testCount ?? suite.tests.length), 0)}
+            {ms(suites.reduce((sum, suite) => sum + (suite.totalLatestDurationMs ?? 0), 0))}
           </span>
           <IconButton
             icon="plus"

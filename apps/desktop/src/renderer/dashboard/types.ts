@@ -41,7 +41,7 @@ export type TestRecord = {
   name: string;
   status: StepState;
   minutesAgo: number;
-  seconds: number;
+  seconds?: number;
   failureId?: string;
 };
 

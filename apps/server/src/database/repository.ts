@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import {
   environmentSchema,
@@ -407,6 +407,32 @@ export class CanonicalRepository {
         )
         .orderBy(asc(tests.createdAt));
       const testValues = await Promise.all(testRows.map((row) => this.snapshot(tx, row.id)));
+      const testIds = testRows.map((test) => test.id);
+      const completedRunRows =
+        testIds.length === 0
+          ? []
+          : await tx
+              .select({
+                testId: testRuns.testId,
+                status: testRuns.status,
+                durationMs: testRuns.durationMs,
+              })
+              .from(testRuns)
+              .where(and(inArray(testRuns.testId, testIds), isNotNull(testRuns.durationMs)))
+              .orderBy(asc(testRuns.startedAt));
+      const latestTestRuns: Record<
+        string,
+        { status: 'passed' | 'failed' | 'cancelled' | 'timedOut'; durationMs: number }
+      > = {};
+      for (const run of completedRunRows)
+        if (
+          run.durationMs !== null &&
+          ['passed', 'failed', 'cancelled', 'timedOut'].includes(run.status)
+        )
+          latestTestRuns[run.testId] = {
+            status: run.status as 'passed' | 'failed' | 'cancelled' | 'timedOut',
+            durationMs: run.durationMs,
+          };
       const runRows =
         projectIds.length === 0
           ? []
@@ -415,6 +441,15 @@ export class CanonicalRepository {
               .from(testRuns)
               .where(and(inArray(testRuns.projectId, projectIds), eq(testRuns.status, 'running')))
               .orderBy(asc(testRuns.startedAt));
+      const recentRunRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(testRuns)
+              .where(and(inArray(testRuns.projectId, projectIds), isNotNull(testRuns.finishedAt)))
+              .orderBy(desc(testRuns.startedAt))
+              .limit(200);
       return workspaceSnapshotSchema.parse({
         viewer: user,
         projects: projectValues,
@@ -422,6 +457,8 @@ export class CanonicalRepository {
         profiles: profileValues,
         testSuites: testSuiteValues,
         tests: testValues,
+        latestTestRuns,
+        recentRuns: recentRunRows.map((row) => this.run(row)),
         activeRuns: runRows.map((row) => this.run(row)),
       });
     });

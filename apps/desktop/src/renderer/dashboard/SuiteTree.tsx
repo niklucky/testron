@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 
 import { Badge, Icon, IconButton, SplitBar, StatusDot } from '../design';
 import { tally } from './data';
-import { age, ms } from './format';
+import { ms } from './format';
 import { healthSplits, verdictTone } from './tone';
 import type { SuiteRecord, TestRecord } from './types';
 
@@ -77,7 +77,7 @@ const SuiteBranch = ({
   const failedCount = suite.failedCount ?? counts.failed;
   const totalLatestDurationMs =
     suite.totalLatestDurationMs ??
-    suite.tests.reduce((total, test) => total + test.seconds * 1000, 0);
+    suite.tests.reduce((total, test) => total + (test.seconds ?? 0) * 1000, 0);
   const visible = open ? suite.tests.slice(0, showAll ? undefined : 5) : [];
   const hidden = Math.max(0, testCount - 5);
 
@@ -205,7 +205,7 @@ const SuiteBranch = ({
                 />
                 <span className="truncate text-sm text-ink-2">{test.name}</span>
                 <span className="ui-mono ml-auto shrink-0 text-xs text-ink-3">
-                  {age(test.minutesAgo)}
+                  {test.seconds === undefined ? '—' : ms(test.seconds * 1000)}
                 </span>
               </button>
             </li>

@@ -4,7 +4,6 @@ import type { AppSnapshot } from '../../preload/api';
 import { Button, PulseDot } from '../design';
 import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
-import { age } from './format';
 import { initialOverviewState, Overview, type OverviewState } from './Overview';
 import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
@@ -57,6 +56,8 @@ export const Dashboard = () => {
   const [library, setLibrary] = useState<AppSnapshot['library']>();
   const [suiteForm, setSuiteForm] = useState<SuiteRecord | null>();
   const [newTestSuite, setNewTestSuite] = useState<SuiteRecord | null>();
+  const [creatingTest, setCreatingTest] = useState(false);
+  const creatingFromTestId = useRef<string | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -74,6 +75,19 @@ export const Dashboard = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!creatingTest || !library?.selectedTestId) return;
+    if (library.selectedTestId === creatingFromTestId.current) return;
+    setCreatingTest(false);
+    window.location.hash = '#/record';
+  }, [creatingTest, library?.selectedTestId]);
+
+  useEffect(() => {
+    if (!creatingTest || library?.server?.status !== 'error') return;
+    setCreatingTest(false);
+    setLog(library.server.message ?? 'The test could not be created.');
+  }, [creatingTest, library?.server?.message, library?.server?.status]);
+
   const suites = useMemo(() => {
     if (!library?.server?.configured) return mockSuites;
     const owner = library.viewer?.name ?? library.viewer?.email ?? 'Workspace owner';
@@ -84,22 +98,21 @@ export const Dashboard = () => {
         const template =
           templates.find((candidate) => candidate.name === testSuite.name) ??
           templates[suiteIndex % templates.length]!;
-        const tests = Array.from({ length: testSuite.testCount }, (_, testIndex) => {
-          const sample = template.tests[testIndex % template.tests.length];
+        const persistedTests = library.tests.filter((test) => test.testSuiteId === testSuite.id);
+        const tests = persistedTests.map((persisted) => {
+          const latestRun = library.latestTestRuns?.[persisted.id];
           return {
-            id: `${testSuite.id}-mock-${testIndex}`,
-            name: sample?.name ?? `Mocked test ${testIndex + 1}`,
-            status:
-              testIndex < testSuite.failedCount
-                ? ('failed' as const)
-                : sample?.status === 'skipped'
-                  ? ('skipped' as const)
-                  : ('passed' as const),
-            minutesAgo: sample?.minutesAgo ?? 1,
-            seconds: sample?.seconds ?? 0,
-            ...(testIndex < testSuite.failedCount && sample?.failureId
-              ? { failureId: sample.failureId }
-              : {}),
+            id: persisted.id,
+            name: persisted.title,
+            status: !latestRun
+              ? ('skipped' as const)
+              : latestRun.status === 'passed'
+                ? ('passed' as const)
+                : latestRun.status === 'failed' || latestRun.status === 'timedOut'
+                  ? ('failed' as const)
+                  : ('skipped' as const),
+            minutesAgo: 0,
+            seconds: latestRun ? latestRun.durationMs / 1000 : undefined,
           };
         });
         return {
@@ -110,7 +123,7 @@ export const Dashboard = () => {
           tests,
           lastRunMinutesAgo: template.lastRunMinutesAgo,
           revision: testSuite.revision,
-          testCount: testSuite.testCount,
+          testCount: persistedTests.length,
           failedCount: testSuite.failedCount,
           totalLatestDurationMs: testSuite.totalLatestDurationMs,
         };
@@ -212,17 +225,8 @@ export const Dashboard = () => {
   }, [queue.length, selected, tab, manualCursor, quarantined, view]);
 
   const openTest = (test: TestRecord) => {
-    if (test.failureId) {
-      const index = queue.findIndex((failure) => failure.id === test.failureId);
-      if (index >= 0) {
-        setCursor(index);
-        setView('triage');
-        setLog(`Opened ${test.name}`);
-        return;
-      }
-    }
-    // A test with nothing to triage opens as itself: the board.
-    setLog(`${test.name} · last run ${age(test.minutesAgo)} ago in ${test.seconds}s`);
+    setLog(`Opening test · ${test.name}`);
+    window.testron?.command({ type: 'select-test', testId: test.id });
     window.location.hash = '#/test';
   };
 
@@ -421,12 +425,29 @@ export const Dashboard = () => {
           onClose={() => setNewTestSuite(undefined)}
           onStart={(title) => {
             setLog(
-              newTestSuite
-                ? `New test · ${title} in ${newTestSuite.name}`
-                : `New test · ${title}`,
+              newTestSuite ? `New test · ${title} in ${newTestSuite.name}` : `New test · ${title}`,
             );
-            window.testron?.command({ type: 'prepare-new-test', title });
-            window.location.hash = '#/record';
+            if (newTestSuite)
+              window.testron?.command({
+                type: 'select-test-suite',
+                testSuiteId: newTestSuite.id,
+              });
+            const projectId = library?.selectedProjectId;
+            const environmentId = library?.selectedEnvironmentId;
+            if (!projectId || !environmentId) {
+              setLog('Select a project environment before recording a test.');
+              return;
+            }
+            window.testron?.command({
+              type: 'create-test',
+              projectId,
+              environmentId,
+              title,
+            });
+            creatingFromTestId.current = library?.selectedTestId;
+            setCreatingTest(true);
+            setNewTestSuite(undefined);
+            setLog(`Creating test on server · ${title}`);
           }}
         />
       )}

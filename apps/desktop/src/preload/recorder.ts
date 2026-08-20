@@ -239,17 +239,10 @@ const observationFor = (element: Element) => {
     ...(primaryMatches > 1 ? [`Primary locator is ambiguous (${primaryMatches} matches).`] : []),
     ...(locators[0].strategy === 'css' ? ['Primary locator is a fragile CSS fallback.'] : []),
   ];
-  const secretToken = clean(element.getAttribute('name')) ?? element.id ?? 'password';
   return {
     locators,
     fingerprint: JSON.stringify(locators[0]),
     sensitive: element instanceof HTMLInputElement && element.type === 'password',
-    secretName: `TESTRON_${
-      secretToken
-        .replace(/[^a-z0-9]+/gi, '_')
-        .replace(/^_+|_+$/g, '')
-        .toUpperCase() || 'PASSWORD'
-    }`,
     ...(selectedVariables.get(element) ? { variableName: selectedVariables.get(element) } : {}),
     warnings,
   };
@@ -643,11 +636,10 @@ window.addEventListener(
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     if (event.isTrusted && selectedVariables.has(element)) selectedVariables.delete(element);
-    const sensitive = element instanceof HTMLInputElement && element.type === 'password';
     send({
       kind: 'input',
       target: observationFor(element),
-      value: sensitive ? '' : element.value,
+      value: element.value,
       url: window.location.href,
     });
   },

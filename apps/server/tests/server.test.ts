@@ -339,6 +339,10 @@ describe('PostgreSQL tRPC vertical slice', () => {
       testSuites: [
         { id: testSuite.id, testCount: 2, failedCount: 1, totalLatestDurationMs: 1_250 },
       ],
+      latestTestRuns: {
+        [failedTest.test.id]: { status: 'failed', durationMs: 500 },
+        [passedTest.test.id]: { status: 'passed', durationMs: 750 },
+      },
     });
 
     const updated = await api.testSuite.update.mutate({

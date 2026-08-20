@@ -4,6 +4,7 @@ import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
+import { NewTestForm } from '../dashboard/NewTestForm';
 import { clock, sourceText } from './codegen';
 import { convertStepToAssertion } from './assertion';
 import { CodePanel } from './CodePanel';
@@ -62,7 +63,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
 export const RecordScreen = () => {
   /** True in Electron, where the page and the panels are native views. */
   const hosted = typeof window.testron !== 'undefined';
-  const { theme, toggle } = useTheme();
+  const { theme } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [elapsed, setElapsed] = useState(0);
   const [url, setUrl] = useState('http://127.0.0.1:4174');
@@ -74,6 +75,7 @@ export const RecordScreen = () => {
   /** Set while the finish sheet is open, so "keep recording" picks the take back up. */
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
   const [configuringProfile, setConfiguringProfile] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
@@ -90,6 +92,9 @@ export const RecordScreen = () => {
   const selectedEnvironmentId = snapshot.library.selectedEnvironmentId;
   const environments = snapshot.library.environments.filter(
     (environment) => environment.projectId === snapshot.library.selectedProjectId,
+  );
+  const testSuites = snapshot.library.testSuites.filter(
+    (testSuite) => testSuite.projectId === snapshot.library.selectedProjectId,
   );
   const profiles = snapshot.library.profiles.filter(
     (profile) => profile.environmentId === selectedEnvironmentId,
@@ -122,8 +127,13 @@ export const RecordScreen = () => {
 
   useEffect(() => {
     if (snapshot.currentUrl) setUrl(snapshot.currentUrl);
-    else if (snapshot.library.selectedEnvironmentId) setUrl(context.baseUrl);
-  }, [snapshot.currentUrl, snapshot.library.selectedEnvironmentId, context.baseUrl]);
+  }, [snapshot.currentUrl]);
+
+  useEffect(() => {
+    if (!snapshot.library.selectedEnvironmentId) return;
+    setUrl(context.baseUrl);
+    window.testron?.command({ type: 'navigate', url: context.baseUrl });
+  }, [snapshot.library.selectedEnvironmentId, context.baseUrl]);
 
   useEffect(() => {
     setName(context.title);
@@ -325,7 +335,9 @@ export const RecordScreen = () => {
    */
   const layout = (): RecordLayout => {
     const rect =
-      finishing || configuringProfile ? undefined : planeRef.current?.getBoundingClientRect();
+      finishing || configuringProfile || editingTitle
+        ? undefined
+        : planeRef.current?.getBoundingClientRect();
     return {
       plane: rect
         ? {
@@ -387,6 +399,7 @@ export const RecordScreen = () => {
     resizing,
     finishing,
     configuringProfile,
+    editingTitle,
   ]);
 
   // The plane moves when the window does, and the panels have to follow.
@@ -459,11 +472,17 @@ export const RecordScreen = () => {
       <SessionBar
         status={status}
         elapsed={elapsed}
-        theme={theme}
-        onTheme={toggle}
         steps={steps.length}
         project={context.project}
+        projects={snapshot.library.projects}
+        projectId={snapshot.library.selectedProjectId}
+        onProject={(projectId) => window.testron?.command({ type: 'select-project', projectId })}
         suite={context.suite}
+        suites={testSuites}
+        suiteId={snapshot.library.selectedTestSuiteId}
+        onSuite={(testSuiteId) => {
+          if (testSuiteId) window.testron?.command({ type: 'select-test-suite', testSuiteId });
+        }}
         environment={context.environment}
         environments={environments}
         environmentId={selectedEnvironmentId}
@@ -473,11 +492,15 @@ export const RecordScreen = () => {
         profile={selectedProfile?.name}
         profiles={profiles}
         profileId={snapshot.library.selectedProfileId}
-        onProfile={(profileId) => {
-          if (profileId) window.testron?.command({ type: 'select-profile', profileId });
-        }}
+        onProfile={(profileId) =>
+          window.testron?.command({
+            type: 'select-profile',
+            ...(profileId ? { profileId } : {}),
+          })
+        }
         onConfigureProfile={() => setConfiguringProfile(true)}
         test={name}
+        onTestEdit={() => setEditingTitle(true)}
         onBack={() => {
           window.location.hash = '#/';
         }}
@@ -625,6 +648,21 @@ export const RecordScreen = () => {
               });
               setConfiguringProfile(false);
               setLog(`Profile ${profileName} selected · ${variables.length} variables available`);
+            }}
+          />
+        )}
+        {editingTitle && (
+          <NewTestForm
+            initialTitle={name}
+            heading="Edit test title"
+            submitLabel="Save title"
+            onClose={() => setEditingTitle(false)}
+            onStart={(title) => {
+              const testId = snapshot.library.selectedTestId;
+              if (testId) window.testron?.command({ type: 'rename-test', testId, title });
+              setName(title);
+              setEditingTitle(false);
+              setLog(`Renamed test · ${title}`);
             }}
           />
         )}

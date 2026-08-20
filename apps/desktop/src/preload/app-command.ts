@@ -112,6 +112,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     title: testTitleSchema,
   }),
   z.object({ type: z.literal('select-project'), projectId: entityIdSchema }),
+  z.object({ type: z.literal('select-test-suite'), testSuiteId: entityIdSchema }),
   z.object({ type: z.literal('select-environment'), environmentId: entityIdSchema }),
   z.object({
     type: z.literal('create-profile'),
@@ -133,7 +134,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
           new Set(variables.map((variable) => variable.name)).size === variables.length,
       ),
   }),
-  z.object({ type: z.literal('select-profile'), profileId: entityIdSchema }),
+  z.object({ type: z.literal('select-profile'), profileId: entityIdSchema.optional() }),
   z.object({
     type: z.literal('update-profile'),
     profileId: entityIdSchema,

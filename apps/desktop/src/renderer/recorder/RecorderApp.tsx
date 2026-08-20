@@ -61,19 +61,7 @@ const StepEditor = ({
         setDraft({ ...draft, url: value });
         break;
       case 'fill':
-        setDraft(
-          draft.secret
-            ? {
-                ...draft,
-                secret: {
-                  environmentVariable: value
-                    .replace(/[^a-z0-9_]+/gi, '_')
-                    .replace(/^[^a-z]+/i, '')
-                    .toUpperCase(),
-                },
-              }
-            : { ...draft, value },
-        );
+        setDraft({ ...draft, value });
         break;
       case 'selectOption':
         setDraft({ ...draft, value });
@@ -100,7 +88,7 @@ const StepEditor = ({
       case 'navigate':
         return draft.url;
       case 'fill':
-        return draft.secret?.environmentVariable ?? draft.value;
+        return draft.variable?.name ?? draft.value;
       case 'selectOption':
         return draft.value;
       case 'press':
@@ -256,11 +244,11 @@ export const RecorderApp = () => {
   const selectedEnvironment = library.environments.find(
     (environment) => environment.id === library.selectedEnvironmentId,
   );
-  const requiredEnvironmentVariables = useMemo(
+  const requiredProfileVariables = useMemo(
     () => [
       ...new Set(
         snapshot.steps.flatMap((step) =>
-          step.kind === 'fill' && step.secret ? [step.secret.environmentVariable] : [],
+          step.kind === 'fill' && step.variable ? [step.variable.name] : [],
         ),
       ),
     ],
@@ -645,11 +633,11 @@ export const RecorderApp = () => {
               Reuse auth for this environment (revision {selectedEnvironment?.authRevision ?? 1})
             </label>
             <button onClick={() => command({ type: 'clear-auth-state' })}>Clear auth</button>
-            {requiredEnvironmentVariables.map((name) => (
+            {requiredProfileVariables.map((name) => (
               <label key={name}>
                 {name}
                 <input
-                  aria-label={`Environment variable ${name}`}
+                  aria-label={`Profile variable ${name}`}
                   type="password"
                   value={environmentVariables[name] ?? ''}
                   onChange={(event) =>

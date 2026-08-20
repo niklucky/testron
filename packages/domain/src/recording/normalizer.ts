@@ -110,19 +110,9 @@ export class RecorderNormalizer {
       version: 1,
       kind: 'fill',
       target: targetFrom(buffered.candidate),
-      value:
-        buffered.candidate.target.sensitive || buffered.candidate.target.variableName
-          ? ''
-          : buffered.candidate.value,
+      value: buffered.candidate.target.variableName ? '' : buffered.candidate.value,
       ...(buffered.candidate.target.variableName
         ? { variable: { name: buffered.candidate.target.variableName } }
-        : {}),
-      ...(buffered.candidate.target.sensitive && !buffered.candidate.target.variableName
-        ? {
-            secret: {
-              environmentVariable: buffered.candidate.target.secretName ?? 'TESTRON_PASSWORD',
-            },
-          }
         : {}),
       metadata: { recordedAt: new Date().toISOString() },
     });

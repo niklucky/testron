@@ -49,20 +49,19 @@ describe('RecorderNormalizer', () => {
     expect(steps.map((step) => step.kind)).toEqual(['fill', 'click']);
   });
 
-  it('never stores a sensitive value', () => {
+  it('records a manually entered password as its literal value', () => {
     const steps: Step[] = [];
     const normalizer = new RecorderNormalizer((step) => steps.push(step));
     normalizer.accept({
-      ...input('do-not-store'),
+      ...input('test'),
       target: { ...input('').target, sensitive: true },
     });
     normalizer.flush();
     expect(steps[0]).toMatchObject({
       kind: 'fill',
-      value: '',
-      secret: { environmentVariable: 'TESTRON_PASSWORD' },
+      value: 'test',
     });
-    expect(JSON.stringify(steps)).not.toContain('do-not-store');
+    expect(steps[0]).not.toHaveProperty('secret');
   });
 
   it('records a profile variable reference without its resolved value', () => {
