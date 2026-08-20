@@ -34,6 +34,14 @@ const iconPaths = {
       <path d="m9.2 12 2 2 3.6-3.8" />
     </>
   ),
+  members: (
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 19c.5-3.7 2.3-5.5 5.5-5.5s5 1.8 5.5 5.5" />
+      <circle cx="17" cy="9" r="2.3" />
+      <path d="M15.5 14.2c3.1-.7 5 .9 5.4 3.8" />
+    </>
+  ),
   bug: (
     <>
       <rect x="8" y="7.5" width="8" height="12" rx="4" />

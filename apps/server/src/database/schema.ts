@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import type { TestRevisionContent } from '@testron/protocol';
 
@@ -58,6 +59,50 @@ export const projects = pgTable(
     deletedBy: uuid('deleted_by').references(() => users.id),
   },
   (table) => [index('projects_owner_idx').on(table.ownerId)],
+);
+
+export const projectMembers = pgTable(
+  'project_members',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    joinedAt: instant('joined_at').defaultNow().notNull(),
+    blockedAt: instant('blocked_at'),
+    blockedBy: uuid('blocked_by').references(() => users.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.userId] }),
+    index('project_members_user_idx').on(table.userId),
+  ],
+);
+
+export const projectInvitations = pgTable(
+  'project_invitations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    invitedBy: uuid('invited_by')
+      .notNull()
+      .references(() => users.id),
+    status: text('status').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    respondedAt: instant('responded_at'),
+    respondedBy: uuid('responded_by').references(() => users.id),
+  },
+  (table) => [
+    index('project_invitations_project_idx').on(table.projectId),
+    index('project_invitations_email_status_idx').on(table.email, table.status),
+    uniqueIndex('project_invitations_pending_unique')
+      .on(table.projectId, table.email)
+      .where(sql`${table.status} = 'invited'`),
+  ],
 );
 
 export const environments = pgTable(

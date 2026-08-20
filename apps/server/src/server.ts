@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { AuthenticationService } from './auth.js';
 import { createDatabase, type ServerDatabase } from './database/database.js';
 import { CanonicalRepository } from './database/repository.js';
+import {
+  disabledInvitationMailer,
+  ResendInvitationMailer,
+  type InvitationMailer,
+} from './email.js';
 import { createHttpServer } from './http.js';
 import { createAppRouter, type AppRouter } from './trpc/router.js';
 
@@ -21,12 +26,17 @@ export const startTestronServer = async (options: {
   port?: number;
   publicBaseUrl?: string;
   migrate?: boolean;
+  invitationMailer?: InvitationMailer;
+  resend?: { apiKey: string; from: string };
 }): Promise<RunningTestronServer> => {
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
     await database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
   const authentication = new AuthenticationService(database.db);
-  const repository = new CanonicalRepository(database.db);
+  const invitationMailer =
+    options.invitationMailer ??
+    (options.resend ? new ResendInvitationMailer(options.resend) : disabledInvitationMailer);
+  const repository = new CanonicalRepository(database.db, invitationMailer);
   const router = createAppRouter({ authentication, repository });
   const server = createHttpServer({ router, authentication });
   await new Promise<void>((resolve, reject) => {

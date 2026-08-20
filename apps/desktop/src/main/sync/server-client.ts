@@ -2,6 +2,7 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 
 import type {
   CreateEnvironmentRequest,
+  CreateInvitationRequest,
   CreateProjectRequest,
   CreateProfileRequest,
   CreateTestRequest,
@@ -12,8 +13,14 @@ import type {
   GetTestRevisionHistoryRequest,
   GetWorkspaceRequest,
   ListTestSuitesRequest,
+  LookupInviteeRequest,
   SaveTestRevisionRequest,
   StartTestRunRequest,
+  RespondInvitationRequest,
+  CancelInvitationRequest,
+  ChangeAccountPasswordRequest,
+  SetMemberBlockedRequest,
+  UpdateAccountProfileRequest,
   UpdateEnvironmentRequest,
   UpdateProjectRequest,
   UpdateProfileRequest,
@@ -44,6 +51,34 @@ export class DesktopServerClient {
 
   register(name: string, email: string, password: string) {
     return this.api.auth.register.mutate({ name, email, password });
+  }
+
+  updateAccountProfile(value: UpdateAccountProfileRequest) {
+    return this.api.account.updateProfile.mutate(value);
+  }
+
+  changeAccountPassword(value: ChangeAccountPasswordRequest) {
+    return this.api.account.changePassword.mutate(value);
+  }
+
+  lookupInvitee(value: LookupInviteeRequest) {
+    return this.api.invitation.lookup.query(value);
+  }
+
+  createInvitation(value: CreateInvitationRequest) {
+    return this.api.invitation.create.mutate(value);
+  }
+
+  respondInvitation(value: RespondInvitationRequest) {
+    return this.api.invitation.respond.mutate(value);
+  }
+
+  cancelInvitation(value: CancelInvitationRequest) {
+    return this.api.invitation.cancel.mutate(value);
+  }
+
+  setMemberBlocked(value: SetMemberBlockedRequest) {
+    return this.api.member.setBlocked.mutate(value);
   }
 
   createProject(value: CreateProjectRequest) {

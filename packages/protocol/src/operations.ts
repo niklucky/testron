@@ -29,6 +29,59 @@ import {
   workspaceSnapshotSchema,
 } from './resources';
 
+const accountNameSchema = z.string().trim().min(1).max(100);
+const accountPasswordSchema = z.string().min(12).max(200);
+const invitationEmailSchema = z.email().transform((email) => email.toLowerCase());
+
+export const updateAccountProfileRequestSchema = z
+  .object({ meta: mutationMetadataSchema, name: accountNameSchema })
+  .strict();
+
+export const changeAccountPasswordRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    currentPassword: accountPasswordSchema,
+    newPassword: accountPasswordSchema,
+  })
+  .strict()
+  .refine((input) => input.currentPassword !== input.newPassword, {
+    message: 'The new password must be different from the current password.',
+    path: ['newPassword'],
+  });
+
+export const lookupInviteeRequestSchema = z
+  .object({ meta: requestMetadataSchema, email: invitationEmailSchema })
+  .strict();
+
+export const createInvitationRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    email: invitationEmailSchema,
+  })
+  .strict();
+
+export const respondInvitationRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    invitationId: entityIdSchema,
+    response: z.enum(['accepted', 'rejected']),
+  })
+  .strict();
+
+export const cancelInvitationRequestSchema = z
+  .object({ meta: mutationMetadataSchema, invitationId: entityIdSchema })
+  .strict();
+
+export const setMemberBlockedRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    userId: entityIdSchema,
+    blocked: z.boolean(),
+  })
+  .strict();
+
 export const createProjectRequestSchema = z
   .object({
     meta: mutationMetadataSchema,
@@ -255,6 +308,13 @@ export const startTestRunResultSchema = z.union([testRunSuccessSchema, errorResp
 export const finishTestRunResultSchema = z.union([testRunSuccessSchema, errorResponseSchema]);
 
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
+export type UpdateAccountProfileRequest = z.infer<typeof updateAccountProfileRequestSchema>;
+export type ChangeAccountPasswordRequest = z.infer<typeof changeAccountPasswordRequestSchema>;
+export type LookupInviteeRequest = z.infer<typeof lookupInviteeRequestSchema>;
+export type CreateInvitationRequest = z.infer<typeof createInvitationRequestSchema>;
+export type RespondInvitationRequest = z.infer<typeof respondInvitationRequestSchema>;
+export type CancelInvitationRequest = z.infer<typeof cancelInvitationRequestSchema>;
+export type SetMemberBlockedRequest = z.infer<typeof setMemberBlockedRequestSchema>;
 export type CreateEnvironmentRequest = z.infer<typeof createEnvironmentRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 export type UpdateEnvironmentRequest = z.infer<typeof updateEnvironmentRequestSchema>;

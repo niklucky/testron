@@ -135,4 +135,33 @@ describe('desktop application command schema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('validates account and membership commands', () => {
+    expect(appCommandSchema.parse({ type: 'update-account-profile', name: '  Nikita  ' })).toEqual({
+      type: 'update-account-profile',
+      name: 'Nikita',
+    });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'change-account-password',
+        currentPassword: 'too short',
+        newPassword: 'another correct password',
+      }).success,
+    ).toBe(false);
+    expect(
+      appCommandSchema.parse({
+        type: 'create-invitation',
+        projectId: id,
+        email: 'member@example.test',
+      }),
+    ).toMatchObject({ type: 'create-invitation', projectId: id });
+    expect(
+      appCommandSchema.parse({
+        type: 'set-member-blocked',
+        projectId: id,
+        userId: id,
+        blocked: true,
+      }),
+    ).toMatchObject({ type: 'set-member-blocked', blocked: true });
+  });
 });

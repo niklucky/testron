@@ -11,7 +11,17 @@ const host = process.env.HOST ?? '127.0.0.1';
 const publicBaseUrl = process.env.TESTRON_PUBLIC_URL ?? `http://${host}:${port}`;
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
-const server = await startTestronServer({ databaseUrl, host, port, publicBaseUrl });
+const resendApiKey = process.env.RESEND_API_KEY;
+const resendFrom = process.env.RESEND_FROM_EMAIL;
+if (resendApiKey && !resendFrom)
+  throw new Error('RESEND_FROM_EMAIL is required when RESEND_API_KEY is configured.');
+const server = await startTestronServer({
+  databaseUrl,
+  host,
+  port,
+  publicBaseUrl,
+  ...(resendApiKey && resendFrom ? { resend: { apiKey: resendApiKey, from: resendFrom } } : {}),
+});
 
 if (process.env.TESTRON_BOOTSTRAP_EMAIL && process.env.TESTRON_BOOTSTRAP_PASSWORD)
   await server.authentication.provisionUser(

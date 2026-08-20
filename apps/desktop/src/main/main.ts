@@ -17,7 +17,10 @@ import { z } from 'zod';
 import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
 import { redactStepSecrets, type Step } from '@testron/domain/steps/schema';
 import {
+  cancelInvitationRequestSchema,
+  changeAccountPasswordRequestSchema,
   createEnvironmentRequestSchema,
+  createInvitationRequestSchema,
   createProfileRequestSchema,
   createProjectRequestSchema,
   createTestRequestSchema,
@@ -25,8 +28,12 @@ import {
   deleteTestSuiteRequestSchema,
   finishTestRunRequestSchema,
   getWorkspaceRequestSchema,
+  lookupInviteeRequestSchema,
+  respondInvitationRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
+  setMemberBlockedRequestSchema,
+  updateAccountProfileRequestSchema,
   updateEnvironmentRequestSchema,
   updateProjectRequestSchema,
   updateProfileRequestSchema,
@@ -86,6 +93,8 @@ let tokenStore: SecureTokenStore | undefined;
 let serverClient: DesktopServerClient | undefined;
 let syncCoordinator: DesktopSyncCoordinator | undefined;
 let remoteWorkspace: WorkspaceSnapshot | undefined;
+let inviteeLookup: LibrarySnapshot['inviteeLookup'];
+let accountAction: LibrarySnapshot['accountAction'];
 const localMode = process.env.TESTRON_LOCAL_MODE === '1';
 let serverState: NonNullable<LibrarySnapshot['server']> = {
   configured: false,
@@ -233,8 +242,9 @@ const createWindow = async (): Promise<void> => {
     remoteWorkspace?.tests.find((snapshot) => snapshot.test.id === id);
   const allProjects = () => {
     if (serverState.configured)
-      return (remoteWorkspace?.projects ?? []).map(({ id, name, url, revision }) => ({
+      return (remoteWorkspace?.projects ?? []).map(({ id, ownerId, name, url, revision }) => ({
         id,
+        ownerId,
         name,
         url,
         revision,
@@ -281,7 +291,9 @@ const createWindow = async (): Promise<void> => {
     const local = store.getProject(projectId);
     if (local) return local;
     const remote = remoteWorkspace?.projects.find((project) => project.id === projectId);
-    return remote ? store.checkoutRemoteProject({ id: remote.id, name: remote.name }) : undefined;
+    return remote
+      ? store.checkoutRemoteProject({ id: remote.id, ownerId: remote.ownerId, name: remote.name })
+      : undefined;
   };
   const ensureLocalEnvironment = (environmentId: string) => {
     const local = store.getEnvironment(environmentId);
@@ -354,6 +366,11 @@ const createWindow = async (): Promise<void> => {
 
   const librarySnapshot = () => ({
     ...(remoteWorkspace?.viewer ? { viewer: remoteWorkspace.viewer } : {}),
+    members: remoteWorkspace?.members ?? [],
+    invitations: remoteWorkspace?.invitations ?? [],
+    pendingInvitations: remoteWorkspace?.pendingInvitations ?? [],
+    ...(inviteeLookup ? { inviteeLookup } : {}),
+    ...(accountAction ? { accountAction } : {}),
     projects: allProjects(),
     environments: allEnvironments(),
     profiles: allProfiles(),
@@ -376,6 +393,13 @@ const createWindow = async (): Promise<void> => {
       remoteWorkspace?.activeRuns.filter((run) => run.projectId === selectedProjectId).length ?? 0,
     server: serverState,
   });
+  const reloadRemoteWorkspace = async (): Promise<void> => {
+    if (!serverClient) return;
+    remoteWorkspace = await serverClient.getWorkspace(
+      getWorkspaceRequestSchema.parse({ meta: requestMeta() }),
+    );
+    reconcileLibrarySelection();
+  };
   const runner = new LocalReplayRunner();
   let replaySnapshot: ReplaySnapshot = { status: 'idle', steps: [] };
   let verifyAssertion: VerifyAssertion = 'visible';
@@ -452,6 +476,45 @@ const createWindow = async (): Promise<void> => {
         steps,
       );
   });
+  const runWorkspaceMutation = (
+    operation: () => Promise<unknown>,
+    pendingMessage: string,
+    fallbackError: string,
+  ): void => {
+    const authenticationAttempt = loginAttempt;
+    serverState = {
+      configured: true,
+      authentication: 'signedIn',
+      workspace: serverState.workspace,
+      status: 'syncing',
+      message: pendingMessage,
+    };
+    sendSnapshot(session.snapshot());
+    void operation()
+      .then(async () => {
+        if (authenticationAttempt !== loginAttempt) return;
+        await reloadRemoteWorkspace();
+        if (authenticationAttempt !== loginAttempt) return;
+        serverState = {
+          configured: true,
+          authentication: 'signedIn',
+          workspace: 'loaded',
+          status: 'synced',
+        };
+        sendSnapshot(session.snapshot());
+      })
+      .catch((error: unknown) => {
+        if (authenticationAttempt !== loginAttempt) return;
+        serverState = {
+          configured: true,
+          authentication: 'signedIn',
+          workspace: serverState.workspace,
+          status: 'error',
+          message: error instanceof Error ? error.message : fallbackError,
+        };
+        sendSnapshot(session.snapshot());
+      });
+  };
   let testSaveQueue = Promise.resolve();
   queueTestRevision = (testId, title, environmentId, steps) => {
     const queuedSteps = structuredClone(steps);
@@ -746,6 +809,159 @@ const createWindow = async (): Promise<void> => {
               sendSnapshot(session.snapshot());
             });
         break;
+      case 'update-account-profile': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        accountAction = { type: 'profile', status: 'pending' };
+        sendSnapshot(session.snapshot());
+        void serverClient
+          .updateAccountProfile(
+            updateAccountProfileRequestSchema.parse({
+              meta: mutationMeta(`account-profile-${randomUUID()}`),
+              name: command.name,
+            }),
+          )
+          .then((viewer) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = { ...remoteWorkspace, viewer };
+            accountAction = {
+              type: 'profile',
+              status: 'success',
+              message: 'Profile updated.',
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            accountAction = {
+              type: 'profile',
+              status: 'error',
+              message: error instanceof Error ? error.message : 'Profile update failed.',
+            };
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'change-account-password': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        accountAction = { type: 'password', status: 'pending' };
+        sendSnapshot(session.snapshot());
+        void serverClient
+          .changeAccountPassword(
+            changeAccountPasswordRequestSchema.parse({
+              meta: mutationMeta(`account-password-${randomUUID()}`),
+              currentPassword: command.currentPassword,
+              newPassword: command.newPassword,
+            }),
+          )
+          .then(() => {
+            accountAction = {
+              type: 'password',
+              status: 'success',
+              message: 'Password updated. Existing sessions remain signed in.',
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            accountAction = {
+              type: 'password',
+              status: 'error',
+              message: error instanceof Error ? error.message : 'Password update failed.',
+            };
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'lookup-invitee': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        inviteeLookup = undefined;
+        void serverClient
+          .lookupInvitee(
+            lookupInviteeRequestSchema.parse({ meta: requestMeta(), email: command.email }),
+          )
+          .then((lookup) => {
+            inviteeLookup = lookup;
+            serverState = {
+              configured: true,
+              authentication: 'signedIn',
+              workspace: serverState.workspace,
+              status: 'synced',
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            serverState = {
+              ...serverState,
+              status: 'error',
+              message: error instanceof Error ? error.message : 'User lookup failed.',
+            };
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'create-invitation': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        runWorkspaceMutation(
+          () =>
+            serverClient!.createInvitation(
+              createInvitationRequestSchema.parse({
+                meta: mutationMeta(`invitation-create-${randomUUID()}`),
+                projectId: command.projectId,
+                email: command.email,
+              }),
+            ),
+          'Sending invitation…',
+          'The invitation could not be sent.',
+        );
+        inviteeLookup = undefined;
+        break;
+      }
+      case 'respond-invitation': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        runWorkspaceMutation(
+          () =>
+            serverClient!.respondInvitation(
+              respondInvitationRequestSchema.parse({
+                meta: mutationMeta(`invitation-response-${randomUUID()}`),
+                invitationId: command.invitationId,
+                response: command.response,
+              }),
+            ),
+          command.response === 'accepted' ? 'Accepting invitation…' : 'Rejecting invitation…',
+          'The invitation response failed.',
+        );
+        break;
+      }
+      case 'cancel-invitation': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        runWorkspaceMutation(
+          () =>
+            serverClient!.cancelInvitation(
+              cancelInvitationRequestSchema.parse({
+                meta: mutationMeta(`invitation-cancel-${randomUUID()}`),
+                invitationId: command.invitationId,
+              }),
+            ),
+          'Cancelling invitation…',
+          'The invitation could not be cancelled.',
+        );
+        break;
+      }
+      case 'set-member-blocked': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        runWorkspaceMutation(
+          () =>
+            serverClient!.setMemberBlocked(
+              setMemberBlockedRequestSchema.parse({
+                meta: mutationMeta(`member-block-${randomUUID()}`),
+                projectId: command.projectId,
+                userId: command.userId,
+                blocked: command.blocked,
+              }),
+            ),
+          command.blocked ? 'Blocking member…' : 'Unblocking member…',
+          'The member could not be updated.',
+        );
+        break;
+      }
       case 'navigate':
         try {
           void websiteView?.webContents.loadURL(safeUrl(command.url));
@@ -796,6 +1012,9 @@ const createWindow = async (): Promise<void> => {
                 return;
               remoteWorkspace = {
                 viewer: remoteWorkspace!.viewer,
+                members: remoteWorkspace?.members ?? [],
+                invitations: remoteWorkspace?.invitations ?? [],
+                pendingInvitations: remoteWorkspace?.pendingInvitations ?? [],
                 projects: [
                   ...(remoteWorkspace?.projects.filter((entry) => entry.id !== project.id) ?? []),
                   project,
@@ -1498,6 +1717,8 @@ const createWindow = async (): Promise<void> => {
           break;
         }
         const attempt = ++loginAttempt;
+        inviteeLookup = undefined;
+        accountAction = undefined;
         serverState = {
           configured: true,
           authentication: 'authenticating',
@@ -1548,6 +1769,8 @@ const createWindow = async (): Promise<void> => {
       case 'logout-server':
         loginAttempt += 1;
         remoteWorkspace = undefined;
+        inviteeLookup = undefined;
+        accountAction = undefined;
         serverState = {
           configured: Boolean(serverClient),
           authentication: 'signedOut',

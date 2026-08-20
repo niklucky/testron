@@ -67,6 +67,33 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('request-snapshot') }),
   z.object({ type: z.literal('refresh-workspace') }),
+  z.object({
+    type: z.literal('update-account-profile'),
+    name: z.string().trim().min(1).max(100),
+  }),
+  z.object({
+    type: z.literal('change-account-password'),
+    currentPassword: z.string().min(12).max(200),
+    newPassword: z.string().min(12).max(200),
+  }),
+  z.object({ type: z.literal('lookup-invitee'), email: z.email() }),
+  z.object({
+    type: z.literal('create-invitation'),
+    projectId: entityIdSchema,
+    email: z.email(),
+  }),
+  z.object({
+    type: z.literal('respond-invitation'),
+    invitationId: entityIdSchema,
+    response: z.enum(['accepted', 'rejected']),
+  }),
+  z.object({ type: z.literal('cancel-invitation'), invitationId: entityIdSchema }),
+  z.object({
+    type: z.literal('set-member-blocked'),
+    projectId: entityIdSchema,
+    userId: entityIdSchema,
+    blocked: z.boolean(),
+  }),
   z.object({ type: z.literal('create-project'), name: projectNameSchema }),
   z.object({
     type: z.literal('create-test-suite'),

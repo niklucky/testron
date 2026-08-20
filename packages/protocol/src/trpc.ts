@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 import { entityIdSchema, revisionPointerSchema, timestampSchema } from './common';
 import {
+  cancelInvitationRequestSchema,
+  changeAccountPasswordRequestSchema,
   createEnvironmentRequestSchema,
+  createInvitationRequestSchema,
   createProfileRequestSchema,
   createProjectRequestSchema,
   createTestRequestSchema,
@@ -12,9 +15,13 @@ import {
   getTestRevisionHistoryRequestSchema,
   getWorkspaceRequestSchema,
   listTestSuitesRequestSchema,
+  lookupInviteeRequestSchema,
   finishTestRunRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
+  respondInvitationRequestSchema,
+  setMemberBlockedRequestSchema,
+  updateAccountProfileRequestSchema,
   updateEnvironmentRequestSchema,
   updateProfileRequestSchema,
   updateProjectRequestSchema,
@@ -23,6 +30,8 @@ import {
 import {
   environmentSchema,
   profileSchema,
+  projectInvitationSchema,
+  projectMemberSchema,
   projectSchema,
   testRevisionSchema,
   testRunSchema,
@@ -30,7 +39,37 @@ import {
   testSuiteSchema,
   testSuiteSummarySchema,
   workspaceSnapshotSchema,
+  workspaceViewerSchema,
 } from './resources';
+
+export const updateAccountProfileProcedure = {
+  input: updateAccountProfileRequestSchema,
+  output: workspaceViewerSchema,
+} as const;
+export const changeAccountPasswordProcedure = {
+  input: changeAccountPasswordRequestSchema,
+  output: z.object({ changed: z.literal(true), sessionPolicy: z.literal('preserve') }).strict(),
+} as const;
+export const lookupInviteeProcedure = {
+  input: lookupInviteeRequestSchema,
+  output: z.object({ email: z.email(), name: z.string().nullable() }).strict(),
+} as const;
+export const createInvitationProcedure = {
+  input: createInvitationRequestSchema,
+  output: projectInvitationSchema,
+} as const;
+export const respondInvitationProcedure = {
+  input: respondInvitationRequestSchema,
+  output: projectInvitationSchema,
+} as const;
+export const cancelInvitationProcedure = {
+  input: cancelInvitationRequestSchema,
+  output: projectInvitationSchema,
+} as const;
+export const setMemberBlockedProcedure = {
+  input: setMemberBlockedRequestSchema,
+  output: projectMemberSchema,
+} as const;
 
 const accountCredentialsFields = {
   email: z.email().transform((email) => email.toLowerCase()),

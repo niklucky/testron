@@ -4,7 +4,10 @@ import {
   authLoginInputSchema,
   authRegisterInputSchema,
   authSessionOutputSchema,
+  cancelInvitationProcedure,
+  changeAccountPasswordProcedure,
   createEnvironmentProcedure,
+  createInvitationProcedure,
   createProfileProcedure,
   createProjectProcedure,
   createTestProcedure,
@@ -14,9 +17,13 @@ import {
   getTestRevisionHistoryProcedure,
   getWorkspaceProcedure,
   listTestSuitesProcedure,
+  lookupInviteeProcedure,
   finishTestRunProcedure,
   saveTestRevisionProcedure,
   startTestRunProcedure,
+  respondInvitationProcedure,
+  setMemberBlockedProcedure,
+  updateAccountProfileProcedure,
   updateEnvironmentProcedure,
   updateProfileProcedure,
   updateProjectProcedure,
@@ -90,6 +97,44 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(authLoginInputSchema)
         .output(authSessionOutputSchema)
         .mutation(({ input }) => callAuthentication(() => authentication.login(input))),
+    }),
+    account: t.router({
+      updateProfile: authenticatedProcedure
+        .input(updateAccountProfileProcedure.input)
+        .output(updateAccountProfileProcedure.output)
+        .mutation(({ ctx, input }) =>
+          callAuthentication(() => authentication.updateProfile(ctx.user, input)),
+        ),
+      changePassword: authenticatedProcedure
+        .input(changeAccountPasswordProcedure.input)
+        .output(changeAccountPasswordProcedure.output)
+        .mutation(({ ctx, input }) =>
+          callAuthentication(() => authentication.changePassword(ctx.user, input)),
+        ),
+    }),
+    invitation: t.router({
+      lookup: authenticatedProcedure
+        .input(lookupInviteeProcedure.input)
+        .output(lookupInviteeProcedure.output)
+        .query(({ ctx, input }) => call(() => repository.lookupInvitee(ctx.user, input.email))),
+      create: authenticatedProcedure
+        .input(createInvitationProcedure.input)
+        .output(createInvitationProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.createInvitation(ctx.user, input))),
+      respond: authenticatedProcedure
+        .input(respondInvitationProcedure.input)
+        .output(respondInvitationProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.respondInvitation(ctx.user, input))),
+      cancel: authenticatedProcedure
+        .input(cancelInvitationProcedure.input)
+        .output(cancelInvitationProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.cancelInvitation(ctx.user, input))),
+    }),
+    member: t.router({
+      setBlocked: authenticatedProcedure
+        .input(setMemberBlockedProcedure.input)
+        .output(setMemberBlockedProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.setMemberBlocked(ctx.user, input))),
     }),
     project: t.router({
       create: authenticatedProcedure

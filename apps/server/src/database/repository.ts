@@ -4,6 +4,8 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle
 
 import {
   environmentSchema,
+  projectInvitationSchema,
+  projectMemberSchema,
   profileSchema,
   projectSchema,
   testSuiteSchema,
@@ -12,12 +14,15 @@ import {
   testSnapshotSchema,
   workspaceSnapshotSchema,
   type CreateEnvironmentRequest,
+  type CreateInvitationRequest,
   type CreateProjectRequest,
   type CreateProfileRequest,
   type CreateTestRequest,
   type CreateTestSuiteRequest,
   type DeleteTestSuiteRequest,
   type Environment,
+  type ProjectInvitation,
+  type ProjectMember,
   type GetTestRevisionHistoryRequest,
   type Project,
   type Profile,
@@ -31,16 +36,22 @@ import {
   type UpdateProjectRequest,
   type UpdateProfileRequest,
   type UpdateTestSuiteRequest,
+  type RespondInvitationRequest,
+  type CancelInvitationRequest,
+  type SetMemberBlockedRequest,
   type TestRevision,
   type TestRun,
   type TestSnapshot,
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import type { AuthenticatedUser } from '../auth.js';
+import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
   environments,
   idempotencyRecords,
+  projectInvitations,
+  projectMembers,
   profileVariables,
   profiles,
   projects,
@@ -48,6 +59,7 @@ import {
   testRuns,
   testSuites,
   tests,
+  users,
 } from './schema.js';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -77,7 +89,10 @@ const fingerprint = (value: unknown): string =>
   createHash('sha256').update(stable(value)).digest('hex');
 
 export class CanonicalRepository {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly invitationMailer: InvitationMailer = disabledInvitationMailer,
+  ) {}
 
   createProject(user: AuthenticatedUser, request: CreateProjectRequest): Promise<Project> {
     return this.idempotent(user, 'project.create', request, async (tx) => {
@@ -361,29 +376,228 @@ export class CanonicalRepository {
     });
   }
 
+  async lookupInvitee(
+    _user: AuthenticatedUser,
+    email: string,
+  ): Promise<{ email: string; name: string | null }> {
+    const [invitee] = await this.db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    return { email, name: invitee?.name ?? null };
+  }
+
+  async createInvitation(
+    user: AuthenticatedUser,
+    request: CreateInvitationRequest,
+  ): Promise<ProjectInvitation> {
+    const invitation = await this.idempotent(user, 'invitation.create', request, async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      if (request.email === user.email)
+        throw new RepositoryError('CONFLICT', 'You are already a member of this project.');
+
+      const [projectOwner] = await tx
+        .select({ email: users.email })
+        .from(projects)
+        .innerJoin(users, eq(users.id, projects.ownerId))
+        .where(eq(projects.id, request.projectId))
+        .limit(1);
+      if (projectOwner?.email === request.email)
+        throw new RepositoryError('CONFLICT', 'This user already owns the project.');
+
+      const [invitee] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, request.email))
+        .limit(1);
+      if (invitee) {
+        const [member] = await tx
+          .select({ userId: projectMembers.userId })
+          .from(projectMembers)
+          .where(
+            and(
+              eq(projectMembers.projectId, request.projectId),
+              eq(projectMembers.userId, invitee.id),
+            ),
+          )
+          .limit(1);
+        if (member) throw new RepositoryError('CONFLICT', 'This user is already a project member.');
+      }
+
+      const [pending] = await tx
+        .select({ id: projectInvitations.id })
+        .from(projectInvitations)
+        .where(
+          and(
+            eq(projectInvitations.projectId, request.projectId),
+            eq(projectInvitations.email, request.email),
+            eq(projectInvitations.status, 'invited'),
+          ),
+        )
+        .limit(1);
+      if (pending) throw new RepositoryError('CONFLICT', 'An invitation is already pending.');
+
+      const [row] = await tx
+        .insert(projectInvitations)
+        .values({
+          projectId: request.projectId,
+          email: request.email,
+          invitedBy: user.id,
+          status: 'invited',
+        })
+        .returning();
+      if (!row) throw new Error('Could not create the invitation.');
+      return this.invitation(tx, row);
+    });
+    try {
+      await this.invitationMailer.sendInvitation(invitation);
+    } catch (error) {
+      console.error(
+        error instanceof Error ? error.message : 'Invitation email delivery failed unexpectedly.',
+      );
+    }
+    return invitation;
+  }
+
+  respondInvitation(
+    user: AuthenticatedUser,
+    request: RespondInvitationRequest,
+  ): Promise<ProjectInvitation> {
+    return this.idempotent(user, 'invitation.respond', request, async (tx) => {
+      const [invitation] = await tx
+        .select()
+        .from(projectInvitations)
+        .where(eq(projectInvitations.id, request.invitationId))
+        .limit(1);
+      if (!invitation) throw new RepositoryError('NOT_FOUND', 'The invitation was not found.');
+      if (invitation.email !== user.email)
+        throw new RepositoryError('FORBIDDEN', 'This invitation belongs to another account.');
+      if (invitation.status !== 'invited')
+        throw new RepositoryError('CONFLICT', 'The invitation is no longer pending.');
+
+      const now = new Date().toISOString();
+      if (request.response === 'accepted')
+        await tx
+          .insert(projectMembers)
+          .values({ projectId: invitation.projectId, userId: user.id, joinedAt: now })
+          .onConflictDoUpdate({
+            target: [projectMembers.projectId, projectMembers.userId],
+            set: { blockedAt: null, blockedBy: null, joinedAt: now },
+          });
+      const [updated] = await tx
+        .update(projectInvitations)
+        .set({ status: request.response, respondedAt: now, respondedBy: user.id })
+        .where(
+          and(
+            eq(projectInvitations.id, request.invitationId),
+            eq(projectInvitations.status, 'invited'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new RepositoryError('CONFLICT', 'The invitation changed.');
+      return this.invitation(tx, updated);
+    });
+  }
+
+  cancelInvitation(
+    user: AuthenticatedUser,
+    request: CancelInvitationRequest,
+  ): Promise<ProjectInvitation> {
+    return this.idempotent(user, 'invitation.cancel', request, async (tx) => {
+      const [invitation] = await tx
+        .select()
+        .from(projectInvitations)
+        .where(eq(projectInvitations.id, request.invitationId))
+        .limit(1);
+      if (!invitation) throw new RepositoryError('NOT_FOUND', 'The invitation was not found.');
+      const owner = await this.isProjectOwner(tx, user, invitation.projectId);
+      if (!owner && invitation.invitedBy !== user.id)
+        throw new RepositoryError('FORBIDDEN', 'Only the inviter or project owner may cancel.');
+      if (invitation.status !== 'invited')
+        throw new RepositoryError('CONFLICT', 'The invitation is no longer pending.');
+      const [updated] = await tx
+        .update(projectInvitations)
+        .set({
+          status: 'cancelled',
+          respondedAt: new Date().toISOString(),
+          respondedBy: user.id,
+        })
+        .where(
+          and(
+            eq(projectInvitations.id, request.invitationId),
+            eq(projectInvitations.status, 'invited'),
+          ),
+        )
+        .returning();
+      if (!updated) throw new RepositoryError('CONFLICT', 'The invitation changed.');
+      return this.invitation(tx, updated);
+    });
+  }
+
+  setMemberBlocked(
+    user: AuthenticatedUser,
+    request: SetMemberBlockedRequest,
+  ): Promise<ProjectMember> {
+    return this.idempotent(user, 'member.setBlocked', request, async (tx) => {
+      await this.authorizeProjectOwner(tx, user, request.projectId);
+      const [updated] = await tx
+        .update(projectMembers)
+        .set({
+          blockedAt: request.blocked ? new Date().toISOString() : null,
+          blockedBy: request.blocked ? user.id : null,
+        })
+        .where(
+          and(
+            eq(projectMembers.projectId, request.projectId),
+            eq(projectMembers.userId, request.userId),
+          ),
+        )
+        .returning();
+      if (!updated) throw new RepositoryError('NOT_FOUND', 'The project member was not found.');
+      return this.member(tx, updated);
+    });
+  }
+
   getWorkspace(user: AuthenticatedUser): Promise<WorkspaceSnapshot> {
     return this.db.transaction(async (tx) => {
-      const projectRows = await tx
+      const ownedProjectRows = await tx
         .select()
         .from(projects)
         .where(and(eq(projects.ownerId, user.id), isNull(projects.deletedAt)))
         .orderBy(asc(projects.createdAt));
-      const projectValues = projectRows.map((row) => this.project(row));
-      const environmentRows = await tx
-        .select({ environment: environments })
-        .from(environments)
-        .innerJoin(projects, eq(projects.id, environments.projectId))
+      const memberProjectRows = await tx
+        .select({ project: projects })
+        .from(projectMembers)
+        .innerJoin(projects, eq(projects.id, projectMembers.projectId))
         .where(
           and(
-            eq(projects.ownerId, user.id),
+            eq(projectMembers.userId, user.id),
+            isNull(projectMembers.blockedAt),
             isNull(projects.deletedAt),
-            isNull(environments.deletedAt),
           ),
         )
-        .orderBy(asc(environments.createdAt));
-      const environmentValues = environmentRows.map(({ environment }) =>
-        this.environment(environment),
-      );
+        .orderBy(asc(projects.createdAt));
+      const projectRows = [
+        ...new Map(
+          [...ownedProjectRows, ...memberProjectRows.map(({ project }) => project)].map(
+            (project) => [project.id, project],
+          ),
+        ).values(),
+      ];
+      const projectValues = projectRows.map((row) => this.project(row));
+      const projectIds = projectValues.map((project) => project.id);
+      const environmentRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(environments)
+              .where(
+                and(inArray(environments.projectId, projectIds), isNull(environments.deletedAt)),
+              )
+              .orderBy(asc(environments.createdAt));
+      const environmentValues = environmentRows.map((environment) => this.environment(environment));
       const environmentIds = environmentValues.map((environment) => environment.id);
       const profileRows =
         environmentIds.length === 0
@@ -396,16 +610,15 @@ export class CanonicalRepository {
               )
               .orderBy(asc(profiles.createdAt));
       const profileValues = await Promise.all(profileRows.map((row) => this.profile(tx, row)));
-      const projectIds = projectValues.map((project) => project.id);
       const testSuiteValues = await this.testSuiteSummaries(tx, projectIds);
-      const testRows = await tx
-        .select({ id: tests.id })
-        .from(tests)
-        .innerJoin(projects, eq(projects.id, tests.projectId))
-        .where(
-          and(eq(projects.ownerId, user.id), isNull(projects.deletedAt), isNull(tests.deletedAt)),
-        )
-        .orderBy(asc(tests.createdAt));
+      const testRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select({ id: tests.id })
+              .from(tests)
+              .where(and(inArray(tests.projectId, projectIds), isNull(tests.deletedAt)))
+              .orderBy(asc(tests.createdAt));
       const testValues = await Promise.all(testRows.map((row) => this.snapshot(tx, row.id)));
       const testIds = testRows.map((test) => test.id);
       const completedRunRows =
@@ -450,8 +663,76 @@ export class CanonicalRepository {
               .where(and(inArray(testRuns.projectId, projectIds), isNotNull(testRuns.finishedAt)))
               .orderBy(desc(testRuns.startedAt))
               .limit(200);
+
+      const ownerUsers =
+        projectRows.length === 0
+          ? []
+          : await tx
+              .select({ id: users.id, email: users.email, name: users.name })
+              .from(users)
+              .where(
+                inArray(
+                  users.id,
+                  projectRows.map((project) => project.ownerId),
+                ),
+              );
+      const ownerById = new Map(ownerUsers.map((owner) => [owner.id, owner]));
+      const ownerMembers = projectRows.map((project) =>
+        projectMemberSchema.parse({
+          projectId: project.id,
+          user: ownerById.get(project.ownerId),
+          role: 'owner',
+          status: 'active',
+          joinedAt: instant(project.createdAt),
+        }),
+      );
+      const memberRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select({
+                member: projectMembers,
+                user: { id: users.id, email: users.email, name: users.name },
+              })
+              .from(projectMembers)
+              .innerJoin(users, eq(users.id, projectMembers.userId))
+              .where(inArray(projectMembers.projectId, projectIds))
+              .orderBy(asc(projectMembers.joinedAt));
+      const memberValues = memberRows.map(({ member, user: memberUser }) =>
+        projectMemberSchema.parse({
+          projectId: member.projectId,
+          user: memberUser,
+          role: 'member',
+          status: member.blockedAt ? 'blocked' : 'active',
+          joinedAt: instant(member.joinedAt),
+        }),
+      );
+      const invitationRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(projectInvitations)
+              .where(inArray(projectInvitations.projectId, projectIds))
+              .orderBy(desc(projectInvitations.createdAt));
+      const pendingInvitationRows = await tx
+        .select()
+        .from(projectInvitations)
+        .where(
+          and(eq(projectInvitations.email, user.email), eq(projectInvitations.status, 'invited')),
+        )
+        .orderBy(asc(projectInvitations.createdAt));
+      const invitationValues = await Promise.all(
+        invitationRows.map((invitation) => this.invitation(tx, invitation)),
+      );
+      const pendingInvitationValues = await Promise.all(
+        pendingInvitationRows.map((invitation) => this.invitation(tx, invitation)),
+      );
       return workspaceSnapshotSchema.parse({
         viewer: user,
+        members: [...ownerMembers, ...memberValues],
+        invitations: invitationValues,
+        pendingInvitations: pendingInvitationValues,
         projects: projectValues,
         environments: environmentValues,
         profiles: profileValues,
@@ -615,8 +896,89 @@ export class CanonicalRepository {
       .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new RepositoryError('NOT_FOUND', 'The project was not found.');
-    if (project.ownerId !== user.id)
+    if (project.ownerId === user.id) return;
+    const [membership] = await tx
+      .select({ blockedAt: projectMembers.blockedAt })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, user.id)))
+      .limit(1);
+    if (!membership || membership.blockedAt)
       throw new RepositoryError('FORBIDDEN', 'You do not have access to this project.');
+  }
+
+  private async isProjectOwner(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    projectId: string,
+  ): Promise<boolean> {
+    const [project] = await tx
+      .select({ ownerId: projects.ownerId })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
+      .limit(1);
+    if (!project) throw new RepositoryError('NOT_FOUND', 'The project was not found.');
+    return project.ownerId === user.id;
+  }
+
+  private async authorizeProjectOwner(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    projectId: string,
+  ): Promise<void> {
+    if (!(await this.isProjectOwner(tx, user, projectId)))
+      throw new RepositoryError('FORBIDDEN', 'Only the project owner may manage members.');
+  }
+
+  private async invitation(
+    tx: Transaction,
+    row: typeof projectInvitations.$inferSelect,
+  ): Promise<ProjectInvitation> {
+    const [project] = await tx
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.id, row.projectId))
+      .limit(1);
+    const [inviter] = await tx
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(eq(users.id, row.invitedBy))
+      .limit(1);
+    const [invitee] = await tx
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.email, row.email))
+      .limit(1);
+    if (!project || !inviter) throw new Error('Invitation relations are missing.');
+    return projectInvitationSchema.parse({
+      id: row.id,
+      projectId: row.projectId,
+      projectName: project.name,
+      email: row.email,
+      inviteeName: invitee?.name ?? null,
+      invitedBy: inviter,
+      status: row.status,
+      createdAt: instant(row.createdAt),
+      respondedAt: row.respondedAt ? instant(row.respondedAt) : null,
+    });
+  }
+
+  private async member(
+    tx: Transaction,
+    row: typeof projectMembers.$inferSelect,
+  ): Promise<ProjectMember> {
+    const [memberUser] = await tx
+      .select({ id: users.id, email: users.email, name: users.name })
+      .from(users)
+      .where(eq(users.id, row.userId))
+      .limit(1);
+    if (!memberUser) throw new Error('Project member user is missing.');
+    return projectMemberSchema.parse({
+      projectId: row.projectId,
+      user: memberUser,
+      role: 'member',
+      status: row.blockedAt ? 'blocked' : 'active',
+      joinedAt: instant(row.joinedAt),
+    });
   }
 
   private async authorizeTest(

@@ -7,6 +7,8 @@ import { redactStepSecrets, stepSchema, type Step } from '@testron/domain/steps/
 import {
   testSnapshotSchema,
   type RevisionStep,
+  type ProjectInvitation,
+  type ProjectMember,
   type TestSnapshot,
   type TestSuiteSummary,
   type TestRun,
@@ -15,6 +17,7 @@ import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-st
 
 export interface ProjectRecord {
   id: string;
+  ownerId?: string;
   name: string;
   url?: string | null;
   revision?: number;
@@ -57,6 +60,15 @@ export interface TestRecord {
 
 export interface LibrarySnapshot {
   viewer?: { id: string; email: string; name: string | null };
+  members?: ProjectMember[];
+  invitations?: ProjectInvitation[];
+  pendingInvitations?: ProjectInvitation[];
+  inviteeLookup?: { email: string; name: string | null };
+  accountAction?: {
+    type: 'profile' | 'password';
+    status: 'pending' | 'success' | 'error';
+    message?: string;
+  };
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];

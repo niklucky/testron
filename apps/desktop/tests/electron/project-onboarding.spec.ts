@@ -20,6 +20,9 @@ test('an empty remote workspace onboards and the selector creates server project
   let workspaceOffline = false;
   const workspace = (): WorkspaceSnapshot => ({
     viewer: user,
+    members: [],
+    invitations: [],
+    pendingInvitations: [],
     projects,
     environments: [],
     profiles: [],

@@ -6,6 +6,8 @@ import {
   authLoginInputSchema,
   authRegisterInputSchema,
   authSessionOutputSchema,
+  changeAccountPasswordRequestSchema,
+  updateAccountProfileRequestSchema,
   type AuthSessionOutput,
 } from '@testron/protocol';
 import type { Database } from './database/database.js';
@@ -102,8 +104,40 @@ export class AuthenticationService {
     return user;
   }
 
+  async updateProfile(user: AuthenticatedUser, value: unknown): Promise<AuthenticatedUser> {
+    const input = updateAccountProfileRequestSchema.parse(value);
+    const [updated] = await this.db
+      .update(users)
+      .set({ name: input.name })
+      .where(eq(users.id, user.id))
+      .returning({ id: users.id, email: users.email, name: users.name });
+    if (!updated) throw this.invalidCredentials();
+    return updated;
+  }
+
+  async changePassword(
+    user: AuthenticatedUser,
+    value: unknown,
+  ): Promise<{ changed: true; sessionPolicy: 'preserve' }> {
+    const input = changeAccountPasswordRequestSchema.parse(value);
+    const [record] = await this.db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    if (!record || !this.passwordMatches(input.currentPassword, record))
+      throw this.invalidCredentials();
+    await this.db.update(users).set(passwordRecord(input.newPassword)).where(eq(users.id, user.id));
+    return { changed: true, sessionPolicy: 'preserve' };
+  }
+
   private invalidCredentials(): AuthenticationError {
     return new AuthenticationError('INVALID_CREDENTIALS', 'The email or password is incorrect.');
+  }
+
+  private passwordMatches(
+    password: string,
+    user: Pick<typeof users.$inferSelect, 'passwordSalt' | 'passwordHash'>,
+  ): boolean {
+    const actual = Buffer.from(passwordHash(password, user.passwordSalt), 'hex');
+    const expected = Buffer.from(user.passwordHash, 'hex');
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
   }
 
   private async createSession(userId: string): Promise<AuthSessionOutput> {
