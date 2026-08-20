@@ -9,6 +9,7 @@ import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
+import { loadExpandedSuiteIds, saveExpandedSuiteIds } from './suiteExpansion';
 import { NewTestForm } from './NewTestForm';
 import { TestSuiteForm } from './TestSuiteForm';
 import { evidenceTabs, Triage } from './Triage';
@@ -129,6 +130,35 @@ export const Dashboard = () => {
         };
       });
   }, [library, mockSuites]);
+
+  const expansionProjectId = library?.selectedProjectId ?? 'local-workspace';
+  const suiteIds = useMemo(() => suites.map((suite) => suite.id), [suites]);
+  const defaultExpandedSuiteIds = useMemo(
+    () => suites.filter((suite) => suite.name === 'Checkout').map((suite) => suite.id),
+    [suites],
+  );
+  const [expandedSuiteIds, setExpandedSuiteIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    setExpandedSuiteIds(
+      loadExpandedSuiteIds(
+        window.localStorage,
+        expansionProjectId,
+        new Set(suiteIds),
+        defaultExpandedSuiteIds,
+      ),
+    );
+  }, [defaultExpandedSuiteIds, expansionProjectId, suiteIds]);
+
+  const toggleSuite = (suiteId: string) => {
+    setExpandedSuiteIds((current) => {
+      const next = current.includes(suiteId)
+        ? current.filter((id) => id !== suiteId)
+        : [...current, suiteId];
+      saveExpandedSuiteIds(window.localStorage, expansionProjectId, next);
+      return next;
+    });
+  };
 
   const queue = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -290,6 +320,8 @@ export const Dashboard = () => {
           view={view}
           onView={setView}
           suites={suites}
+          expandedSuiteIds={expandedSuiteIds}
+          onToggleSuite={toggleSuite}
           openFailures={failures.length}
           queue={queue}
           scope={scope}

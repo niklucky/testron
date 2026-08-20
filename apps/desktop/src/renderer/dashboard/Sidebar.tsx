@@ -26,6 +26,8 @@ export const Sidebar = ({
   view,
   onView,
   suites,
+  expandedSuiteIds,
+  onToggleSuite,
   openFailures,
   queue,
   scope,
@@ -53,6 +55,8 @@ export const Sidebar = ({
   view: View;
   onView: (view: View) => void;
   suites: SuiteRecord[];
+  expandedSuiteIds: string[];
+  onToggleSuite: (suiteId: string) => void;
   openFailures: number;
   queue: Failure[];
   scope: Scope;
@@ -158,6 +162,8 @@ export const Sidebar = ({
         </div>
         <SuiteTree
           suites={suites}
+          expandedSuiteIds={expandedSuiteIds}
+          onToggleSuite={onToggleSuite}
           activeTestId={
             view === 'triage'
               ? suites
