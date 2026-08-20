@@ -23,6 +23,30 @@ export const workspaceViewerSchema = z
     name: z.string().trim().min(1).max(100).nullable(),
   })
   .strict();
+export const projectMemberStatusSchema = z.enum(['active', 'blocked']);
+export const invitationStatusSchema = z.enum(['invited', 'accepted', 'rejected', 'cancelled']);
+export const projectMemberSchema = z
+  .object({
+    projectId: entityIdSchema,
+    user: workspaceViewerSchema,
+    role: z.enum(['owner', 'member']),
+    status: projectMemberStatusSchema,
+    joinedAt: timestampSchema,
+  })
+  .strict();
+export const projectInvitationSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    projectName: projectNameSchema,
+    email: z.email(),
+    inviteeName: z.string().trim().min(1).max(100).nullable(),
+    invitedBy: workspaceViewerSchema,
+    status: invitationStatusSchema,
+    createdAt: timestampSchema,
+    respondedAt: timestampSchema.nullable(),
+  })
+  .strict();
 export const testRunStatusSchema = z.enum(['running', 'passed', 'failed', 'cancelled', 'timedOut']);
 
 export const projectSchema = z
@@ -214,6 +238,9 @@ export const testRunSchema = z
 export const workspaceSnapshotSchema = z
   .object({
     viewer: workspaceViewerSchema,
+    members: z.array(projectMemberSchema),
+    invitations: z.array(projectInvitationSchema),
+    pendingInvitations: z.array(projectInvitationSchema),
     projects: z.array(projectSchema),
     environments: z.array(environmentSchema),
     profiles: z.array(profileSchema),
@@ -249,4 +276,8 @@ export type TestSnapshot = z.infer<typeof testSnapshotSchema>;
 export type TestRunStatus = z.infer<typeof testRunStatusSchema>;
 export type TestRun = z.infer<typeof testRunSchema>;
 export type WorkspaceViewer = z.infer<typeof workspaceViewerSchema>;
+export type ProjectMemberStatus = z.infer<typeof projectMemberStatusSchema>;
+export type InvitationStatus = z.infer<typeof invitationStatusSchema>;
+export type ProjectMember = z.infer<typeof projectMemberSchema>;
+export type ProjectInvitation = z.infer<typeof projectInvitationSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;

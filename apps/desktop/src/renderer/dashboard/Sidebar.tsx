@@ -48,6 +48,7 @@ export const Sidebar = ({
   onEditSuite,
   onDeleteSuite,
   onSettings,
+  onProfile,
   onLog,
   viewer,
   canSignOut,
@@ -77,6 +78,7 @@ export const Sidebar = ({
   onEditSuite: (suite: SuiteRecord) => void;
   onDeleteSuite: (suite: SuiteRecord) => void;
   onSettings: () => void;
+  onProfile: () => void;
   onLog: (message: string) => void;
   viewer?: LibrarySnapshot['viewer'];
   canSignOut: boolean;
@@ -136,6 +138,12 @@ export const Sidebar = ({
           label="Run history"
           active={view === 'runs'}
           onClick={() => onView('runs')}
+        />
+        <NavItem
+          icon="members"
+          label="Members"
+          active={view === 'members'}
+          onClick={() => onView('members')}
         />
         <Button variant="ghost" size="lg" block icon="record" onClick={() => onNewTest()}>
           New test
@@ -210,12 +218,15 @@ export const Sidebar = ({
               <button
                 type="button"
                 role="menuitem"
-                disabled
-                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink-3 opacity-50"
+                disabled={!viewer}
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink-2 hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => {
+                  setAccountMenuOpen(false);
+                  onProfile();
+                }}
               >
                 <Icon name="settings" size={15} />
                 Profile
-                <span className="ml-auto text-xs">Coming later</span>
               </button>
               <div className="my-1 h-px bg-line" />
               <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">Change theme</div>

@@ -10,6 +10,7 @@ export const projectSurface = (library: LibrarySnapshot): ProjectSurface => {
   const server = library.server;
   if (!server?.configured) return 'product';
   if (library.projects.length > 0) return 'product';
+  if ((library.pendingInvitations?.length ?? 0) > 0) return 'product';
   if (server.workspace === 'loading') return 'loading';
   return 'onboarding';
 };

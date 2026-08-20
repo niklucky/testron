@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { inspectCompatibility } from '../src/compatibility';
 import { revisionConflictResponseSchema } from '../src/errors';
 import {
+  changeAccountPasswordRequestSchema,
+  createInvitationRequestSchema,
   finishTestRunRequestSchema,
   createProfileRequestSchema,
   saveTestRevisionRequestSchema,
@@ -245,6 +247,33 @@ describe('project settings mutations', () => {
         name: 'Duplicate variables',
         authenticationType: 'credentials',
         variables: [variables[0], variables[0]],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('account and invitation mutations', () => {
+  const meta = {
+    protocolVersion: 1 as const,
+    requestId: ids.request,
+    idempotencyKey: 'account-operation',
+    client: { kind: 'desktop' as const, version: '0.0.1' },
+    supportedStepVersions: [1],
+  };
+
+  it('normalizes invitation email addresses and rejects password reuse', () => {
+    expect(
+      createInvitationRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        email: 'Member@Example.test',
+      }).email,
+    ).toBe('member@example.test');
+    expect(
+      changeAccountPasswordRequestSchema.safeParse({
+        meta,
+        currentPassword: 'same password value',
+        newPassword: 'same password value',
       }).success,
     ).toBe(false);
   });

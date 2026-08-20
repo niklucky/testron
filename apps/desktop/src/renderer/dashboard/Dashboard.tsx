@@ -15,6 +15,9 @@ import { TestSuiteForm } from './TestSuiteForm';
 import { evidenceTabs, Triage } from './Triage';
 import { ProjectSwitcher } from '../projects/ProjectSwitcher';
 import { ProjectSettings } from '../projects/ProjectSettings';
+import { ProfileModal } from '../account/ProfileModal';
+import { Members } from '../members/Members';
+import { PendingInvitationModal } from '../members/PendingInvitationModal';
 import type {
   EvidenceTab,
   Failure,
@@ -60,6 +63,7 @@ export const Dashboard = () => {
   const [creatingTest, setCreatingTest] = useState(false);
   const creatingFromTestId = useRef<string | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -311,7 +315,7 @@ export const Dashboard = () => {
 
       <div
         className={`grid min-h-0 flex-1 ${
-          view !== 'overview' && !focusMode
+          view !== 'overview' && view !== 'members' && !focusMode
             ? 'grid-cols-[336px_minmax(0,1fr)_330px]'
             : 'grid-cols-[336px_minmax(0,1fr)]'
         }`}
@@ -359,6 +363,7 @@ export const Dashboard = () => {
             setLog(`Deleting test suite · ${suite.name}`);
           }}
           onSettings={() => setSettingsOpen(true)}
+          onProfile={() => setProfileOpen(true)}
           onLog={setLog}
           viewer={library?.viewer}
           canSignOut={library?.server?.authentication === 'signedIn'}
@@ -372,6 +377,10 @@ export const Dashboard = () => {
             onState={setOverview}
             onLog={setLog}
           />
+        ) : view === 'members' ? (
+          library ? (
+            <Members library={library} />
+          ) : null
         ) : view === 'runs' ? (
           <>
             <Runs state={runsState} onState={setRunsState} onLog={setLog} />
@@ -408,7 +417,11 @@ export const Dashboard = () => {
 
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
         <span className="ui-mono truncate text-ink-2">
-          {view === 'overview' ? 'Commerce app · overview' : selected.file}
+          {view === 'overview'
+            ? 'Commerce app · overview'
+            : view === 'members'
+              ? 'Project access · members'
+              : selected.file}
         </span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
@@ -485,6 +498,16 @@ export const Dashboard = () => {
       )}
       {settingsOpen && library && (
         <ProjectSettings library={library} onClose={() => setSettingsOpen(false)} />
+      )}
+      {profileOpen && library && (
+        <ProfileModal library={library} onClose={() => setProfileOpen(false)} />
+      )}
+      {library?.pendingInvitations?.[0] && (
+        <PendingInvitationModal
+          invitation={library.pendingInvitations[0]}
+          pending={library.server?.status === 'syncing'}
+          error={library.server?.status === 'error' ? library.server.message : undefined}
+        />
       )}
     </main>
   );

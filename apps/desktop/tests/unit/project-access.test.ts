@@ -98,4 +98,31 @@ describe('project workspace boundary', () => {
       ),
     ).toBe('product');
   });
+
+  it('opens the product to show a pending invitation before project access exists', () => {
+    const snapshot = library({
+      configured: true,
+      authentication: 'signedIn',
+      workspace: 'loaded',
+      status: 'synced',
+    });
+    snapshot.pendingInvitations = [
+      {
+        id: '00000000-0000-4000-8000-000000000010',
+        projectId: '00000000-0000-4000-8000-000000000011',
+        projectName: 'Website',
+        email: 'member@example.test',
+        inviteeName: 'Member',
+        invitedBy: {
+          id: '00000000-0000-4000-8000-000000000012',
+          email: 'owner@example.test',
+          name: 'Owner',
+        },
+        status: 'invited',
+        createdAt: '2026-08-20T00:00:00.000Z',
+        respondedAt: null,
+      },
+    ];
+    expect(projectSurface(snapshot)).toBe('product');
+  });
 });

@@ -123,6 +123,157 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
   });
 
+  it('updates the account name and changes the password after verifying the current password', async () => {
+    const email = 'owner@example.test';
+    const password = 'correct horse battery staple';
+    const { api } = await signIn(email, password);
+
+    await expect(
+      api.account.updateProfile.mutate({ meta: mutationMeta(), name: 'Updated Owner' }),
+    ).resolves.toMatchObject({ email, name: 'Updated Owner' });
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      viewer: { email, name: 'Updated Owner' },
+    });
+
+    await expect(
+      api.account.changePassword.mutate({
+        meta: mutationMeta(),
+        currentPassword: 'incorrect password value',
+        newPassword: 'brand new correct horse password',
+      }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+
+    await expect(
+      api.account.changePassword.mutate({
+        meta: mutationMeta(),
+        currentPassword: password,
+        newPassword: 'brand new correct horse password',
+      }),
+    ).resolves.toEqual({ changed: true, sessionPolicy: 'preserve' });
+    await expect(client().auth.login.mutate({ email, password })).rejects.toMatchObject({
+      data: { code: 'UNAUTHORIZED' },
+    });
+    await expect(
+      client().auth.login.mutate({ email, password: 'brand new correct horse password' }),
+    ).resolves.toHaveProperty('accessToken');
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toHaveProperty(
+      'viewer.email',
+      email,
+    );
+  });
+
+  it('supports invitation acceptance, member access, blocking, and unblocking', async () => {
+    const owner = await signIn();
+    const { project, snapshot } = await createSlice(owner.api);
+    const member = await signIn('member@example.test', 'another correct horse password');
+
+    await expect(
+      owner.api.invitation.lookup.query({
+        meta: requestMeta(),
+        email: 'MEMBER@example.test',
+      }),
+    ).resolves.toEqual({ email: 'member@example.test', name: 'Test Owner' });
+    const invitation = await owner.api.invitation.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      email: 'member@example.test',
+    });
+    expect(invitation).toMatchObject({
+      projectId: project.id,
+      inviteeName: 'Test Owner',
+      status: 'invited',
+    });
+    await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      projects: [],
+      pendingInvitations: [{ id: invitation.id, status: 'invited' }],
+    });
+
+    await expect(
+      member.api.invitation.respond.mutate({
+        meta: mutationMeta(),
+        invitationId: invitation.id,
+        response: 'accepted',
+      }),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      projects: [{ id: project.id }],
+      pendingInvitations: [],
+    });
+    await expect(
+      member.api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id }),
+    ).resolves.toMatchObject({ test: { id: snapshot.test.id } });
+
+    await expect(
+      owner.api.member.setBlocked.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        userId: (await member.api.workspace.get.query({ meta: requestMeta() })).viewer.id,
+        blocked: true,
+      }),
+    ).resolves.toMatchObject({ status: 'blocked' });
+    await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      projects: [],
+    });
+    await expect(
+      member.api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id }),
+    ).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
+
+    const memberId = (await member.api.workspace.get.query({ meta: requestMeta() })).viewer.id;
+    await owner.api.member.setBlocked.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      userId: memberId,
+      blocked: false,
+    });
+    await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      projects: [{ id: project.id }],
+    });
+  });
+
+  it('supports invitation rejection and inviter cancellation', async () => {
+    const owner = await signIn();
+    const project = await owner.api.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Website',
+    });
+    const invitee = await signIn('invitee@example.test', 'another correct horse password');
+
+    const rejected = await owner.api.invitation.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      email: 'invitee@example.test',
+    });
+    await expect(
+      invitee.api.invitation.respond.mutate({
+        meta: mutationMeta(),
+        invitationId: rejected.id,
+        response: 'rejected',
+      }),
+    ).resolves.toMatchObject({ status: 'rejected' });
+    await expect(invitee.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      projects: [],
+      pendingInvitations: [],
+    });
+
+    const pending = await owner.api.invitation.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      email: 'future-member@example.test',
+    });
+    await expect(
+      owner.api.invitation.cancel.mutate({
+        meta: mutationMeta(),
+        invitationId: pending.id,
+      }),
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    await expect(owner.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      invitations: expect.arrayContaining([
+        expect.objectContaining({ id: rejected.id, status: 'rejected' }),
+        expect.objectContaining({ id: pending.id, status: 'cancelled' }),
+      ]),
+    });
+  });
+
   it('authenticates every protected procedure and hydrates the typed workspace', async () => {
     await expect(client().workspace.get.query({ meta: requestMeta() })).rejects.toMatchObject({
       data: { code: 'UNAUTHORIZED' },
