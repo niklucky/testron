@@ -13,7 +13,4 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - testron-postgres:/var/lib/postgresql/data
-
-volumes:
-  testron-postgres:
+      - ./tmp/db:/var/lib/postgresql/data

@@ -1,4 +1,5 @@
 import type { AppSnapshot } from '../../preload/api';
+import type { TestRun } from '@testron/protocol';
 import { presentRecordedSteps, recordingContext } from '../record/live';
 import type { RecordedStep } from '../record/types';
 import type { Assertion, Run, TestBoard } from './types';
@@ -63,6 +64,26 @@ const replayRun = (
   };
 };
 
+const serverRun = (
+  snapshot: AppSnapshot,
+  fullSteps: readonly RecordedStep[],
+  run: TestRun,
+): Run => {
+  const environment = snapshot.library.environments.find((entry) => entry.id === run.environmentId);
+  return {
+    id: `server-run-${run.id}`,
+    verdict:
+      run.status === 'passed' ? 'passed' : run.status === 'cancelled' ? 'cancelled' : 'failed',
+    environment: environment?.name ?? 'Unknown environment',
+    seconds: (run.durationMs ?? 0) / 1_000,
+    minutesAgo: Math.max(0, (Date.now() - Date.parse(run.startedAt)) / 60_000),
+    by: 'Server runner',
+    trigger: 'manual',
+    ...(run.status === 'timedOut' ? { error: 'The run exceeded its timeout.' } : {}),
+    completed: run.status === 'passed' ? fullSteps.length : 0,
+  };
+};
+
 export const liveTestBoard = (
   snapshot: AppSnapshot,
 ): TestBoard & {
@@ -82,10 +103,32 @@ export const liveTestBoard = (
     else steps.push(step);
   }
 
+  const localReplays =
+    snapshot.replayHistory.length > 0
+      ? snapshot.replayHistory
+      : snapshot.replay.status === 'idle'
+        ? []
+        : [snapshot.replay];
+  const localRuns = localReplays.flatMap((replay) => {
+    const run = replayRun(snapshot, fullSteps, replay);
+    return run ? [run] : [];
+  });
+  const serverRuns = (snapshot.library.recentRuns ?? [])
+    .filter((run) => run.testId === selectedTest?.id)
+    .filter(
+      (run) =>
+        !localReplays.some(
+          (replay) =>
+            replay.startedAt &&
+            Math.abs(Date.parse(replay.startedAt) - Date.parse(run.startedAt)) < 5_000,
+        ),
+    )
+    .map((run) => serverRun(snapshot, fullSteps, run));
+
   return {
     detail: {
       project: context.project,
-      suite: 'Tests',
+      suite: context.suite,
       name: context.title,
       file: context.file,
       environments: [context.environment],
@@ -97,15 +140,7 @@ export const liveTestBoard = (
     prerequisites: [],
     steps,
     assertions,
-    runs: (snapshot.replayHistory.length > 0
-      ? snapshot.replayHistory
-      : snapshot.replay.status === 'idle'
-        ? []
-        : [snapshot.replay]
-    ).flatMap((replay) => {
-      const run = replayRun(snapshot, fullSteps, replay);
-      return run ? [run] : [];
-    }),
+    runs: [...localRuns, ...serverRuns].sort((a, b) => a.minutesAgo - b.minutesAgo),
     fullSteps,
   };
 };

@@ -34,6 +34,16 @@ startup. Normal users can register from the desktop without them.
 `TESTRON_LOCAL_MODE=1` bypasses remote authentication only for isolated recorder
 development and tests; it is not a deployment mode.
 
+From macOS, build the portable unsigned Windows x64 test bundle with:
+
+```sh
+pnpm make:win
+```
+
+That command injects `https://testron.dev` as the desktop server URL and writes
+the ZIP to `apps/desktop/out/make/zip/win32/x64/`. Extract it on Windows and run
+`Testron.exe`.
+
 ## Migrations
 
 Drizzle table definitions live in `apps/server/src/database/schema.ts`, and

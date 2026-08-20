@@ -13,7 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "docker compose -f ../../compose.test.yml up --detach --wait && vitest run"
   },
   "dependencies": {
     "@testron/protocol": "workspace:*",

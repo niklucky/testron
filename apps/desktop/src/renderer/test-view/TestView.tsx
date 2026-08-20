@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
 import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../design';
+import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
@@ -14,6 +15,7 @@ import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
+  title: 'Untitled test',
   recording: false,
   status: 'idle',
   currentUrl: '',
@@ -24,7 +26,14 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   stepWarnings: [],
   canUndo: false,
   canRedo: false,
-  library: { projects: [], environments: [], profiles: [], profileVariables: [], tests: [] },
+  library: {
+    projects: [],
+    environments: [],
+    profiles: [],
+    profileVariables: [],
+    testSuites: [],
+    tests: [],
+  },
   replay: { status: 'idle', steps: [] },
   replayHistory: [],
   verifyAssertion: 'visible',
@@ -39,6 +48,8 @@ export const TestView = () => {
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [newTestOpen, setNewTestOpen] = useState(false);
+  const creatingFromTestId = useRef<string | undefined>(undefined);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -47,6 +58,14 @@ export const TestView = () => {
     const unsubscribe = window.testron?.onSnapshot((next) => {
       setSnapshot(next);
       setLoaded(true);
+      if (
+        creatingFromTestId.current !== undefined &&
+        next.library.selectedTestId &&
+        next.library.selectedTestId !== creatingFromTestId.current
+      ) {
+        creatingFromTestId.current = undefined;
+        window.location.hash = '#/record';
+      }
     });
     window.testron?.command({ type: 'request-snapshot' });
     return unsubscribe;
@@ -67,9 +86,14 @@ export const TestView = () => {
     [snapshot.source, fullSteps],
   );
   const selectedTestId = snapshot.library.selectedTestId;
+  const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
+  const testSuites = snapshot.library.testSuites.filter(
+    (suite) => suite.projectId === snapshot.library.selectedProjectId,
+  );
   const running = snapshot.replay.status === 'running';
   const selectedReplay = useMemo(() => {
     if (!selectedRun) return snapshot.replay;
+    if (selectedRun.startsWith('server-run-')) return { status: 'idle' as const, steps: [] };
     if (selectedRun === 'current-run') return snapshot.replay;
     const startedAt = selectedRun.slice('run-'.length);
     return (
@@ -257,26 +281,43 @@ export const TestView = () => {
 
   if (loaded && !selectedTestId) {
     return (
-      <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
-        <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
-          <Icon name="test" size={28} className="mx-auto text-ink-3" />
-          <h1 className="mt-3 text-lg font-semibold">No test selected</h1>
-          <p className="mt-1 text-base text-ink-3">
-            Record and save a test before opening its board.
-          </p>
-          <Button
-            variant="primary"
-            icon="record"
-            className="mt-5"
-            onClick={() => {
-              window.testron?.command({ type: 'prepare-new-test' });
-              window.location.hash = '#/record';
+      <>
+        <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
+          <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
+            <Icon name="test" size={28} className="mx-auto text-ink-3" />
+            <h1 className="mt-3 text-lg font-semibold">No test selected</h1>
+            <p className="mt-1 text-base text-ink-3">
+              Record and save a test before opening its board.
+            </p>
+            <Button
+              variant="primary"
+              icon="record"
+              className="mt-5"
+              onClick={() => setNewTestOpen(true)}
+            >
+              Record a test
+            </Button>
+          </section>
+        </main>
+        {newTestOpen && (
+          <NewTestForm
+            onClose={() => setNewTestOpen(false)}
+            onStart={(title) => {
+              const projectId = snapshot.library.selectedProjectId;
+              const environmentId = snapshot.library.selectedEnvironmentId;
+              if (!projectId || !environmentId) return;
+              window.testron?.command({
+                type: 'create-test',
+                projectId,
+                environmentId,
+                title,
+              });
+              creatingFromTestId.current = snapshot.library.selectedTestId ?? 'none';
+              setNewTestOpen(false);
             }}
-          >
-            Record a test
-          </Button>
-        </section>
-      </main>
+          />
+        )}
+      </>
     );
   }
 
@@ -295,9 +336,30 @@ export const TestView = () => {
             {detail.project}
           </Button>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <Button variant="ghost" size="sm" iconEnd="caret">
-            {detail.suite}
-          </Button>
+          <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+            <select
+              aria-label="Test suite"
+              value={selectedTest?.testSuiteId ?? snapshot.library.selectedTestSuiteId ?? ''}
+              onChange={(event) => {
+                const testSuiteId = event.target.value;
+                if (!testSuiteId) return;
+                window.testron?.command({ type: 'select-test-suite', testSuiteId });
+                const firstTest = snapshot.library.tests.find(
+                  (test) => test.testSuiteId === testSuiteId,
+                );
+                if (firstTest)
+                  window.testron?.command({ type: 'select-test', testId: firstTest.id });
+              }}
+              className="max-w-44 bg-transparent py-1 outline-none"
+            >
+              <option value="">No test suite</option>
+              {testSuites.map((suite) => (
+                <option key={suite.id} value={suite.id}>
+                  {suite.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <span className="flex min-w-0 items-center gap-1.5 px-1.5 text-md">
             <StatusDot
@@ -528,8 +590,8 @@ export const TestView = () => {
             </Lane>
             <Flow />
 
-            <Lane icon="history" title="Runs" count={runs.length} hint="Current app session.">
-              {runs.length === 0 && <EmptyLane>Never run in this session.</EmptyLane>}
+            <Lane icon="history" title="Runs" count={runs.length} hint="Recent server runs.">
+              {runs.length === 0 && <EmptyLane>This test has no completed runs.</EmptyLane>}
               {runs.map((entry: Run) => (
                 <RunCard
                   key={entry.id}

@@ -9,6 +9,7 @@ import {
   httpUrlSchema,
   projectNameSchema,
   testIdAttributeSchema,
+  testSuiteNameSchema,
   testTitleSchema,
 } from '@testron/protocol';
 import { recordLayoutSchema, recordPanelStateSchema } from './record';
@@ -65,7 +66,31 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     action: z.enum(['back', 'forward', 'reload', 'stop']),
   }),
   z.object({ type: z.literal('request-snapshot') }),
+  z.object({ type: z.literal('refresh-workspace') }),
   z.object({ type: z.literal('create-project'), name: projectNameSchema }),
+  z.object({
+    type: z.literal('create-test-suite'),
+    projectId: entityIdSchema,
+    name: testSuiteNameSchema,
+  }),
+  z.object({
+    type: z.literal('update-test-suite'),
+    testSuiteId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+    name: testSuiteNameSchema,
+  }),
+  z.object({
+    type: z.literal('delete-test-suite'),
+    testSuiteId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal('update-project'),
+    projectId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+    name: projectNameSchema,
+    url: httpUrlSchema.nullable(),
+  }),
   z.object({
     type: z.literal('create-environment'),
     projectId: entityIdSchema,
@@ -74,12 +99,20 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     testIdAttribute: testIdAttributeSchema,
   }),
   z.object({
+    type: z.literal('update-environment'),
+    environmentId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+    name: environmentNameSchema,
+    baseUrl: httpUrlSchema,
+  }),
+  z.object({
     type: z.literal('create-test'),
     projectId: entityIdSchema,
     environmentId: entityIdSchema,
     title: testTitleSchema,
   }),
   z.object({ type: z.literal('select-project'), projectId: entityIdSchema }),
+  z.object({ type: z.literal('select-test-suite'), testSuiteId: entityIdSchema }),
   z.object({ type: z.literal('select-environment'), environmentId: entityIdSchema }),
   z.object({
     type: z.literal('create-profile'),
@@ -101,10 +134,31 @@ export const appCommandSchema = z.discriminatedUnion('type', [
           new Set(variables.map((variable) => variable.name)).size === variables.length,
       ),
   }),
-  z.object({ type: z.literal('select-profile'), profileId: entityIdSchema }),
+  z.object({ type: z.literal('select-profile'), profileId: entityIdSchema.optional() }),
+  z.object({
+    type: z.literal('update-profile'),
+    profileId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+    name: z.string().trim().min(1).max(100),
+    authenticationType: z.literal('credentials'),
+    variables: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1).max(100),
+          value: z.string().min(1).max(10_000),
+          sensitive: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .refine(
+        (variables) =>
+          new Set(variables.map((variable) => variable.name)).size === variables.length,
+      ),
+  }),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({ type: z.literal('rename-test'), testId: entityIdSchema, title: testTitleSchema }),
-  z.object({ type: z.literal('prepare-new-test') }),
+  z.object({ type: z.literal('prepare-new-test'), title: testTitleSchema }),
   z.object({ type: z.literal('save-recording'), title: testTitleSchema, baseUrl: httpUrlSchema }),
   z.object({ type: z.literal('copy-source') }),
   z.object({ type: z.literal('export-source') }),

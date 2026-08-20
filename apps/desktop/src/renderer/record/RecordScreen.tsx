@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
+import { ProfileSheet } from '../profiles/ProfileSheet';
+import { NewTestForm } from '../dashboard/NewTestForm';
 import { clock, sourceText } from './codegen';
 import { convertStepToAssertion } from './assertion';
 import { CodePanel } from './CodePanel';
@@ -15,6 +17,7 @@ import { BrowserBar, SessionBar } from './Toolbar';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
+  title: 'Untitled test',
   recording: false,
   status: 'idle',
   currentUrl: '',
@@ -25,7 +28,14 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   stepWarnings: [],
   canUndo: false,
   canRedo: false,
-  library: { projects: [], environments: [], profiles: [], profileVariables: [], tests: [] },
+  library: {
+    projects: [],
+    environments: [],
+    profiles: [],
+    profileVariables: [],
+    testSuites: [],
+    tests: [],
+  },
   replay: { status: 'idle', steps: [] },
   replayHistory: [],
   verifyAssertion: 'visible',
@@ -53,7 +63,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
 export const RecordScreen = () => {
   /** True in Electron, where the page and the panels are native views. */
   const hosted = typeof window.testron !== 'undefined';
-  const { theme, toggle } = useTheme();
+  const { theme } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [elapsed, setElapsed] = useState(0);
   const [url, setUrl] = useState('http://127.0.0.1:4174');
@@ -65,6 +75,7 @@ export const RecordScreen = () => {
   /** Set while the finish sheet is open, so "keep recording" picks the take back up. */
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
   const [configuringProfile, setConfiguringProfile] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
@@ -81,6 +92,9 @@ export const RecordScreen = () => {
   const selectedEnvironmentId = snapshot.library.selectedEnvironmentId;
   const environments = snapshot.library.environments.filter(
     (environment) => environment.projectId === snapshot.library.selectedProjectId,
+  );
+  const testSuites = snapshot.library.testSuites.filter(
+    (testSuite) => testSuite.projectId === snapshot.library.selectedProjectId,
   );
   const profiles = snapshot.library.profiles.filter(
     (profile) => profile.environmentId === selectedEnvironmentId,
@@ -113,8 +127,13 @@ export const RecordScreen = () => {
 
   useEffect(() => {
     if (snapshot.currentUrl) setUrl(snapshot.currentUrl);
-    else if (snapshot.library.selectedEnvironmentId) setUrl(context.baseUrl);
-  }, [snapshot.currentUrl, snapshot.library.selectedEnvironmentId, context.baseUrl]);
+  }, [snapshot.currentUrl]);
+
+  useEffect(() => {
+    if (!snapshot.library.selectedEnvironmentId) return;
+    setUrl(context.baseUrl);
+    window.testron?.command({ type: 'navigate', url: context.baseUrl });
+  }, [snapshot.library.selectedEnvironmentId, context.baseUrl]);
 
   useEffect(() => {
     setName(context.title);
@@ -316,7 +335,9 @@ export const RecordScreen = () => {
    */
   const layout = (): RecordLayout => {
     const rect =
-      finishing || configuringProfile ? undefined : planeRef.current?.getBoundingClientRect();
+      finishing || configuringProfile || editingTitle
+        ? undefined
+        : planeRef.current?.getBoundingClientRect();
     return {
       plane: rect
         ? {
@@ -378,6 +399,7 @@ export const RecordScreen = () => {
     resizing,
     finishing,
     configuringProfile,
+    editingTitle,
   ]);
 
   // The plane moves when the window does, and the panels have to follow.
@@ -450,11 +472,17 @@ export const RecordScreen = () => {
       <SessionBar
         status={status}
         elapsed={elapsed}
-        theme={theme}
-        onTheme={toggle}
         steps={steps.length}
         project={context.project}
+        projects={snapshot.library.projects}
+        projectId={snapshot.library.selectedProjectId}
+        onProject={(projectId) => window.testron?.command({ type: 'select-project', projectId })}
         suite={context.suite}
+        suites={testSuites}
+        suiteId={snapshot.library.selectedTestSuiteId}
+        onSuite={(testSuiteId) => {
+          if (testSuiteId) window.testron?.command({ type: 'select-test-suite', testSuiteId });
+        }}
         environment={context.environment}
         environments={environments}
         environmentId={selectedEnvironmentId}
@@ -464,11 +492,15 @@ export const RecordScreen = () => {
         profile={selectedProfile?.name}
         profiles={profiles}
         profileId={snapshot.library.selectedProfileId}
-        onProfile={(profileId) => {
-          if (profileId) window.testron?.command({ type: 'select-profile', profileId });
-        }}
+        onProfile={(profileId) =>
+          window.testron?.command({
+            type: 'select-profile',
+            ...(profileId ? { profileId } : {}),
+          })
+        }
         onConfigureProfile={() => setConfiguringProfile(true)}
         test={name}
+        onTestEdit={() => setEditingTitle(true)}
         onBack={() => {
           window.location.hash = '#/';
         }}
@@ -619,6 +651,21 @@ export const RecordScreen = () => {
             }}
           />
         )}
+        {editingTitle && (
+          <NewTestForm
+            initialTitle={name}
+            heading="Edit test title"
+            submitLabel="Save title"
+            onClose={() => setEditingTitle(false)}
+            onStart={(title) => {
+              const testId = snapshot.library.selectedTestId;
+              if (testId) window.testron?.command({ type: 'rename-test', testId, title });
+              setName(title);
+              setEditingTitle(false);
+              setLog(`Renamed test · ${title}`);
+            }}
+          />
+        )}
       </div>
 
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
@@ -695,151 +742,3 @@ const FinishSheet = ({
     </section>
   </div>
 );
-
-const ProfileSheet = ({
-  environment,
-  disabled,
-  onCancel,
-  onSave,
-}: {
-  environment: string;
-  disabled: boolean;
-  onCancel: () => void;
-  onSave: (
-    name: string,
-    variables: Array<{ name: string; value: string; sensitive: boolean }>,
-  ) => void;
-}) => {
-  const [name, setName] = useState('Administrator');
-  const [variables, setVariables] = useState([
-    { name: 'username', value: '', sensitive: false },
-    { name: 'password', value: '', sensitive: true },
-  ]);
-  const validVariables = variables.filter((variable) => variable.name.trim());
-  const unique =
-    new Set(validVariables.map((variable) => variable.name.trim())).size === validVariables.length;
-  const complete = validVariables.every((variable) => variable.value.length > 0);
-
-  return (
-    <div
-      className="absolute inset-0 z-40 grid place-items-center"
-      style={{ background: 'var(--ui-overlay)' }}
-    >
-      <section
-        role="dialog"
-        aria-label="Authentication profile"
-        className="w-[560px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
-      >
-        <h2 className="text-lg font-semibold">New profile</h2>
-        <p className="mt-1 text-base text-ink-3">
-          Credentials for {environment}. Recorded tests store variable names, never these values.
-        </p>
-
-        <label className="mt-4 block">
-          <span className="text-sm text-ink-3">Profile name</span>
-          <input
-            aria-label="Profile name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
-          />
-        </label>
-        <label className="mt-3 block">
-          <span className="text-sm text-ink-3">Authentication type</span>
-          <select
-            aria-label="Authentication type"
-            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none"
-          >
-            <option value="credentials">Login / password</option>
-            <option disabled>OAuth — coming later</option>
-            <option disabled>Authentication header — coming later</option>
-            <option disabled>Cookie — coming later</option>
-          </select>
-        </label>
-
-        <div className="mt-4">
-          <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-sm text-ink-3">
-            <span>Name</span>
-            <span>Value</span>
-            <span />
-          </div>
-          {variables.map((variable, index) => (
-            <div key={index} className="mb-2 grid grid-cols-[1fr_1.35fr_70px] gap-2">
-              <input
-                aria-label={`Variable ${index + 1} name`}
-                value={variable.name}
-                onChange={(event) =>
-                  setVariables((current) =>
-                    current.map((entry, entryIndex) =>
-                      entryIndex === index
-                        ? {
-                            ...entry,
-                            name: event.target.value,
-                            sensitive: /password|secret|token/i.test(event.target.value),
-                          }
-                        : entry,
-                    ),
-                  )
-                }
-                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
-              />
-              <input
-                aria-label={`Variable ${index + 1} value`}
-                type={variable.sensitive ? 'password' : 'text'}
-                value={variable.value}
-                onChange={(event) =>
-                  setVariables((current) =>
-                    current.map((entry, entryIndex) =>
-                      entryIndex === index ? { ...entry, value: event.target.value } : entry,
-                    ),
-                  )
-                }
-                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setVariables((current) => current.filter((_, entryIndex) => entryIndex !== index))
-                }
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setVariables((current) => [...current, { name: '', value: '', sensitive: false }])
-            }
-          >
-            + Variable
-          </Button>
-          {!unique && <p className="mt-2 text-sm text-critical">Variable names must be unique.</p>}
-        </div>
-
-        <div className="mt-5 flex items-center gap-2">
-          <Button
-            variant="primary"
-            icon="check"
-            disabled={
-              disabled || !name.trim() || validVariables.length === 0 || !unique || !complete
-            }
-            onClick={() =>
-              onSave(
-                name.trim(),
-                validVariables.map((variable) => ({ ...variable, name: variable.name.trim() })),
-              )
-            }
-          >
-            Create and select
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
-};

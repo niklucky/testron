@@ -12,6 +12,7 @@ export const desktopTestDraftSchema = z
   .object({
     draftId: entityIdSchema,
     projectId: entityIdSchema,
+    testSuiteId: entityIdSchema.nullable().optional(),
     testId: entityIdSchema.optional(),
     baseRevision: revisionPointerSchema.nullable(),
     content: testRevisionContentSchema,

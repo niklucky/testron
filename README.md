@@ -40,3 +40,14 @@ pnpm test:electron
 ```
 
 The replay command runs the checked-in source generated from the canonical fixture steps against the controlled local fixture. The Electron suite verifies the tested website's sandbox, the recording pipeline, and persistence across an application restart.
+
+## Windows test build from macOS
+
+```sh
+pnpm make:win
+```
+
+This creates a portable Windows x64 ZIP under `apps/desktop/out/make/zip/win32/x64/`.
+The packaged app uses `https://testron.dev` as its server; the friend testing it
+can extract the ZIP and run `Testron.exe`. The build is unsigned, so Windows may
+show a SmartScreen warning.

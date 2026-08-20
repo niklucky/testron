@@ -2,6 +2,9 @@ import type { LibrarySnapshot } from '../../main/persistence/repository';
 
 export type ProjectSurface = 'loading' | 'onboarding' | 'product';
 
+export const viewerLabel = (viewer: LibrarySnapshot['viewer']): string =>
+  viewer?.name ?? viewer?.email ?? 'Account';
+
 /** Remote workspaces must load at least once before an empty account is known to be empty. */
 export const projectSurface = (library: LibrarySnapshot): ProjectSurface => {
   const server = library.server;

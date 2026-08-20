@@ -6,7 +6,7 @@ import { presentRecordedSteps, presentSource } from '../../src/renderer/record/l
 const at = '2026-08-16T10:00:00.000Z';
 
 describe('live record presentation', () => {
-  it('preserves domain actions, assertions, secrets, and locator alternatives', () => {
+  it('preserves literal password fills, assertions, and locator alternatives', () => {
     const steps: Step[] = [
       {
         version: 1,
@@ -15,8 +15,7 @@ describe('live record presentation', () => {
           primary: { strategy: 'label', text: 'Password' },
           alternatives: [{ strategy: 'testId', attribute: 'data-testid', value: 'password' }],
         },
-        value: '',
-        secret: { environmentVariable: 'PASSWORD' },
+        value: 'test',
         metadata: { recordedAt: at },
       },
       {
@@ -46,7 +45,7 @@ describe('live record presentation', () => {
         label: 'Password',
         locator: "getByLabel('Password')",
         alternatives: ["getByTestId('password')"],
-        secret: 'PASSWORD',
+        value: 'test',
         at: 0,
       },
       { kind: 'assert', assertion: 'textContains', value: 'Welcome', at: 2 },

@@ -74,7 +74,7 @@ describe('LocalReplayRunner', () => {
         kind: 'fill',
         target,
         value: '',
-        secret: { environmentVariable: 'ACCOUNT_NAME' },
+        variable: { name: 'accountName' },
         metadata,
       },
     ];
@@ -93,7 +93,7 @@ describe('LocalReplayRunner', () => {
       status: 'failed',
       locator: 'data-testid="name"',
     });
-    expect(result.steps[1].error).toContain('Missing required environment variable: ACCOUNT_NAME');
+    expect(result.steps[1].error).toContain('Missing required profile variable: accountName');
     expect(result.steps[1].pageUrl).toContain('data:text/html');
     expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(true);
     expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(true);

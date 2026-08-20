@@ -13,7 +13,7 @@
  */
 
 export { Icon, iconNames, type IconName } from './icons';
-export { useTheme, type Theme } from './theme';
+export { useTheme, type Theme, type ThemePreference } from './theme';
 export {
   chartFill,
   heatEmpty,

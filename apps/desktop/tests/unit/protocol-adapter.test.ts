@@ -45,6 +45,8 @@ describe('desktop protocol adapter', () => {
       test: {
         id: id('11'),
         projectId: id('12'),
+        testSuiteId: null,
+        title: 'checkout',
         currentRevision: { id: id('13'), number: 4 },
         createdAt: now,
         createdBy: id('14'),

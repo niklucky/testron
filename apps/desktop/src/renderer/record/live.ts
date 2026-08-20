@@ -99,7 +99,7 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           label: labelFor(step.target.primary),
           locator: presentLocator(step.target.primary),
           value: step.value,
-          secret: step.variable?.name ?? step.secret?.environmentVariable,
+          secret: step.variable?.name,
         };
       case 'selectOption':
         return {
@@ -167,8 +167,9 @@ export const recordingContext = (snapshot: AppSnapshot) => {
   const { library } = snapshot;
   const project = library.projects.find((one) => one.id === library.selectedProjectId);
   const environment = library.environments.find((one) => one.id === library.selectedEnvironmentId);
+  const suite = library.testSuites.find((one) => one.id === library.selectedTestSuiteId);
   const test = library.tests.find((one) => one.id === library.selectedTestId);
-  const title = test?.title ?? 'Untitled test';
+  const title = test?.title ?? snapshot.title;
   const filename = `${
     title
       .trim()
@@ -178,7 +179,7 @@ export const recordingContext = (snapshot: AppSnapshot) => {
   }.spec.ts`;
   return {
     project: project?.name ?? 'My project',
-    suite: 'Tests',
+    suite: suite?.name ?? 'No test suites',
     environment: environment?.name ?? 'Local',
     baseUrl: environment?.baseUrl ?? 'http://127.0.0.1:4174',
     testIdAttribute: environment?.testIdAttribute ?? 'data-testid',

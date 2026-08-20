@@ -3,18 +3,32 @@ import { z } from 'zod';
 import { entityIdSchema, revisionPointerSchema, timestampSchema } from './common';
 import {
   createEnvironmentRequestSchema,
+  createProfileRequestSchema,
   createProjectRequestSchema,
   createTestRequestSchema,
+  createTestSuiteRequestSchema,
+  deleteTestSuiteRequestSchema,
   getTestRequestSchema,
   getTestRevisionHistoryRequestSchema,
   getWorkspaceRequestSchema,
+  listTestSuitesRequestSchema,
+  finishTestRunRequestSchema,
   saveTestRevisionRequestSchema,
+  startTestRunRequestSchema,
+  updateEnvironmentRequestSchema,
+  updateProfileRequestSchema,
+  updateProjectRequestSchema,
+  updateTestSuiteRequestSchema,
 } from './operations';
 import {
   environmentSchema,
+  profileSchema,
   projectSchema,
   testRevisionSchema,
+  testRunSchema,
   testSnapshotSchema,
+  testSuiteSchema,
+  testSuiteSummarySchema,
   workspaceSnapshotSchema,
 } from './resources';
 
@@ -24,7 +38,12 @@ const accountCredentialsFields = {
 } as const;
 
 export const authLoginInputSchema = z.object(accountCredentialsFields).strict();
-export const authRegisterInputSchema = z.object(accountCredentialsFields).strict();
+export const authRegisterInputSchema = z
+  .object({
+    ...accountCredentialsFields,
+    name: z.string().trim().min(1).max(100),
+  })
+  .strict();
 export const authSessionOutputSchema = z
   .object({
     accessToken: z.string().min(40),
@@ -39,6 +58,38 @@ export const createProjectProcedure = {
 export const createEnvironmentProcedure = {
   input: createEnvironmentRequestSchema,
   output: environmentSchema,
+} as const;
+export const updateProjectProcedure = {
+  input: updateProjectRequestSchema,
+  output: projectSchema,
+} as const;
+export const updateEnvironmentProcedure = {
+  input: updateEnvironmentRequestSchema,
+  output: environmentSchema,
+} as const;
+export const createProfileProcedure = {
+  input: createProfileRequestSchema,
+  output: profileSchema,
+} as const;
+export const updateProfileProcedure = {
+  input: updateProfileRequestSchema,
+  output: profileSchema,
+} as const;
+export const createTestSuiteProcedure = {
+  input: createTestSuiteRequestSchema,
+  output: testSuiteSchema,
+} as const;
+export const listTestSuitesProcedure = {
+  input: listTestSuitesRequestSchema,
+  output: z.array(testSuiteSummarySchema),
+} as const;
+export const updateTestSuiteProcedure = {
+  input: updateTestSuiteRequestSchema,
+  output: testSuiteSchema,
+} as const;
+export const deleteTestSuiteProcedure = {
+  input: deleteTestSuiteRequestSchema,
+  output: testSuiteSchema,
 } as const;
 export const createTestProcedure = {
   input: createTestRequestSchema,
@@ -77,6 +128,14 @@ export const saveTestRevisionOutputSchema = z.discriminatedUnion('status', [
 export const saveTestRevisionProcedure = {
   input: saveTestRevisionRequestSchema,
   output: saveTestRevisionOutputSchema,
+} as const;
+export const startTestRunProcedure = {
+  input: startTestRunRequestSchema,
+  output: testRunSchema,
+} as const;
+export const finishTestRunProcedure = {
+  input: finishTestRunRequestSchema,
+  output: testRunSchema,
 } as const;
 
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;

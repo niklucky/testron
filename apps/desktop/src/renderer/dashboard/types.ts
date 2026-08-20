@@ -41,16 +41,21 @@ export type TestRecord = {
   name: string;
   status: StepState;
   minutesAgo: number;
-  seconds: number;
+  seconds?: number;
   failureId?: string;
 };
 
 export type SuiteRecord = {
   id: string;
+  projectId?: string;
   name: string;
   owner: string;
   tests: TestRecord[];
   lastRunMinutesAgo: number;
+  revision?: number;
+  testCount?: number;
+  failedCount?: number;
+  totalLatestDurationMs?: number;
 };
 
 export type DayRecord = {

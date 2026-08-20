@@ -8,7 +8,7 @@ export const revisionNumberSchema = z.number().int().positive();
 export const idempotencyKeySchema = z.string().trim().min(8).max(200);
 export const httpUrlSchema = z
   .url()
-  .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), {
+  .refine((value) => URL.canParse(value) && ['http:', 'https:'].includes(new URL(value).protocol), {
     message: 'Only HTTP(S) URLs are supported.',
   });
 

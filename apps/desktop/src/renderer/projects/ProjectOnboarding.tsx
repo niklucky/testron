@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
 import { Button, Icon, IconButton, PulseDot, useTheme } from '../design';
+import { viewerLabel } from './access';
 
 export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => {
   const { theme, toggle } = useTheme();
@@ -37,7 +38,9 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
           <span className="ui-mono grid h-7 w-7 place-items-center rounded-[7px] bg-accent text-md font-bold text-accent-ink">
             T
           </span>
-          <span className="text-md font-semibold tracking-[-0.01em]">Testron</span>
+          <span className="text-md font-semibold tracking-[-0.01em]">
+            {viewerLabel(library.viewer)}
+          </span>
         </div>
         <div className="ml-auto flex items-center gap-2 text-sm text-ink-3 [-webkit-app-region:no-drag]">
           <PulseDot label="Connected to server" />

@@ -58,7 +58,7 @@ describe('Playwright generation', () => {
     expect(source).toContain("page.locator('[name=\\'username\\']').fill('qa')");
   });
 
-  it('generates all Phase 2 assertions and keeps secrets out of source', () => {
+  it('generates all Phase 2 assertions and literal manually entered passwords', () => {
     const metadata = { recordedAt: '2026-01-01T00:00:00.000Z' };
     const target = {
       primary: { strategy: 'testId' as const, attribute: 'data-testid', value: 'control' },
@@ -69,8 +69,7 @@ describe('Playwright generation', () => {
         version: 1,
         kind: 'fill',
         target,
-        value: '',
-        secret: { environmentVariable: 'TESTRON_PASSWORD' },
+        value: 'actual-password',
         metadata,
       },
       { version: 1, kind: 'assertElement', target, assertion: { type: 'visible' }, metadata },
@@ -103,8 +102,8 @@ describe('Playwright generation', () => {
       { version: 1, kind: 'assertUrlPath', expected: '/welcome', metadata },
     ];
     const source = generatePlaywright('trustworthy test', steps);
-    expect(source).toContain("requiredEnv('TESTRON_PASSWORD')");
-    expect(source).not.toContain('actual-password');
+    expect(source).toContain(".fill('actual-password')");
+    expect(source).not.toContain('TESTRON_PASSWORD');
     expect(source).toContain('.toBeVisible()');
     expect(source).toContain('.toBeHidden()');
     expect(source).toContain(".toContainText('Ready')");

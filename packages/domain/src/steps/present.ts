@@ -31,9 +31,7 @@ export const presentStep = (step: Step): string => {
     case 'fill':
       return step.variable
         ? `Fill ${locatorName(step.target.primary)} with {{${step.variable.name}}}`
-        : step.secret
-          ? `Fill ${locatorName(step.target.primary)} with secret $${step.secret.environmentVariable}`
-          : `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
+        : `Fill ${locatorName(step.target.primary)} with “${step.value}”`;
     case 'selectOption':
       return `Select “${step.value}” in ${locatorName(step.target.primary)}`;
     case 'check':

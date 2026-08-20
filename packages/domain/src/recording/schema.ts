@@ -6,10 +6,6 @@ export const targetObservationSchema = z.object({
   locators: z.array(locatorSchema).min(1),
   fingerprint: z.string().min(1),
   sensitive: z.boolean().default(false),
-  secretName: z
-    .string()
-    .regex(/^[A-Z][A-Z0-9_]*$/)
-    .optional(),
   variableName: z.string().trim().min(1).max(100).optional(),
   warnings: z.array(z.string().min(1)).optional(),
 });

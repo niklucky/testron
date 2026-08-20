@@ -5,7 +5,15 @@ import { describe, expect, it } from 'vitest';
 
 import { inspectCompatibility } from '../src/compatibility';
 import { revisionConflictResponseSchema } from '../src/errors';
-import { saveTestRevisionRequestSchema } from '../src/operations';
+import {
+  finishTestRunRequestSchema,
+  createProfileRequestSchema,
+  saveTestRevisionRequestSchema,
+  startTestRunRequestSchema,
+  updateEnvironmentRequestSchema,
+  updateProjectRequestSchema,
+  updateProfileRequestSchema,
+} from '../src/operations';
 import { testRevisionSchema, testSnapshotSchema } from '../src/resources';
 
 const fixture = (name: string): unknown =>
@@ -42,6 +50,8 @@ const snapshot = {
   test: {
     id: ids.test,
     projectId: ids.project,
+    testSuiteId: null,
+    title: 'empty test',
     currentRevision: { id: ids.revision, number: 1 },
     createdAt: '2026-01-01T00:00:00.000Z',
     createdBy: ids.actor,
@@ -101,6 +111,12 @@ describe('revision invariants', () => {
         test: { ...snapshot.test, currentRevision: { id: ids.revision, number: 2 } },
       }).success,
     ).toBe(false);
+    expect(
+      testSnapshotSchema.safeParse({
+        ...snapshot,
+        test: { ...snapshot.test, title: 'stale projected title' },
+      }).success,
+    ).toBe(false);
   });
 
   it('returns the current canonical snapshot in a stale-write conflict', () => {
@@ -119,5 +135,117 @@ describe('revision invariants', () => {
       },
     });
     expect(conflict.error.current.currentRevision.id).toBe(ids.revision);
+  });
+});
+
+describe('server-owned local run lifecycle', () => {
+  const meta = {
+    protocolVersion: 1,
+    requestId: ids.request,
+    idempotencyKey: 'run-operation',
+    client: { kind: 'desktop' as const, version: '0.0.1' },
+    supportedStepVersions: [1],
+  };
+
+  it('validates run start and terminal completion requests', () => {
+    expect(
+      startTestRunRequestSchema.parse({
+        meta,
+        testId: ids.test,
+        environmentId: ids.environment,
+        source: 'desktop-local',
+      }),
+    ).toMatchObject({ testId: ids.test, source: 'desktop-local' });
+    expect(
+      finishTestRunRequestSchema.parse({
+        meta,
+        runId: ids.revision,
+        status: 'passed',
+        durationMs: 250,
+      }),
+    ).toMatchObject({ status: 'passed', durationMs: 250 });
+    expect(
+      finishTestRunRequestSchema.safeParse({
+        meta,
+        runId: ids.revision,
+        status: 'running',
+        durationMs: 0,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('project settings mutations', () => {
+  const meta = {
+    protocolVersion: 1 as const,
+    requestId: ids.request,
+    idempotencyKey: 'settings-operation',
+    client: { kind: 'desktop' as const, version: '0.0.1' },
+    supportedStepVersions: [1],
+  };
+
+  it('validates project and environment settings with server revision guards', () => {
+    expect(
+      updateProjectRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        baseRevision: 1,
+        name: 'Checkout',
+        url: 'https://checkout.example.test/',
+      }),
+    ).toMatchObject({ name: 'Checkout', baseRevision: 1 });
+    expect(
+      updateEnvironmentRequestSchema.parse({
+        meta,
+        environmentId: ids.environment,
+        baseRevision: 2,
+        name: 'Production',
+        baseUrl: 'https://example.test/',
+      }),
+    ).toMatchObject({ name: 'Production', baseRevision: 2 });
+    expect(
+      updateProjectRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        baseRevision: 0,
+        name: 'Checkout',
+        url: 'not a URL',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates profile creation and revision-guarded updates', () => {
+    const variables = [
+      { name: 'username', value: 'admin@example.test', sensitive: false },
+      { name: 'password', value: 'secret value', sensitive: true },
+    ];
+    expect(
+      createProfileRequestSchema.parse({
+        meta,
+        environmentId: ids.environment,
+        name: 'Administrator',
+        authenticationType: 'credentials',
+        variables,
+      }),
+    ).toMatchObject({ name: 'Administrator', variables });
+    expect(
+      updateProfileRequestSchema.parse({
+        meta,
+        profileId: ids.revision,
+        baseRevision: 1,
+        name: 'QA administrator',
+        authenticationType: 'credentials',
+        variables,
+      }),
+    ).toMatchObject({ baseRevision: 1 });
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        environmentId: ids.environment,
+        name: 'Duplicate variables',
+        authenticationType: 'credentials',
+        variables: [variables[0], variables[0]],
+      }).success,
+    ).toBe(false);
   });
 });

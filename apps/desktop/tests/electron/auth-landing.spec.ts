@@ -22,11 +22,12 @@ test('a configured remote server gates the product behind desktop sign-in', asyn
     ).toBeVisible();
 
     await appWindow.getByRole('button', { name: 'Create account' }).first().click();
+    const createAccount = appWindow.getByRole('button', { name: 'Create account' }).last();
     await appWindow.getByLabel('Email address').fill('owner@example.test');
     await appWindow.getByLabel('Password', { exact: true }).fill('correct horse battery staple');
-    await appWindow.getByLabel('Confirm password').fill('different password value');
-    await appWindow.getByRole('button', { name: 'Create account' }).last().click();
-    await expect(appWindow.getByRole('alert')).toHaveText('The passwords do not match.');
+    await expect(createAccount).toBeDisabled();
+    await appWindow.getByLabel('Name', { exact: true }).fill('Nikita S.');
+    await expect(createAccount).toBeEnabled();
 
     await appWindow.getByRole('button', { name: 'Sign in' }).first().click();
     await appWindow.getByLabel('Password').fill('correct horse battery staple');

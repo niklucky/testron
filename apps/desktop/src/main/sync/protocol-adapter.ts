@@ -72,6 +72,7 @@ export const toCreateTestRequest = (
   createTestRequestSchema.parse({
     meta: mutationMeta(identity),
     projectId: test.projectId,
+    testSuiteId: test.testSuiteId,
     content: {
       stepSchemaVersion: 1,
       title: test.title,
@@ -104,6 +105,7 @@ export const fromTestSnapshot = (
   const draft = desktopTestDraftSchema.parse({
     draftId: options.draftId ?? randomUUID(),
     projectId: snapshot.test.projectId,
+    testSuiteId: snapshot.test.testSuiteId,
     testId: snapshot.test.id,
     baseRevision: snapshot.test.currentRevision,
     content: snapshot.currentRevision.content,
@@ -116,7 +118,8 @@ export const fromTestSnapshot = (
       id: snapshot.test.id,
       projectId: snapshot.test.projectId,
       environmentId: snapshot.currentRevision.content.environmentId,
-      title: snapshot.currentRevision.content.title,
+      testSuiteId: snapshot.test.testSuiteId,
+      title: snapshot.test.title,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
     },

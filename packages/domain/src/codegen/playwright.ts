@@ -35,7 +35,7 @@ export const generateLocator = (locator: Locator): string => {
 
 export const generatePlaywright = (title: string, steps: readonly Step[]): string => {
   const hasAssertions = steps.some((step) => step.kind.startsWith('assert'));
-  const hasSecrets = steps.some((step) => step.kind === 'fill' && (step.secret || step.variable));
+  const hasVariables = steps.some((step) => step.kind === 'fill' && step.variable);
   const body = steps.map((step) => {
     switch (step.kind) {
       case 'navigate':
@@ -44,11 +44,7 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.click();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${
-          step.variable
-            ? `requiredEnv(${quote(step.variable.name)})`
-            : step.secret
-              ? `requiredEnv(${quote(step.secret.environmentVariable)})`
-              : quote(step.value)
+          step.variable ? `requiredEnv(${quote(step.variable.name)})` : quote(step.value)
         });`;
       case 'selectOption':
         return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
@@ -93,7 +89,7 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
 
   return [
     `import { test${hasAssertions ? ', expect' : ''} } from '@playwright/test';`,
-    ...(hasSecrets
+    ...(hasVariables
       ? [
           '',
           'const requiredEnv = (name: string): string => {',

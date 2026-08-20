@@ -11,13 +11,22 @@ const now = '2026-08-19T00:00:00.000Z';
 const user = {
   id: '00000000-0000-4000-8000-000000000001',
   email: 'owner@example.test',
+  name: null,
 };
 
 test('an empty remote workspace onboards and the selector creates server projects', async () => {
   const projects: Project[] = [];
   let nextProject = 10;
   let workspaceOffline = false;
-  const workspace = (): WorkspaceSnapshot => ({ projects, environments: [], tests: [] });
+  const workspace = (): WorkspaceSnapshot => ({
+    viewer: user,
+    projects,
+    environments: [],
+    profiles: [],
+    testSuites: [],
+    tests: [],
+    activeRuns: [],
+  });
   const authentication = {
     register: async () => ({
       accessToken: 'a'.repeat(48),
@@ -39,6 +48,7 @@ test('an empty remote workspace onboards and the selector creates server project
         id: `00000000-0000-4000-8000-${String(nextProject++).padStart(12, '0')}`,
         ownerId: user.id,
         name: request.name,
+        url: null,
         revision: 1,
         createdAt: now,
         updatedAt: now,
@@ -67,20 +77,40 @@ test('an empty remote workspace onboards and the selector creates server project
   try {
     const appWindow = await electronApp.firstWindow();
     await appWindow.getByRole('button', { name: 'Create account' }).first().click();
+    await appWindow.getByLabel('Name', { exact: true }).fill('Nikita S.');
     await appWindow.getByLabel('Email address').fill('owner@example.test');
     await appWindow.getByLabel('Password', { exact: true }).fill('correct horse battery staple');
-    await appWindow.getByLabel('Confirm password').fill('correct horse battery staple');
     await appWindow.getByRole('button', { name: 'Create account' }).last().click();
 
     await expect(
       appWindow.getByRole('heading', { name: 'Create a project to get started' }),
     ).toBeVisible();
+    await expect(appWindow.getByText('owner@example.test', { exact: true })).toBeVisible();
     await appWindow.getByLabel('Project name').fill('Commerce website');
     await appWindow.getByRole('button', { name: 'Create project' }).click();
 
     const selector = appWindow.getByRole('combobox', { name: 'Project' });
     await expect(selector).toHaveValue('00000000-0000-4000-8000-000000000010');
     await expect(selector.locator('option')).toHaveText(['Commerce website', '+ Create project']);
+    await expect(appWindow.getByText('0 runs in flight')).toBeVisible();
+    await expect(appWindow.getByRole('button', { name: 'Jump to…' })).toBeVisible();
+    await expect(appWindow.getByRole('button', { name: 'Sync' })).toHaveCount(0);
+    await expect(appWindow.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
+    await expect(appWindow.getByRole('button', { name: 'Switch to dark' })).toHaveCount(0);
+    await expect(appWindow.getByRole('button', { name: 'Row density' })).toHaveCount(0);
+    await expect(
+      appWindow.getByRole('button', { name: 'Focus mode — hide the context rail' }),
+    ).toHaveCount(0);
+
+    await appWindow.getByRole('button', { name: /owner@example\.test/ }).click();
+    const accountMenu = appWindow.getByRole('menu', { name: 'Account menu' });
+    await expect(accountMenu.getByRole('menuitem', { name: /Profile/ })).toBeDisabled();
+    await expect(accountMenu.getByRole('radio')).toHaveText(['Light', 'Dark', 'System']);
+    await expect(accountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await accountMenu.getByRole('radio', { name: 'System' }).click();
+    await expect
+      .poll(() => appWindow.evaluate(() => localStorage.getItem('testron-theme')))
+      .toBe('system');
 
     await selector.selectOption({ label: '+ Create project' });
     await expect(appWindow.getByRole('heading', { name: 'Create another project' })).toBeVisible();

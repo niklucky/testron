@@ -112,6 +112,7 @@ export class DesktopSyncCoordinator {
             createTestRequestSchema.parse({
               meta: mutationMeta(this.clientVersion, `test-create-${draft.draftId}`),
               projectId,
+              testSuiteId: draft.testSuiteId,
               content: { ...draft.content, environmentId },
             }),
           );

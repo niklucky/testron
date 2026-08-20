@@ -4,6 +4,7 @@ import type { AppSnapshot } from '../../src/preload/api';
 import { liveTestBoard } from '../../src/renderer/test-view/live';
 
 const snapshot: AppSnapshot = {
+  title: 'Untitled test',
   verifyAssertion: 'visible',
   recording: false,
   status: 'finished',
@@ -59,6 +60,7 @@ const snapshot: AppSnapshot = {
         authRevision: 1,
       },
     ],
+    testSuites: [],
     tests: [
       {
         id: 'test',
