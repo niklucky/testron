@@ -85,7 +85,7 @@ const client = (token?: string) =>
   createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        url: `${server.url}/trpc`,
+        url: `${server.url}/api/trpc`,
         headers: token ? { authorization: `Bearer ${token}` } : {},
       }),
     ],
@@ -114,6 +114,12 @@ const createSlice = async (api: ReturnType<typeof client>) => {
 };
 
 describe('PostgreSQL tRPC vertical slice', () => {
+  it('serves health checks under the canonical API prefix', async () => {
+    const response = await fetch(`${server.url}/api/health`);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(response.status).toBe(200);
+  });
+
   it('registers and logs in without a browser device flow', async () => {
     const email = 'owner@example.test';
     const password = 'correct horse battery staple';

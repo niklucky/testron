@@ -21,11 +21,16 @@ export const createHttpServer = (options: {
   createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     try {
-      if (url.pathname.startsWith('/trpc/')) {
+      const trpcPrefix = url.pathname.startsWith('/api/trpc/')
+        ? '/api/trpc/'
+        : url.pathname.startsWith('/trpc/')
+          ? '/trpc/'
+          : undefined;
+      if (trpcPrefix) {
         await nodeHTTPRequestHandler({
           req: request,
           res: response,
-          path: url.pathname.slice('/trpc/'.length),
+          path: url.pathname.slice(trpcPrefix.length),
           router: options.router,
           createContext: async () => {
             const user = await options.authentication.authenticate(request.headers.authorization);
@@ -34,7 +39,10 @@ export const createHttpServer = (options: {
         });
         return;
       }
-      if (request.method === 'GET' && url.pathname === '/health') {
+      if (
+        request.method === 'GET' &&
+        (url.pathname === '/api/health' || url.pathname === '/health')
+      ) {
         json(response, 200, { ok: true });
         return;
       }

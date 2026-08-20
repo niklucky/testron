@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       '.vite/**',
       '**/.vite/**',
+      '**/dist/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',
