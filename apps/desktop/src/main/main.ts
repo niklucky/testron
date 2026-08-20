@@ -1851,11 +1851,9 @@ const createWindow = async (): Promise<void> => {
   for (const [id, view] of panelViews) {
     void loadAppRenderer(view.webContents, PANEL_ROUTES[id]).catch(() => undefined);
   }
-  try {
-    await websiteView.webContents.loadURL('http://127.0.0.1:4174');
-  } catch (error) {
-    session.warn(error instanceof Error ? error.message : 'Could not load the fixture page.');
-  }
+  // WebContentsView starts on about:blank. Keep it there until a recorder
+  // screen explicitly navigates to the selected environment; the local
+  // fixture is test data, not an application startup page.
 };
 
 app.whenReady().then(async () => {

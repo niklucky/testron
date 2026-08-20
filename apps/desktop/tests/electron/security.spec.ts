@@ -8,7 +8,38 @@ const openRecorder = async (appWindow: Page) => {
     window.location.hash = '#/recorder';
   });
   await appWindow.getByRole('button', { name: 'Start recording' }).waitFor({ timeout: 3_000 });
+  await appWindow.evaluate(() =>
+    window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
+  );
 };
+
+test('does not preload the local fixture before a target is selected', async () => {
+  const electronApp = await electron.launch({ args: ['.'] });
+  try {
+    await electronApp.firstWindow();
+    await expect
+      .poll(() =>
+        electronApp.evaluate(
+          ({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL().includes('#/panel/')).length,
+        ),
+      )
+      .toBe(2);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL().startsWith('http://127.0.0.1:4174')),
+        ),
+      )
+      .toBe(false);
+  } finally {
+    await electronApp.close();
+  }
+});
 
 test('the tested website has no privileged renderer surface', async () => {
   const electronApp = await electron.launch({ args: ['.'] });

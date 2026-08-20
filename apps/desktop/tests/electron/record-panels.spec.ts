@@ -21,6 +21,18 @@ const openRecordScreen = async () => {
     window.location.hash = '#/record';
   });
   await appWindow.getByRole('button', { name: 'Record' }).waitFor({ timeout: 10_000 });
+  await appWindow.evaluate(() =>
+    window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
+  );
+  await expect
+    .poll(() =>
+      electronApp.evaluate(({ webContents }) =>
+        webContents
+          .getAllWebContents()
+          .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+      ),
+    )
+    .toBe(true);
 
   // The panel views load in the background so they never delay startup; every
   // test here needs them present before it can say anything about them.

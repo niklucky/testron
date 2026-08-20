@@ -17,6 +17,18 @@ test('record screen hotkeys control recording and ignore ordinary keys in the ad
   try {
     await appWindow.evaluate(() => (window.location.hash = '#/record'));
     await appWindow.getByLabel('Address').waitFor({ timeout: 10_000 });
+    await appWindow.evaluate(() =>
+      window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
+    );
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+        ),
+      )
+      .toBe(true);
 
     await appWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+L' : 'Control+L');
     await expect(appWindow.getByLabel('Address')).toBeFocused();
@@ -31,16 +43,19 @@ test('record screen hotkeys control recording and ignore ordinary keys in the ad
     await expect(appWindow.getByRole('button', { name: /Pause/ })).toBeVisible();
 
     const sendWebsiteKey = (keyCode: string, typeCharacter = false) =>
-      electronApp.evaluate(async ({ webContents }, { key, typeCharacter }) => {
-        const website = webContents
-          .getAllWebContents()
-          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
-        if (!website) throw new Error('Fixture WebContentsView was not found.');
-        website.focus();
-        website.sendInputEvent({ type: 'keyDown', keyCode: key });
-        if (typeCharacter) website.sendInputEvent({ type: 'char', keyCode: key });
-        website.sendInputEvent({ type: 'keyUp', keyCode: key });
-      }, { key: keyCode, typeCharacter });
+      electronApp.evaluate(
+        async ({ webContents }, { key, typeCharacter }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+          if (!website) throw new Error('Fixture WebContentsView was not found.');
+          website.focus();
+          website.sendInputEvent({ type: 'keyDown', keyCode: key });
+          if (typeCharacter) website.sendInputEvent({ type: 'char', keyCode: key });
+          website.sendInputEvent({ type: 'keyUp', keyCode: key });
+        },
+        { key: keyCode, typeCharacter },
+      );
 
     await electronApp.evaluate(async ({ webContents }) => {
       const website = webContents
