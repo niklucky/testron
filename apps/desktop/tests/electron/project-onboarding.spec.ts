@@ -28,6 +28,7 @@ test('an empty remote workspace onboards and the selector creates server project
     profiles: [],
     testSuites: [],
     tests: [],
+    projectOverviews: [],
     activeRuns: [],
   });
   const authentication = {

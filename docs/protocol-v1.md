@@ -143,7 +143,18 @@ Protocol v1 defines the contracts needed by the first server slice:
 - create an environment in an authorized project;
 - create a test and its first revision;
 - read the authenticated user's bounded workspace snapshot into desktop process
-  memory;
+
+The workspace snapshot also carries one `projectOverviews` aggregate per accessible project. Each
+aggregate is server-owned and includes suite/test totals, latest pass/fail/no-result counts, the
+30-calendar-day run total and daily outcome buckets, the last completed run timestamp, and the
+current in-flight count. The desktop selects the aggregate by `selectedProjectId`; it does not
+derive live dashboard values from fixture data or the bounded recent-run list.
+
+When no server workspace is configured, the dashboard remains an intentional local demonstration
+mode and uses deterministic fixture values. Once a server is configured, the UI instead shows
+explicit loading, empty, or error states and never falls back to those fixtures.
+memory;
+
 - read a canonical test snapshot;
 - list immutable test revision history;
 - save a new test revision against an observed base revision.

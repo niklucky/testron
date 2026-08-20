@@ -114,7 +114,34 @@ export const testSuiteSummarySchema = testSuiteSchema.extend({
   testCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
   totalLatestDurationMs: z.number().int().nonnegative(),
+  lastRunAt: timestampSchema.nullable(),
 });
+
+export const projectRunDaySchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    passed: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    cancelled: z.number().int().nonnegative(),
+    timedOut: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** Server-owned aggregates used by the dashboard overview for one project. */
+export const projectOverviewSummarySchema = z
+  .object({
+    projectId: entityIdSchema,
+    suiteCount: z.number().int().nonnegative(),
+    testCount: z.number().int().nonnegative(),
+    passedCount: z.number().int().nonnegative(),
+    failedCount: z.number().int().nonnegative(),
+    noResultCount: z.number().int().nonnegative(),
+    runCount30d: z.number().int().nonnegative(),
+    activeRunCount: z.number().int().nonnegative(),
+    lastRunAt: timestampSchema.nullable(),
+    runDays: z.array(projectRunDaySchema).max(30),
+  })
+  .strict();
 
 export const revisionStepSchema = z
   .object({
@@ -253,10 +280,12 @@ export const workspaceSnapshotSchema = z
           .object({
             status: testRunStatusSchema.exclude(['running']),
             durationMs: z.number().int().nonnegative(),
+            startedAt: timestampSchema,
           })
           .strict(),
       )
       .optional(),
+    projectOverviews: z.array(projectOverviewSummarySchema),
     recentRuns: z.array(testRunSchema).optional(),
     activeRuns: z.array(testRunSchema),
   })
@@ -268,6 +297,8 @@ export type ProfileVariable = z.infer<typeof profileVariableSchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type TestSuite = z.infer<typeof testSuiteSchema>;
 export type TestSuiteSummary = z.infer<typeof testSuiteSummarySchema>;
+export type ProjectRunDay = z.infer<typeof projectRunDaySchema>;
+export type ProjectOverviewSummary = z.infer<typeof projectOverviewSummarySchema>;
 export type RevisionStep = z.infer<typeof revisionStepSchema>;
 export type TestRevisionContent = z.infer<typeof testRevisionContentSchema>;
 export type Test = z.infer<typeof testSchema>;

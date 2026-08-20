@@ -48,6 +48,7 @@ const fakeServer = () => {
     profiles: [],
     testSuites: [],
     tests: [],
+    projectOverviews: [],
     activeRuns: [],
   };
   const client: Pick<

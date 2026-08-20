@@ -505,6 +505,19 @@ describe('PostgreSQL tRPC vertical slice', () => {
         [failedTest.test.id]: { status: 'failed', durationMs: 500 },
         [passedTest.test.id]: { status: 'passed', durationMs: 750 },
       },
+      projectOverviews: [
+        {
+          projectId: project.id,
+          suiteCount: 1,
+          testCount: 2,
+          passedCount: 1,
+          failedCount: 1,
+          noResultCount: 0,
+          runCount30d: 2,
+          activeRunCount: 0,
+          lastRunAt: expect.any(String),
+        },
+      ],
     });
 
     const updated = await api.testSuite.update.mutate({
@@ -552,6 +565,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       activeRuns: [{ id: run.id, status: 'running' }],
+      projectOverviews: [{ projectId: snapshot.test.projectId, activeRunCount: 1 }],
     });
 
     const finished = await api.run.finish.mutate({
@@ -563,6 +577,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(finished).toMatchObject({ status: 'passed', durationMs: 1_250 });
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       activeRuns: [],
+      projectOverviews: [{ projectId: snapshot.test.projectId, activeRunCount: 0 }],
     });
   });
 

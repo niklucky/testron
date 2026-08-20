@@ -7,6 +7,7 @@ import {
   projectInvitationSchema,
   projectMemberSchema,
   profileSchema,
+  projectOverviewSummarySchema,
   projectSchema,
   testSuiteSchema,
   testSuiteSummarySchema,
@@ -626,16 +627,22 @@ export class CanonicalRepository {
           ? []
           : await tx
               .select({
+                projectId: testRuns.projectId,
                 testId: testRuns.testId,
                 status: testRuns.status,
                 durationMs: testRuns.durationMs,
+                startedAt: testRuns.startedAt,
               })
               .from(testRuns)
               .where(and(inArray(testRuns.testId, testIds), isNotNull(testRuns.durationMs)))
               .orderBy(asc(testRuns.startedAt));
       const latestTestRuns: Record<
         string,
-        { status: 'passed' | 'failed' | 'cancelled' | 'timedOut'; durationMs: number }
+        {
+          status: 'passed' | 'failed' | 'cancelled' | 'timedOut';
+          durationMs: number;
+          startedAt: string;
+        }
       > = {};
       for (const run of completedRunRows)
         if (
@@ -645,6 +652,7 @@ export class CanonicalRepository {
           latestTestRuns[run.testId] = {
             status: run.status as 'passed' | 'failed' | 'cancelled' | 'timedOut',
             durationMs: run.durationMs,
+            startedAt: instant(run.startedAt),
           };
       const runRows =
         projectIds.length === 0
@@ -728,6 +736,55 @@ export class CanonicalRepository {
       const pendingInvitationValues = await Promise.all(
         pendingInvitationRows.map((invitation) => this.invitation(tx, invitation)),
       );
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
+      thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
+      const projectOverviews = projectValues.map((project) => {
+        const projectTests = testValues.filter(
+          (snapshot) => snapshot.test.projectId === project.id,
+        );
+        const projectRuns = completedRunRows.filter((run) => run.projectId === project.id);
+        const recentRuns = projectRuns.filter(
+          (run) => new Date(run.startedAt).getTime() >= thirtyDaysAgo.getTime(),
+        );
+        const days = new Map<
+          string,
+          { date: string; passed: number; failed: number; cancelled: number; timedOut: number }
+        >();
+        for (const run of recentRuns) {
+          const date = instant(run.startedAt).slice(0, 10);
+          const day = days.get(date) ?? { date, passed: 0, failed: 0, cancelled: 0, timedOut: 0 };
+          if (run.status === 'passed') day.passed += 1;
+          if (run.status === 'failed') day.failed += 1;
+          if (run.status === 'cancelled') day.cancelled += 1;
+          if (run.status === 'timedOut') day.timedOut += 1;
+          days.set(date, day);
+        }
+        const latest = projectTests
+          .map((snapshot) => latestTestRuns[snapshot.test.id])
+          .filter((run) => run !== undefined);
+        return projectOverviewSummarySchema.parse({
+          projectId: project.id,
+          suiteCount: testSuiteValues.filter((suite) => suite.projectId === project.id).length,
+          testCount: projectTests.length,
+          passedCount: latest.filter((run) => run.status === 'passed').length,
+          failedCount: latest.filter((run) => run.status === 'failed' || run.status === 'timedOut')
+            .length,
+          noResultCount:
+            projectTests.length -
+            latest.filter(
+              (run) =>
+                run.status === 'passed' || run.status === 'failed' || run.status === 'timedOut',
+            ).length,
+          runCount30d: recentRuns.length,
+          activeRunCount: runRows.filter((run) => run.projectId === project.id).length,
+          lastRunAt:
+            projectRuns.length === 0
+              ? null
+              : instant(projectRuns[projectRuns.length - 1]!.startedAt),
+          runDays: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+        });
+      });
       return workspaceSnapshotSchema.parse({
         viewer: user,
         members: [...ownerMembers, ...memberValues],
@@ -739,6 +796,7 @@ export class CanonicalRepository {
         testSuites: testSuiteValues,
         tests: testValues,
         latestTestRuns,
+        projectOverviews,
         recentRuns: recentRunRows.map((row) => this.run(row)),
         activeRuns: runRows.map((row) => this.run(row)),
       });
@@ -1094,15 +1152,20 @@ export class CanonicalRepository {
               testId: testRuns.testId,
               status: testRuns.status,
               durationMs: testRuns.durationMs,
+              startedAt: testRuns.startedAt,
             })
             .from(testRuns)
             .where(inArray(testRuns.testId, testIds))
             .orderBy(asc(testRuns.startedAt));
     const latestStatus = new Map<string, (typeof runRows)[number]['status']>();
     const latestCompletedDuration = new Map<string, number>();
+    const latestRunAt = new Map<string, string>();
     for (const run of runRows) {
       latestStatus.set(run.testId, run.status);
-      if (run.durationMs !== null) latestCompletedDuration.set(run.testId, run.durationMs);
+      if (run.durationMs !== null) {
+        latestCompletedDuration.set(run.testId, run.durationMs);
+        latestRunAt.set(run.testId, instant(run.startedAt));
+      }
     }
     return suiteRows.map((testSuite) => {
       const suiteTests = testRows.filter((test) => test.testSuiteId === testSuite.id);
@@ -1116,6 +1179,12 @@ export class CanonicalRepository {
           (total, test) => total + (latestCompletedDuration.get(test.id) ?? 0),
           0,
         ),
+        lastRunAt:
+          suiteTests
+            .map((test) => latestRunAt.get(test.id))
+            .filter((value) => value !== undefined)
+            .sort()
+            .at(-1) ?? null,
       });
     });
   }

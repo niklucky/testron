@@ -12,6 +12,7 @@ import {
   type TestSnapshot,
   type TestSuiteSummary,
   type TestRun,
+  type ProjectOverviewSummary,
 } from '@testron/protocol';
 import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
@@ -77,9 +78,14 @@ export interface LibrarySnapshot {
   testSuites: TestSuiteSummary[];
   latestTestRuns?: Record<
     string,
-    { status: 'passed' | 'failed' | 'cancelled' | 'timedOut'; durationMs: number }
+    {
+      status: 'passed' | 'failed' | 'cancelled' | 'timedOut';
+      durationMs: number;
+      startedAt: string;
+    }
   >;
   recentRuns?: TestRun[];
+  projectOverviews?: ProjectOverviewSummary[];
   selectedProjectId?: string;
   selectedEnvironmentId?: string;
   selectedTestSuiteId?: string;

@@ -6,6 +6,7 @@ import { Button, PulseDot } from '../design';
 import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
 import { initialOverviewState, Overview, type OverviewState } from './Overview';
+import { mapProjectOverview } from './overview-data';
 import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
@@ -100,13 +101,9 @@ export const Dashboard = () => {
   const suites = useMemo(() => {
     if (!library?.server?.configured) return mockSuites;
     const owner = library.viewer?.name ?? library.viewer?.email ?? 'Workspace owner';
-    const templates = buildSuites();
     return library.testSuites
       .filter((testSuite) => testSuite.projectId === library.selectedProjectId)
-      .map((testSuite, suiteIndex): SuiteRecord => {
-        const template =
-          templates.find((candidate) => candidate.name === testSuite.name) ??
-          templates[suiteIndex % templates.length]!;
+      .map((testSuite): SuiteRecord => {
         const persistedTests = library.tests.filter((test) => test.testSuiteId === testSuite.id);
         const tests = persistedTests.map((persisted) => {
           const latestRun = library.latestTestRuns?.[persisted.id];
@@ -120,7 +117,9 @@ export const Dashboard = () => {
                 : latestRun.status === 'failed' || latestRun.status === 'timedOut'
                   ? ('failed' as const)
                   : ('skipped' as const),
-            minutesAgo: 0,
+            minutesAgo: latestRun
+              ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / 60_000))
+              : 0,
             seconds: latestRun ? latestRun.durationMs / 1000 : undefined,
           };
         });
@@ -130,7 +129,9 @@ export const Dashboard = () => {
           name: testSuite.name,
           owner,
           tests,
-          lastRunMinutesAgo: template.lastRunMinutesAgo,
+          lastRunMinutesAgo: testSuite.lastRunAt
+            ? Math.max(0, Math.floor((Date.now() - Date.parse(testSuite.lastRunAt)) / 60_000))
+            : null,
           revision: testSuite.revision,
           testCount: persistedTests.length,
           failedCount: testSuite.failedCount,
@@ -323,6 +324,19 @@ export const Dashboard = () => {
     },
     { tests: 0, passed: 0, skipped: 0, failed: 0 },
   );
+  const projectOverview = library?.projectOverviews?.find(
+    (summary) => summary.projectId === library.selectedProjectId,
+  );
+  const liveOverview = projectOverview ? mapProjectOverview(projectOverview) : undefined;
+  const overviewDataStatus = !library?.server?.configured
+    ? ('local' as const)
+    : library.server.workspace === 'loading'
+      ? ('loading' as const)
+      : library.server.status === 'error'
+        ? ('error' as const)
+        : liveOverview
+          ? ('live' as const)
+          : ('error' as const);
 
   return (
     <main className="ui-root flex h-screen w-screen flex-col overflow-hidden bg-plane font-sans text-ink antialiased">
@@ -337,7 +351,8 @@ export const Dashboard = () => {
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
           <PulseDot label="Runs in flight" />
           <span className="text-base text-ink-2">
-            {library?.runsInFlight ?? 0} {(library?.runsInFlight ?? 0) === 1 ? 'run' : 'runs'} in
+            {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}{' '}
+            {(liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0) === 1 ? 'run' : 'runs'} in
             flight
           </span>
         </div>
@@ -409,6 +424,9 @@ export const Dashboard = () => {
           <Overview
             suites={suites}
             totals={totals}
+            live={liveOverview}
+            dataStatus={overviewDataStatus}
+            errorMessage={library?.server?.message}
             state={overview}
             onState={setOverview}
             onLog={setLog}
