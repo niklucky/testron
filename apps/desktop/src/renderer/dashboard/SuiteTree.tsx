@@ -13,6 +13,8 @@ import type { SuiteRecord, TestRecord } from './types';
  */
 export const SuiteTree = ({
   suites,
+  expandedSuiteIds,
+  onToggleSuite,
   activeTestId,
   onOpenTest,
   onNewTest,
@@ -22,6 +24,8 @@ export const SuiteTree = ({
   onLog,
 }: {
   suites: SuiteRecord[];
+  expandedSuiteIds: string[];
+  onToggleSuite: (suiteId: string) => void;
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
   onNewTest: (suite: SuiteRecord) => void;
@@ -35,6 +39,8 @@ export const SuiteTree = ({
       <SuiteBranch
         key={suite.id}
         suite={suite}
+        open={expandedSuiteIds.includes(suite.id)}
+        onToggle={() => onToggleSuite(suite.id)}
         activeTestId={activeTestId}
         onOpenTest={onOpenTest}
         onNewTest={onNewTest}
@@ -49,6 +55,8 @@ export const SuiteTree = ({
 
 const SuiteBranch = ({
   suite,
+  open,
+  onToggle,
   activeTestId,
   onOpenTest,
   onNewTest,
@@ -58,6 +66,8 @@ const SuiteBranch = ({
   onLog,
 }: {
   suite: SuiteRecord;
+  open: boolean;
+  onToggle: () => void;
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
   onNewTest: (suite: SuiteRecord) => void;
@@ -66,7 +76,6 @@ const SuiteBranch = ({
   onDeleteSuite: (suite: SuiteRecord) => void;
   onLog: (message: string) => void;
 }) => {
-  const [open, setOpen] = useState(suite.name === 'Checkout');
   const [showAll, setShowAll] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   // A ref, not state: the drop handler must read the index the drag started
@@ -92,7 +101,7 @@ const SuiteBranch = ({
           type="button"
           className="flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-[7px] text-left"
           aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
+          onClick={onToggle}
         >
           <Icon
             name="chevron"
