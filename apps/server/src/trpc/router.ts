@@ -5,6 +5,7 @@ import {
   authRegisterInputSchema,
   authSessionOutputSchema,
   createEnvironmentProcedure,
+  createProfileProcedure,
   createProjectProcedure,
   createTestProcedure,
   createTestSuiteProcedure,
@@ -17,6 +18,7 @@ import {
   saveTestRevisionProcedure,
   startTestRunProcedure,
   updateEnvironmentProcedure,
+  updateProfileProcedure,
   updateProjectProcedure,
   updateTestSuiteProcedure,
 } from '@testron/protocol';
@@ -108,6 +110,16 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(updateEnvironmentProcedure.input)
         .output(updateEnvironmentProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.updateEnvironment(ctx.user, input))),
+    }),
+    profile: t.router({
+      create: authenticatedProcedure
+        .input(createProfileProcedure.input)
+        .output(createProfileProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.createProfile(ctx.user, input))),
+      update: authenticatedProcedure
+        .input(updateProfileProcedure.input)
+        .output(updateProfileProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.updateProfile(ctx.user, input))),
     }),
     testSuite: t.router({
       create: authenticatedProcedure

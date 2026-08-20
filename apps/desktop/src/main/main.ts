@@ -18,6 +18,7 @@ import { recorderCandidateSchema, targetObservationSchema } from '@testron/domai
 import type { Step } from '@testron/domain/steps/schema';
 import {
   createEnvironmentRequestSchema,
+  createProfileRequestSchema,
   createProjectRequestSchema,
   createTestSuiteRequestSchema,
   deleteTestSuiteRequestSchema,
@@ -26,6 +27,7 @@ import {
   startTestRunRequestSchema,
   updateEnvironmentRequestSchema,
   updateProjectRequestSchema,
+  updateProfileRequestSchema,
   updateTestSuiteRequestSchema,
   type MutationMetadata,
   type TestRun,
@@ -259,12 +261,28 @@ const createWindow = async (): Promise<void> => {
         id: snapshot.test.id,
         projectId: snapshot.test.projectId,
         environmentId: snapshot.currentRevision.content.environmentId,
-        title: snapshot.currentRevision.content.title,
+        title: snapshot.test.title,
         createdAt: snapshot.test.createdAt,
         updatedAt: snapshot.currentRevision.createdAt,
       })),
   ];
   const allTestSuites = () => remoteWorkspace?.testSuites ?? [];
+  const allProfiles = () =>
+    remoteWorkspace
+      ? remoteWorkspace.profiles.map((profile) => ({
+          id: profile.id,
+          environmentId: profile.environmentId,
+          name: profile.name,
+          authenticationType: profile.authenticationType,
+          revision: profile.revision,
+        }))
+      : store.listProfiles();
+  const allProfileVariables = () =>
+    remoteWorkspace
+      ? remoteWorkspace.profiles.flatMap((profile) =>
+          profile.variables.map((variable) => ({ profileId: profile.id, ...variable })),
+        )
+      : store.listProfileVariables();
   const stepsFor = (testId: string): Step[] =>
     store.getTest(testId)
       ? store.loadSteps(testId)
@@ -307,9 +325,9 @@ const createWindow = async (): Promise<void> => {
   let selectedEnvironmentId = environments.find(
     (environment) => environment.projectId === selectedProjectId,
   )?.id;
-  let selectedProfileId = store
-    .listProfiles()
-    .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
+  let selectedProfileId = allProfiles().find(
+    (profile) => profile.environmentId === selectedEnvironmentId,
+  )?.id;
   let selectedTestId = tests.find((test) => test.projectId === selectedProjectId)?.id;
 
   const reconcileLibrarySelection = (): void => {
@@ -337,26 +355,26 @@ const createWindow = async (): Promise<void> => {
       selectedTestId = allTests().find((test) => test.projectId === selectedProjectId)?.id;
     if (
       !selectedProfileId ||
-      !store
-        .listProfiles()
-        .some(
-          (profile) =>
-            profile.id === selectedProfileId && profile.environmentId === selectedEnvironmentId,
-        )
+      !allProfiles().some(
+        (profile) =>
+          profile.id === selectedProfileId && profile.environmentId === selectedEnvironmentId,
+      )
     )
-      selectedProfileId = store
-        .listProfiles()
-        .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
+      selectedProfileId = allProfiles().find(
+        (profile) => profile.environmentId === selectedEnvironmentId,
+      )?.id;
   };
 
   const librarySnapshot = () => ({
     ...(remoteWorkspace?.viewer ? { viewer: remoteWorkspace.viewer } : {}),
     projects: allProjects(),
     environments: allEnvironments(),
-    profiles: store.listProfiles(),
-    profileVariables: store
-      .listProfileVariables()
-      .map(({ profileId, name, sensitive }) => ({ profileId, name, sensitive })),
+    profiles: allProfiles(),
+    profileVariables: allProfileVariables().map(({ profileId, name, sensitive }) => ({
+      profileId,
+      name,
+      sensitive,
+    })),
     tests: allTests(),
     testSuites: allTestSuites(),
     ...(selectedProjectId ? { selectedProjectId } : {}),
@@ -476,8 +494,7 @@ const createWindow = async (): Promise<void> => {
         recording: session.snapshot().recording,
         assertion: verifyAssertion,
         repicking: repickIndex !== undefined,
-        profileVariables: store
-          .listProfileVariables()
+        profileVariables: allProfileVariables()
           .filter((variable) => variable.profileId === selectedProfileId)
           .map(({ name, value }) => ({ name, value })),
       });
@@ -509,8 +526,7 @@ const createWindow = async (): Promise<void> => {
       recording: session.snapshot().recording,
       assertion: verifyAssertion,
       repicking: repickIndex !== undefined,
-      profileVariables: store
-        .listProfileVariables()
+      profileVariables: allProfileVariables()
         .filter((variable) => variable.profileId === selectedProfileId)
         .map(({ name, value }) => ({ name, value })),
     });
@@ -699,6 +715,7 @@ const createWindow = async (): Promise<void> => {
                   project,
                 ],
                 environments: remoteWorkspace?.environments ?? [],
+                profiles: remoteWorkspace?.profiles ?? [],
                 testSuites: remoteWorkspace?.testSuites ?? [],
                 tests: remoteWorkspace?.tests ?? [],
                 activeRuns: remoteWorkspace?.activeRuns ?? [],
@@ -793,7 +810,7 @@ const createWindow = async (): Promise<void> => {
               ...remoteWorkspace,
               testSuites: [
                 ...remoteWorkspace.testSuites.filter((entry) => entry.id !== testSuite.id),
-                { ...testSuite, testCount: 0, failedCount: 0 },
+                { ...testSuite, testCount: 0, failedCount: 0, totalLatestDurationMs: 0 },
               ],
             };
             sendSnapshot(session.snapshot());
@@ -970,11 +987,73 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'create-profile': {
+        if (serverClient && serverState.authentication === 'signedIn') {
+          void serverClient
+            .createProfile(
+              createProfileRequestSchema.parse({
+                meta: mutationMeta(`profile-create-${randomUUID()}`),
+                environmentId: command.environmentId,
+                name: command.name,
+                authenticationType: command.authenticationType,
+                variables: command.variables,
+              }),
+            )
+            .then((profile) => {
+              if (!remoteWorkspace || serverState.authentication !== 'signedIn') return;
+              remoteWorkspace = {
+                ...remoteWorkspace,
+                profiles: [
+                  ...remoteWorkspace.profiles.filter((entry) => entry.id !== profile.id),
+                  profile,
+                ],
+              };
+              selectedEnvironmentId = profile.environmentId;
+              selectedProfileId = profile.id;
+              applyContext();
+              sendSnapshot(session.snapshot());
+            })
+            .catch((error: unknown) => {
+              session.warn(error instanceof Error ? error.message : 'Profile creation failed.');
+              sendSnapshot(session.snapshot());
+            });
+          break;
+        }
         if (!ensureLocalEnvironment(command.environmentId)) break;
         const profile = store.createProfile(command.environmentId, command.name, command.variables);
         selectedEnvironmentId = command.environmentId;
         selectedProfileId = profile.id;
         applyContext();
+        break;
+      }
+      case 'update-profile': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .updateProfile(
+            updateProfileRequestSchema.parse({
+              meta: mutationMeta(`profile-update-${command.profileId}-${command.baseRevision}`),
+              profileId: command.profileId,
+              baseRevision: command.baseRevision,
+              name: command.name,
+              authenticationType: command.authenticationType,
+              variables: command.variables,
+            }),
+          )
+          .then((profile) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              profiles: remoteWorkspace.profiles.map((entry) =>
+                entry.id === profile.id ? profile : entry,
+              ),
+            };
+            selectedProfileId = profile.id;
+            applyContext();
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Profile update failed.');
+            sendSnapshot(session.snapshot());
+          });
         break;
       }
       case 'create-test': {
@@ -997,9 +1076,9 @@ const createWindow = async (): Promise<void> => {
         selectedEnvironmentId = allEnvironments().find(
           (environment) => environment.projectId === command.projectId,
         )?.id;
-        selectedProfileId = store
-          .listProfiles()
-          .find((profile) => profile.environmentId === selectedEnvironmentId)?.id;
+        selectedProfileId = allProfiles().find(
+          (profile) => profile.environmentId === selectedEnvironmentId,
+        )?.id;
         selectedTestId = allTests().find((test) => test.projectId === command.projectId)?.id;
         replaySnapshot = historyFor(selectedTestId)[0] ?? { status: 'idle', steps: [] };
         if (selectedTestId) {
@@ -1009,9 +1088,9 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'select-environment':
         selectedEnvironmentId = command.environmentId;
-        selectedProfileId = store
-          .listProfiles()
-          .find((profile) => profile.environmentId === command.environmentId)?.id;
+        selectedProfileId = allProfiles().find(
+          (profile) => profile.environmentId === command.environmentId,
+        )?.id;
         applyContext();
         break;
       case 'select-profile':
@@ -1024,9 +1103,9 @@ const createWindow = async (): Promise<void> => {
         selectedTestId = test.id;
         selectedProjectId = test.projectId;
         selectedEnvironmentId = test.environmentId;
-        selectedProfileId = store
-          .listProfiles()
-          .find((profile) => profile.environmentId === test.environmentId)?.id;
+        selectedProfileId = allProfiles().find(
+          (profile) => profile.environmentId === test.environmentId,
+        )?.id;
         replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
         session.load(test.title, stepsFor(test.id));
         break;
@@ -1125,8 +1204,7 @@ const createWindow = async (): Promise<void> => {
         const steps = stepsFor(selectedTest.id);
         const runTestId = selectedTest.id;
         const profileVariables = Object.fromEntries(
-          store
-            .listProfileVariables()
+          allProfileVariables()
             .filter((variable) => variable.profileId === selectedProfileId)
             .map((variable) => [variable.name, variable.value]),
         );

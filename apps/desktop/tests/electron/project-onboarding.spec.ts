@@ -22,6 +22,7 @@ test('an empty remote workspace onboards and the selector creates server project
     viewer: user,
     projects,
     environments: [],
+    profiles: [],
     testSuites: [],
     tests: [],
     activeRuns: [],

@@ -116,7 +116,7 @@ export const fromTestSnapshot = (
       id: snapshot.test.id,
       projectId: snapshot.test.projectId,
       environmentId: snapshot.currentRevision.content.environmentId,
-      title: snapshot.currentRevision.content.title,
+      title: snapshot.test.title,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
     },

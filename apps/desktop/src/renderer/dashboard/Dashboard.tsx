@@ -110,6 +110,7 @@ export const Dashboard = () => {
           revision: testSuite.revision,
           testCount: testSuite.testCount,
           failedCount: testSuite.failedCount,
+          totalLatestDurationMs: testSuite.totalLatestDurationMs,
         };
       });
   }, [library, mockSuites]);

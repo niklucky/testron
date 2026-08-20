@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { entityIdSchema, revisionPointerSchema, timestampSchema } from './common';
 import {
   createEnvironmentRequestSchema,
+  createProfileRequestSchema,
   createProjectRequestSchema,
   createTestRequestSchema,
   createTestSuiteRequestSchema,
@@ -15,11 +16,13 @@ import {
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
   updateEnvironmentRequestSchema,
+  updateProfileRequestSchema,
   updateProjectRequestSchema,
   updateTestSuiteRequestSchema,
 } from './operations';
 import {
   environmentSchema,
+  profileSchema,
   projectSchema,
   testRevisionSchema,
   testRunSchema,
@@ -58,6 +61,14 @@ export const updateProjectProcedure = {
 export const updateEnvironmentProcedure = {
   input: updateEnvironmentRequestSchema,
   output: environmentSchema,
+} as const;
+export const createProfileProcedure = {
+  input: createProfileRequestSchema,
+  output: profileSchema,
+} as const;
+export const updateProfileProcedure = {
+  input: updateProfileRequestSchema,
+  output: profileSchema,
 } as const;
 export const createTestSuiteProcedure = {
   input: createTestSuiteRequestSchema,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { sql } from 'drizzle-orm';
@@ -8,15 +9,31 @@ import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@te
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
 
-const databaseUrl =
-  process.env.TESTRON_TEST_DATABASE_URL ?? 'postgresql://testron:testron@127.0.0.1:55432/testron';
+const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test' as const;
+const expectedDatabase = 'testron_test';
+const expectedUser = 'testron_test';
 let server: RunningTestronServer;
 
+const assertIsolatedTestDatabase = async (): Promise<void> => {
+  const result = await server.database.pool.query<{
+    database: string;
+    databaseUser: string;
+  }>('select current_database() as database, current_user as "databaseUser"');
+  const identity = result.rows[0];
+  if (identity?.database === expectedDatabase && identity.databaseUser === expectedUser) return;
+  throw new Error(
+    `Refusing destructive test cleanup on database ${identity?.database ?? 'unknown'} as ${identity?.databaseUser ?? 'unknown'}.`,
+  );
+};
+
 beforeAll(async () => {
-  server = await startTestronServer({ databaseUrl });
+  server = await startTestronServer({ databaseUrl, migrate: false });
+  await assertIsolatedTestDatabase();
+  await server.database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
 });
 
 beforeEach(async () => {
+  await assertIsolatedTestDatabase();
   await server.database.db.execute(sql`
     truncate table idempotency_records, test_runs, test_revisions, tests, test_suites, environments,
       projects, sessions, users restart identity cascade
@@ -136,6 +153,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
     expect(saved.status).toBe('saved');
     if (saved.status !== 'saved') throw new Error('Expected a saved revision.');
+    expect(saved.snapshot.test.title).toBe('checkout with a coupon');
     expect(saved.snapshot.currentRevision.number).toBe(2);
     expect(saved.snapshot.currentRevision.parentRevision).toEqual(baseRevision);
 
@@ -199,6 +217,59 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
   });
 
+  it('creates and updates environment profiles on the server', async () => {
+    const { api } = await signIn();
+    const { environment } = await createSlice(api);
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      environmentId: environment.id,
+      name: 'Administrator',
+      authenticationType: 'credentials',
+      variables: [
+        { name: 'username', value: 'admin@example.test', sensitive: false },
+        { name: 'password', value: 'secret value', sensitive: true },
+      ],
+    });
+
+    expect(profile).toMatchObject({
+      environmentId: environment.id,
+      name: 'Administrator',
+      revision: 1,
+    });
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      profiles: [{ id: profile.id, variables: expect.arrayContaining(profile.variables) }],
+    });
+
+    const updated = await api.profile.update.mutate({
+      meta: mutationMeta(),
+      profileId: profile.id,
+      baseRevision: profile.revision,
+      name: 'QA administrator',
+      authenticationType: 'credentials',
+      variables: [
+        { name: 'username', value: 'qa@example.test', sensitive: false },
+        { name: 'password', value: 'new secret value', sensitive: true },
+      ],
+    });
+    expect(updated).toMatchObject({ name: 'QA administrator', revision: 2 });
+    expect(updated.variables).toEqual(
+      expect.arrayContaining([
+        { name: 'username', value: 'qa@example.test', sensitive: false },
+        { name: 'password', value: 'new secret value', sensitive: true },
+      ]),
+    );
+    await expect(
+      api.profile.update.mutate({
+        meta: mutationMeta(),
+        profileId: profile.id,
+        baseRevision: profile.revision,
+        name: 'Stale profile',
+        authenticationType: 'credentials',
+        variables: [{ name: 'username', value: 'stale', sensitive: false }],
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
   it('creates, reads, updates, counts, and soft-deletes test suites', async () => {
     const { api } = await signIn();
     const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Commerce' });
@@ -220,7 +291,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       testSuiteId: testSuite.id,
       content: content(environment.id, 'declined card'),
     });
-    await api.test.create.mutate({
+    const passedTest = await api.test.create.mutate({
       meta: mutationMeta(),
       projectId: project.id,
       testSuiteId: testSuite.id,
@@ -238,14 +309,34 @@ describe('PostgreSQL tRPC vertical slice', () => {
       status: 'failed',
       durationMs: 500,
     });
+    const passedRun = await api.run.start.mutate({
+      meta: mutationMeta(),
+      testId: passedTest.test.id,
+      environmentId: environment.id,
+      source: 'desktop-local',
+    });
+    await api.run.finish.mutate({
+      meta: mutationMeta(),
+      runId: passedRun.id,
+      status: 'passed',
+      durationMs: 750,
+    });
 
     await expect(
       api.testSuite.list.query({ meta: requestMeta(), projectId: project.id }),
     ).resolves.toMatchObject([
-      { id: testSuite.id, name: 'Checkout', testCount: 2, failedCount: 1 },
+      {
+        id: testSuite.id,
+        name: 'Checkout',
+        testCount: 2,
+        failedCount: 1,
+        totalLatestDurationMs: 1_250,
+      },
     ]);
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
-      testSuites: [{ id: testSuite.id, testCount: 2, failedCount: 1 }],
+      testSuites: [
+        { id: testSuite.id, testCount: 2, failedCount: 1, totalLatestDurationMs: 1_250 },
+      ],
     });
 
     const updated = await api.testSuite.update.mutate({

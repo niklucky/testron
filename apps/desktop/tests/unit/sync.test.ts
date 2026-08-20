@@ -42,6 +42,7 @@ const fakeServer = () => {
     },
     projects: [],
     environments: [],
+    profiles: [],
     testSuites: [],
     tests: [],
     activeRuns: [],
@@ -90,6 +91,7 @@ const fakeServer = () => {
           id: testId,
           projectId: request.projectId,
           testSuiteId: request.testSuiteId ?? null,
+          title: request.content.title,
           currentRevision: { id: revisionId, number: 1 },
           createdAt: now,
           createdBy: randomUUID(),
@@ -115,7 +117,11 @@ const fakeServer = () => {
       const nextId = randomUUID();
       const number = current.currentRevision.number + 1;
       const snapshot: TestSnapshot = {
-        test: { ...current.test, currentRevision: { id: nextId, number } },
+        test: {
+          ...current.test,
+          title: request.content.title,
+          currentRevision: { id: nextId, number },
+        },
         currentRevision: {
           ...current.currentRevision,
           id: nextId,

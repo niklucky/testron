@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 
 import { Badge, Icon, IconButton, SplitBar, StatusDot } from '../design';
 import { tally } from './data';
-import { age } from './format';
+import { age, ms } from './format';
 import { healthSplits, verdictTone } from './tone';
 import type { SuiteRecord, TestRecord } from './types';
 
@@ -70,6 +70,9 @@ const SuiteBranch = ({
   const counts = tally(suite);
   const testCount = suite.testCount ?? suite.tests.length;
   const failedCount = suite.failedCount ?? counts.failed;
+  const totalLatestDurationMs =
+    suite.totalLatestDurationMs ??
+    suite.tests.reduce((total, test) => total + test.seconds * 1000, 0);
   const visible = open ? suite.tests.slice(0, showAll ? undefined : 5) : [];
   const hidden = Math.max(0, testCount - 5);
 
@@ -105,7 +108,7 @@ const SuiteBranch = ({
             <span className="mt-1.5 flex items-center gap-2">
               <SplitBar segments={healthSplits(counts)} className="flex-1" />
               <span className="ui-mono shrink-0 text-xs text-ink-3">
-                {age(suite.lastRunMinutesAgo)}
+                {ms(totalLatestDurationMs)}
               </span>
             </span>
           </span>

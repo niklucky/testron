@@ -102,4 +102,33 @@ describe('desktop application command schema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('validates server-backed profile updates', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'update-profile',
+        profileId: id,
+        baseRevision: 1,
+        name: 'Administrator',
+        authenticationType: 'credentials',
+        variables: [
+          { name: 'username', value: 'admin@example.test', sensitive: false },
+          { name: 'password', value: 'secret value', sensitive: true },
+        ],
+      }),
+    ).toMatchObject({ type: 'update-profile', baseRevision: 1 });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'update-profile',
+        profileId: id,
+        baseRevision: 1,
+        name: 'Administrator',
+        authenticationType: 'credentials',
+        variables: [
+          { name: 'username', value: 'one', sensitive: false },
+          { name: 'username', value: 'two', sensitive: false },
+        ],
+      }).success,
+    ).toBe(false);
+  });
 });

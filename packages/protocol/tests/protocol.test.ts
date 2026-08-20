@@ -7,10 +7,12 @@ import { inspectCompatibility } from '../src/compatibility';
 import { revisionConflictResponseSchema } from '../src/errors';
 import {
   finishTestRunRequestSchema,
+  createProfileRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
   updateEnvironmentRequestSchema,
   updateProjectRequestSchema,
+  updateProfileRequestSchema,
 } from '../src/operations';
 import { testRevisionSchema, testSnapshotSchema } from '../src/resources';
 
@@ -49,6 +51,7 @@ const snapshot = {
     id: ids.test,
     projectId: ids.project,
     testSuiteId: null,
+    title: 'empty test',
     currentRevision: { id: ids.revision, number: 1 },
     createdAt: '2026-01-01T00:00:00.000Z',
     createdBy: ids.actor,
@@ -106,6 +109,12 @@ describe('revision invariants', () => {
       testSnapshotSchema.safeParse({
         ...snapshot,
         test: { ...snapshot.test, currentRevision: { id: ids.revision, number: 2 } },
+      }).success,
+    ).toBe(false);
+    expect(
+      testSnapshotSchema.safeParse({
+        ...snapshot,
+        test: { ...snapshot.test, title: 'stale projected title' },
       }).success,
     ).toBe(false);
   });
@@ -201,6 +210,41 @@ describe('project settings mutations', () => {
         baseRevision: 0,
         name: 'Checkout',
         url: 'not a URL',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates profile creation and revision-guarded updates', () => {
+    const variables = [
+      { name: 'username', value: 'admin@example.test', sensitive: false },
+      { name: 'password', value: 'secret value', sensitive: true },
+    ];
+    expect(
+      createProfileRequestSchema.parse({
+        meta,
+        environmentId: ids.environment,
+        name: 'Administrator',
+        authenticationType: 'credentials',
+        variables,
+      }),
+    ).toMatchObject({ name: 'Administrator', variables });
+    expect(
+      updateProfileRequestSchema.parse({
+        meta,
+        profileId: ids.revision,
+        baseRevision: 1,
+        name: 'QA administrator',
+        authenticationType: 'credentials',
+        variables,
+      }),
+    ).toMatchObject({ baseRevision: 1 });
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        environmentId: ids.environment,
+        name: 'Duplicate variables',
+        authenticationType: 'credentials',
+        variables: [variables[0], variables[0]],
       }).success,
     ).toBe(false);
   });

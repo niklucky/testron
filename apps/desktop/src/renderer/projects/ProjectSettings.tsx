@@ -3,21 +3,9 @@ import { createPortal } from 'react-dom';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
 import { Button, Icon, IconButton } from '../design';
+import { ProfileSheet } from '../profiles/ProfileSheet';
 
 type SettingsTab = 'general' | 'environments';
-type AuthorizationType = 'credentials' | 'cookies' | 'headers';
-
-interface ProfileDraft {
-  id: string;
-  name: string;
-  authorization: AuthorizationType;
-  login: string;
-  password: string;
-  cookieName: string;
-  cookieValue: string;
-  headerName: string;
-  headerValue: string;
-}
 
 const fieldClass =
   'mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-3 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent';
@@ -46,18 +34,6 @@ const Field = ({
     />
   </label>
 );
-
-const emptyProfile = (id: string, name = 'New profile'): ProfileDraft => ({
-  id,
-  name,
-  authorization: 'credentials',
-  login: '',
-  password: '',
-  cookieName: '',
-  cookieValue: '',
-  headerName: '',
-  headerValue: '',
-});
 
 export const ProjectSettings = ({
   library,
@@ -89,27 +65,12 @@ export const ProjectSettings = ({
   const [newEnvironmentName, setNewEnvironmentName] = useState('');
   const [newEnvironmentUrl, setNewEnvironmentUrl] = useState('');
   const creationOriginId = useRef<string | undefined>(undefined);
-  const [profiles, setProfiles] = useState<Record<string, ProfileDraft>>({});
-  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [editingProfileId, setEditingProfileId] = useState<string | 'new'>();
 
   useEffect(() => {
     setEnvironmentName(selectedEnvironment?.name ?? '');
     setEnvironmentUrl(selectedEnvironment?.baseUrl ?? '');
-    const existing = library.profiles.filter(
-      (profile) => profile.environmentId === selectedEnvironment?.id,
-    );
-    setProfiles((current) => {
-      const next = { ...current };
-      for (const profile of existing) next[profile.id] ??= emptyProfile(profile.id, profile.name);
-      return next;
-    });
-    setSelectedProfileId(existing[0]?.id ?? '');
-  }, [
-    library.profiles,
-    selectedEnvironment?.baseUrl,
-    selectedEnvironment?.id,
-    selectedEnvironment?.name,
-  ]);
+  }, [selectedEnvironment?.baseUrl, selectedEnvironment?.id, selectedEnvironment?.name]);
 
   useEffect(() => {
     const createdId = library.selectedEnvironmentId;
@@ -137,20 +98,10 @@ export const ProjectSettings = ({
 
   if (!project) return null;
 
-  const environmentProfiles = Object.values(profiles).filter((profile) => {
-    const stored = library.profiles.find((candidate) => candidate.id === profile.id);
-    return stored
-      ? stored.environmentId === selectedEnvironment?.id
-      : profile.id.startsWith(`${selectedEnvironment?.id}:`);
-  });
-  const selectedProfile = profiles[selectedProfileId];
-  const patchProfile = (patch: Partial<ProfileDraft>) => {
-    if (!selectedProfile) return;
-    setProfiles((current) => ({
-      ...current,
-      [selectedProfile.id]: { ...selectedProfile, ...patch },
-    }));
-  };
+  const environmentProfiles = library.profiles.filter(
+    (profile) => profile.environmentId === selectedEnvironment?.id,
+  );
+  const editingProfile = environmentProfiles.find((profile) => profile.id === editingProfileId);
 
   const saveGeneral = (event: FormEvent) => {
     event.preventDefault();
@@ -174,13 +125,6 @@ export const ProjectSettings = ({
       name: environmentName,
       baseUrl: environmentUrl,
     });
-  };
-
-  const addProfile = () => {
-    if (!selectedEnvironment) return;
-    const id = `${selectedEnvironment.id}:draft:${crypto.randomUUID()}`;
-    setProfiles((current) => ({ ...current, [id]: emptyProfile(id) }));
-    setSelectedProfileId(id);
   };
 
   const startEnvironmentCreation = () => {
@@ -404,119 +348,38 @@ export const ProjectSettings = ({
                           icon="plus"
                           label="Add profile"
                           className="ml-auto"
-                          onClick={addProfile}
+                          onClick={() => setEditingProfileId('new')}
                         />
                       </div>
 
                       {environmentProfiles.length > 0 ? (
-                        <div className="mt-3 grid grid-cols-[180px_minmax(0,1fr)] overflow-hidden rounded-lg border border-line">
-                          <aside className="border-r border-line bg-plane/50 p-2">
-                            {environmentProfiles.map((profile) => (
-                              <button
-                                key={profile.id}
-                                type="button"
-                                className={`mb-1 w-full rounded-md px-2 py-2 text-left text-sm ${
-                                  selectedProfileId === profile.id
-                                    ? 'bg-accent-wash font-medium'
-                                    : 'hover:bg-raised'
-                                }`}
-                                onClick={() => setSelectedProfileId(profile.id)}
-                              >
+                        <div className="mt-3 overflow-hidden rounded-lg border border-line">
+                          {environmentProfiles.map((profile, index) => (
+                            <div
+                              key={profile.id}
+                              className={`flex h-11 items-center gap-3 px-3 ${
+                                index > 0 ? 'border-t border-line-soft' : ''
+                              }`}
+                            >
+                              <Icon name="lock" size={14} className="text-ink-3" />
+                              <span className="min-w-0 flex-1 truncate text-base font-medium">
                                 {profile.name}
-                              </button>
-                            ))}
-                          </aside>
-                          {selectedProfile && (
-                            <div className="space-y-4 p-4">
-                              <Field
-                                label="Name"
-                                value={selectedProfile.name}
-                                onChange={(name) => patchProfile({ name })}
+                              </span>
+                              <span className="text-sm text-ink-3">Login / password</span>
+                              <IconButton
+                                icon="pencil"
+                                size="sm"
+                                label={`Edit ${profile.name}`}
+                                onClick={() => setEditingProfileId(profile.id)}
                               />
-                              <fieldset>
-                                <legend className="text-sm font-medium text-ink-2">
-                                  Authorization
-                                </legend>
-                                <div className="mt-2 flex flex-wrap gap-4">
-                                  {(
-                                    [
-                                      ['credentials', 'Login / password'],
-                                      ['cookies', 'Cookies'],
-                                      ['headers', 'Headers'],
-                                    ] as const
-                                  ).map(([value, label]) => (
-                                    <label
-                                      key={value}
-                                      className="flex items-center gap-2 text-sm text-ink-2"
-                                    >
-                                      <input
-                                        type="radio"
-                                        name={`authorization-${selectedProfile.id}`}
-                                        checked={selectedProfile.authorization === value}
-                                        onChange={() => patchProfile({ authorization: value })}
-                                      />
-                                      {label}
-                                    </label>
-                                  ))}
-                                </div>
-                              </fieldset>
-                              {selectedProfile.authorization === 'credentials' && (
-                                <div className="grid grid-cols-2 gap-3">
-                                  <Field
-                                    label="Login"
-                                    value={selectedProfile.login}
-                                    onChange={(login) => patchProfile({ login })}
-                                  />
-                                  <Field
-                                    label="Password"
-                                    type="password"
-                                    value={selectedProfile.password}
-                                    onChange={(password) => patchProfile({ password })}
-                                  />
-                                </div>
-                              )}
-                              {selectedProfile.authorization === 'cookies' && (
-                                <div className="grid grid-cols-2 gap-3">
-                                  <Field
-                                    label="Cookie name"
-                                    value={selectedProfile.cookieName}
-                                    onChange={(cookieName) => patchProfile({ cookieName })}
-                                  />
-                                  <Field
-                                    label="Cookie value"
-                                    type="password"
-                                    value={selectedProfile.cookieValue}
-                                    onChange={(cookieValue) => patchProfile({ cookieValue })}
-                                  />
-                                </div>
-                              )}
-                              {selectedProfile.authorization === 'headers' && (
-                                <div className="grid grid-cols-2 gap-3">
-                                  <Field
-                                    label="Header name"
-                                    value={selectedProfile.headerName}
-                                    onChange={(headerName) => patchProfile({ headerName })}
-                                  />
-                                  <Field
-                                    label="Header value"
-                                    type="password"
-                                    value={selectedProfile.headerValue}
-                                    onChange={(headerValue) => patchProfile({ headerValue })}
-                                  />
-                                </div>
-                              )}
-                              <p className="text-xs leading-5 text-ink-3">
-                                Secret values are not sent to the server. Secure profile persistence
-                                will be connected separately.
-                              </p>
                             </div>
-                          )}
+                          ))}
                         </div>
                       ) : (
                         <button
                           type="button"
                           className="mt-3 w-full rounded-lg border border-dashed border-line p-5 text-sm text-ink-3 hover:bg-raised"
-                          onClick={addProfile}
+                          onClick={() => setEditingProfileId('new')}
                         >
                           + Add the first profile
                         </button>
@@ -547,6 +410,44 @@ export const ProjectSettings = ({
           )}
         </div>
       </section>
+      {editingProfileId && selectedEnvironment && (
+        <ProfileSheet
+          key={editingProfileId}
+          environment={selectedEnvironment.name}
+          profile={
+            editingProfile
+              ? {
+                  name: editingProfile.name,
+                  variables: library.profileVariables
+                    .filter((variable) => variable.profileId === editingProfile.id)
+                    .map(({ name, sensitive }) => ({ name, sensitive })),
+                }
+              : undefined
+          }
+          disabled={editingProfileId !== 'new' && !editingProfile?.revision}
+          onCancel={() => setEditingProfileId(undefined)}
+          onSave={(name, variables) => {
+            if (editingProfileId === 'new')
+              window.testron?.command({
+                type: 'create-profile',
+                environmentId: selectedEnvironment.id,
+                name,
+                authenticationType: 'credentials',
+                variables,
+              });
+            else if (editingProfile?.revision)
+              window.testron?.command({
+                type: 'update-profile',
+                profileId: editingProfile.id,
+                baseRevision: editingProfile.revision,
+                name,
+                authenticationType: 'credentials',
+                variables,
+              });
+            setEditingProfileId(undefined);
+          }}
+        />
+      )}
     </div>,
     document.body,
   );

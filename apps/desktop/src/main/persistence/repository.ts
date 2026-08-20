@@ -34,6 +34,7 @@ export interface ProfileRecord {
   environmentId: string;
   name: string;
   authenticationType: 'credentials';
+  revision?: number;
 }
 
 export interface ProfileVariableRecord {

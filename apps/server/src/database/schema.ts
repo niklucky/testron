@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -78,6 +79,37 @@ export const environments = pgTable(
   (table) => [index('environments_project_idx').on(table.projectId)],
 );
 
+export const profiles = pgTable(
+  'profiles',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    authenticationType: text('authentication_type').notNull(),
+    revision: integer('revision').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+    deletedAt: instant('deleted_at'),
+    deletedBy: uuid('deleted_by').references(() => users.id),
+  },
+  (table) => [index('profiles_environment_idx').on(table.environmentId)],
+);
+
+export const profileVariables = pgTable(
+  'profile_variables',
+  {
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    value: text('value').notNull(),
+    sensitive: boolean('sensitive').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.profileId, table.name] })],
+);
+
 export const testSuites = pgTable(
   'test_suites',
   {
@@ -103,6 +135,7 @@ export const tests = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     testSuiteId: uuid('test_suite_id').references(() => testSuites.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
     currentRevisionId: uuid('current_revision_id'),
     currentRevisionNumber: integer('current_revision_number'),
     createdAt: instant('created_at').defaultNow().notNull(),

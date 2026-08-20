@@ -3,6 +3,7 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import type {
   CreateEnvironmentRequest,
   CreateProjectRequest,
+  CreateProfileRequest,
   CreateTestRequest,
   CreateTestSuiteRequest,
   DeleteTestSuiteRequest,
@@ -15,6 +16,7 @@ import type {
   StartTestRunRequest,
   UpdateEnvironmentRequest,
   UpdateProjectRequest,
+  UpdateProfileRequest,
   UpdateTestSuiteRequest,
 } from '@testron/protocol';
 import type { AppRouter } from '@testron/server/router';
@@ -58,6 +60,14 @@ export class DesktopServerClient {
 
   updateEnvironment(value: UpdateEnvironmentRequest) {
     return this.api.environment.update.mutate(value);
+  }
+
+  createProfile(value: CreateProfileRequest) {
+    return this.api.profile.create.mutate(value);
+  }
+
+  updateProfile(value: UpdateProfileRequest) {
+    return this.api.profile.update.mutate(value);
   }
 
   createTest(value: CreateTestRequest) {

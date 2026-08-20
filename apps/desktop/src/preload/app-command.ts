@@ -134,6 +134,27 @@ export const appCommandSchema = z.discriminatedUnion('type', [
       ),
   }),
   z.object({ type: z.literal('select-profile'), profileId: entityIdSchema }),
+  z.object({
+    type: z.literal('update-profile'),
+    profileId: entityIdSchema,
+    baseRevision: z.number().int().positive(),
+    name: z.string().trim().min(1).max(100),
+    authenticationType: z.literal('credentials'),
+    variables: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1).max(100),
+          value: z.string().min(1).max(10_000),
+          sensitive: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .refine(
+        (variables) =>
+          new Set(variables.map((variable) => variable.name)).size === variables.length,
+      ),
+  }),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({ type: z.literal('rename-test'), testId: entityIdSchema, title: testTitleSchema }),
   z.object({ type: z.literal('prepare-new-test') }),

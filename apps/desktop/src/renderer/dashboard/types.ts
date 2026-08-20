@@ -55,6 +55,7 @@ export type SuiteRecord = {
   revision?: number;
   testCount?: number;
   failedCount?: number;
+  totalLatestDurationMs?: number;
 };
 
 export type DayRecord = {

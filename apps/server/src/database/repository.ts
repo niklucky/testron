@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 
 import {
   environmentSchema,
+  profileSchema,
   projectSchema,
   testSuiteSchema,
   testSuiteSummarySchema,
@@ -12,12 +13,14 @@ import {
   workspaceSnapshotSchema,
   type CreateEnvironmentRequest,
   type CreateProjectRequest,
+  type CreateProfileRequest,
   type CreateTestRequest,
   type CreateTestSuiteRequest,
   type DeleteTestSuiteRequest,
   type Environment,
   type GetTestRevisionHistoryRequest,
   type Project,
+  type Profile,
   type TestSuite,
   type TestSuiteSummary,
   type SaveTestRevisionOutput,
@@ -26,6 +29,7 @@ import {
   type StartTestRunRequest,
   type UpdateEnvironmentRequest,
   type UpdateProjectRequest,
+  type UpdateProfileRequest,
   type UpdateTestSuiteRequest,
   type TestRevision,
   type TestRun,
@@ -37,6 +41,8 @@ import type { Database } from './database.js';
 import {
   environments,
   idempotencyRecords,
+  profileVariables,
+  profiles,
   projects,
   testRevisions,
   testRuns,
@@ -155,6 +161,60 @@ export class CanonicalRepository {
     });
   }
 
+  createProfile(user: AuthenticatedUser, request: CreateProfileRequest): Promise<Profile> {
+    return this.idempotent(user, 'profile.create', request, async (tx) => {
+      await this.authorizeEnvironment(tx, user, request.environmentId);
+      const [row] = await tx
+        .insert(profiles)
+        .values({
+          environmentId: request.environmentId,
+          name: request.name,
+          authenticationType: request.authenticationType,
+          revision: 1,
+        })
+        .returning();
+      if (!row) throw new Error('Could not create the profile.');
+      await tx.insert(profileVariables).values(
+        request.variables.map((variable) => ({
+          profileId: row.id,
+          ...variable,
+        })),
+      );
+      return this.profile(tx, row);
+    });
+  }
+
+  updateProfile(user: AuthenticatedUser, request: UpdateProfileRequest): Promise<Profile> {
+    return this.idempotent(user, 'profile.update', request, async (tx) => {
+      await this.authorizeProfile(tx, user, request.profileId);
+      const [row] = await tx
+        .update(profiles)
+        .set({
+          name: request.name,
+          authenticationType: request.authenticationType,
+          revision: request.baseRevision + 1,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(profiles.id, request.profileId),
+            eq(profiles.revision, request.baseRevision),
+            isNull(profiles.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The profile changed.');
+      await tx.delete(profileVariables).where(eq(profileVariables.profileId, request.profileId));
+      await tx.insert(profileVariables).values(
+        request.variables.map((variable) => ({
+          profileId: request.profileId,
+          ...variable,
+        })),
+      );
+      return this.profile(tx, row);
+    });
+  }
+
   createTestSuite(user: AuthenticatedUser, request: CreateTestSuiteRequest): Promise<TestSuite> {
     return this.idempotent(user, 'testSuite.create', request, async (tx) => {
       await this.authorizeProject(tx, user, request.projectId);
@@ -233,6 +293,7 @@ export class CanonicalRepository {
         .values({
           projectId: request.projectId,
           testSuiteId: request.testSuiteId ?? null,
+          title: request.content.title,
           createdBy: user.id,
         })
         .returning();
@@ -323,6 +384,18 @@ export class CanonicalRepository {
       const environmentValues = environmentRows.map(({ environment }) =>
         this.environment(environment),
       );
+      const environmentIds = environmentValues.map((environment) => environment.id);
+      const profileRows =
+        environmentIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(profiles)
+              .where(
+                and(inArray(profiles.environmentId, environmentIds), isNull(profiles.deletedAt)),
+              )
+              .orderBy(asc(profiles.createdAt));
+      const profileValues = await Promise.all(profileRows.map((row) => this.profile(tx, row)));
       const projectIds = projectValues.map((project) => project.id);
       const testSuiteValues = await this.testSuiteSummaries(tx, projectIds);
       const testRows = await tx
@@ -346,6 +419,7 @@ export class CanonicalRepository {
         viewer: user,
         projects: projectValues,
         environments: environmentValues,
+        profiles: profileValues,
         testSuites: testSuiteValues,
         tests: testValues,
         activeRuns: runRows.map((row) => this.run(row)),
@@ -429,7 +503,11 @@ export class CanonicalRepository {
       if (!revision) throw new Error('Could not create the test revision.');
       await tx
         .update(tests)
-        .set({ currentRevisionId: revision.id, currentRevisionNumber: nextNumber })
+        .set({
+          title: request.content.title,
+          currentRevisionId: revision.id,
+          currentRevisionNumber: nextNumber,
+        })
         .where(eq(tests.id, request.testId));
       return { status: 'saved', snapshot: await this.snapshot(tx, request.testId) };
     });
@@ -534,6 +612,36 @@ export class CanonicalRepository {
     return testSuite;
   }
 
+  private async authorizeEnvironment(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    environmentId: string,
+  ): Promise<typeof environments.$inferSelect> {
+    const [environment] = await tx
+      .select()
+      .from(environments)
+      .where(and(eq(environments.id, environmentId), isNull(environments.deletedAt)))
+      .limit(1);
+    if (!environment) throw new RepositoryError('NOT_FOUND', 'The environment was not found.');
+    await this.authorizeProject(tx, user, environment.projectId);
+    return environment;
+  }
+
+  private async authorizeProfile(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    profileId: string,
+  ): Promise<typeof profiles.$inferSelect> {
+    const [profile] = await tx
+      .select()
+      .from(profiles)
+      .where(and(eq(profiles.id, profileId), isNull(profiles.deletedAt)))
+      .limit(1);
+    if (!profile) throw new RepositoryError('NOT_FOUND', 'The profile was not found.');
+    await this.authorizeEnvironment(tx, user, profile.environmentId);
+    return profile;
+  }
+
   private async requireEnvironment(
     tx: Transaction,
     environmentId: string,
@@ -583,11 +691,20 @@ export class CanonicalRepository {
       testIds.length === 0
         ? []
         : await tx
-            .select({ testId: testRuns.testId, status: testRuns.status })
+            .select({
+              testId: testRuns.testId,
+              status: testRuns.status,
+              durationMs: testRuns.durationMs,
+            })
             .from(testRuns)
             .where(inArray(testRuns.testId, testIds))
             .orderBy(asc(testRuns.startedAt));
-    const latestStatus = new Map(runRows.map((run) => [run.testId, run.status]));
+    const latestStatus = new Map<string, (typeof runRows)[number]['status']>();
+    const latestCompletedDuration = new Map<string, number>();
+    for (const run of runRows) {
+      latestStatus.set(run.testId, run.status);
+      if (run.durationMs !== null) latestCompletedDuration.set(run.testId, run.durationMs);
+    }
     return suiteRows.map((testSuite) => {
       const suiteTests = testRows.filter((test) => test.testSuiteId === testSuite.id);
       return testSuiteSummarySchema.parse({
@@ -596,6 +713,10 @@ export class CanonicalRepository {
         failedCount: suiteTests.filter((test) =>
           ['failed', 'timedOut'].includes(latestStatus.get(test.id) ?? ''),
         ).length,
+        totalLatestDurationMs: suiteTests.reduce(
+          (total, test) => total + (latestCompletedDuration.get(test.id) ?? 0),
+          0,
+        ),
       });
     });
   }
@@ -615,6 +736,7 @@ export class CanonicalRepository {
         id: test.id,
         projectId: test.projectId,
         testSuiteId: test.testSuiteId,
+        title: test.title,
         currentRevision: { id: test.currentRevisionId, number: test.currentRevisionNumber },
         createdAt: instant(test.createdAt),
         createdBy: test.createdBy,
@@ -659,6 +781,29 @@ export class CanonicalRepository {
       name: row.name,
       baseUrl: row.baseUrl,
       testIdAttribute: row.testIdAttribute,
+      revision: row.revision,
+      createdAt: instant(row.createdAt),
+      updatedAt: instant(row.updatedAt),
+      deletion: activeDeletion,
+    });
+  }
+
+  private async profile(tx: Transaction, row: typeof profiles.$inferSelect): Promise<Profile> {
+    const variables = await tx
+      .select({
+        name: profileVariables.name,
+        value: profileVariables.value,
+        sensitive: profileVariables.sensitive,
+      })
+      .from(profileVariables)
+      .where(eq(profileVariables.profileId, row.id))
+      .orderBy(asc(profileVariables.name));
+    return profileSchema.parse({
+      id: row.id,
+      environmentId: row.environmentId,
+      name: row.name,
+      authenticationType: row.authenticationType,
+      variables,
       revision: row.revision,
       createdAt: instant(row.createdAt),
       updatedAt: instant(row.updatedAt),

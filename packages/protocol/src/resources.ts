@@ -52,6 +52,28 @@ export const environmentSchema = z
   })
   .strict();
 
+export const profileVariableSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    value: z.string().min(1).max(10_000),
+    sensitive: z.boolean(),
+  })
+  .strict();
+
+export const profileSchema = z
+  .object({
+    id: entityIdSchema,
+    environmentId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    authenticationType: z.literal('credentials'),
+    variables: z.array(profileVariableSchema).min(1).max(50),
+    revision: revisionNumberSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+    deletion: deletionStateSchema,
+  })
+  .strict();
+
 export const testSuiteSchema = z
   .object({
     id: entityIdSchema,
@@ -67,6 +89,7 @@ export const testSuiteSchema = z
 export const testSuiteSummarySchema = testSuiteSchema.extend({
   testCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
+  totalLatestDurationMs: z.number().int().nonnegative(),
 });
 
 export const revisionStepSchema = z
@@ -116,6 +139,7 @@ export const testSchema = z
     id: entityIdSchema,
     projectId: entityIdSchema,
     testSuiteId: entityIdSchema.nullable(),
+    title: testTitleSchema,
     currentRevision: revisionPointerSchema,
     createdAt: timestampSchema,
     createdBy: entityIdSchema,
@@ -161,12 +185,13 @@ export const testSnapshotSchema = z
       snapshot.test.id !== snapshot.currentRevision.testId ||
       snapshot.test.projectId !== snapshot.currentRevision.projectId ||
       snapshot.test.currentRevision.id !== snapshot.currentRevision.id ||
-      snapshot.test.currentRevision.number !== snapshot.currentRevision.number
+      snapshot.test.currentRevision.number !== snapshot.currentRevision.number ||
+      snapshot.test.title !== snapshot.currentRevision.content.title
     )
       context.addIssue({
         code: 'custom',
         path: ['currentRevision'],
-        message: 'The test current-revision pointer must match the included revision.',
+        message: 'The test projection must match the included current revision.',
       });
   });
 
@@ -191,6 +216,7 @@ export const workspaceSnapshotSchema = z
     viewer: workspaceViewerSchema,
     projects: z.array(projectSchema),
     environments: z.array(environmentSchema),
+    profiles: z.array(profileSchema),
     testSuites: z.array(testSuiteSummarySchema),
     tests: z.array(testSnapshotSchema),
     activeRuns: z.array(testRunSchema),
@@ -199,6 +225,8 @@ export const workspaceSnapshotSchema = z
 
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
+export type ProfileVariable = z.infer<typeof profileVariableSchema>;
+export type Profile = z.infer<typeof profileSchema>;
 export type TestSuite = z.infer<typeof testSuiteSchema>;
 export type TestSuiteSummary = z.infer<typeof testSuiteSummarySchema>;
 export type RevisionStep = z.infer<typeof revisionStepSchema>;
