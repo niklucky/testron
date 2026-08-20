@@ -1,4 +1,5 @@
 import { Kbd, Meter, TextArea, toneInk } from '../../design';
+import { displayShortcut, manualShortcutIds } from '../hotkeys';
 import { manualTone } from '../tone';
 import type { Failure, ManualVerdict } from '../types';
 
@@ -79,7 +80,7 @@ export const ManualView = ({
                         }}
                       >
                         {tint.label}
-                        {active && <Kbd>{tint.key}</Kbd>}
+                        {active && <Kbd>{displayShortcut(manualShortcutIds[option])}</Kbd>}
                       </button>
                     );
                   })}

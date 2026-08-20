@@ -1,14 +1,6 @@
 import { HeatMap, Icon, Kbd, Meter, Panel, SectionLabel } from '../design';
 import { failures, owners, pulse } from './data';
-
-const shortcuts = [
-  ['j / k', 'move through the queue'],
-  ['o / t', 'overview · triage'],
-  ['[ / ]', 'switch evidence tab'],
-  ['/', 'filter failures'],
-  ['r · q · b', 're-run · quarantine · bug'],
-  ['p · f · x', 'manual verdict'],
-];
+import { dashboardShortcutGroups, displayShortcutGroup } from './hotkeys';
 
 /**
  * Everything you might want *while* triaging, and nothing you have to click:
@@ -75,12 +67,12 @@ export const ContextRail = ({ failing }: { failing: number }) => {
           <SectionLabel>Hands stay home</SectionLabel>
         </h3>
         <ul className="space-y-1.5 text-sm text-ink-3">
-          {shortcuts.map(([keys, what]) => (
-            <li key={keys} className="flex items-center gap-2">
+          {dashboardShortcutGroups.map((group) => (
+            <li key={group.description} className="flex items-center gap-2">
               <span className="w-[66px] shrink-0">
-                <Kbd>{keys}</Kbd>
+                <Kbd>{displayShortcutGroup(group)}</Kbd>
               </span>
-              <span>{what}</span>
+              <span>{group.description}</span>
             </li>
           ))}
         </ul>

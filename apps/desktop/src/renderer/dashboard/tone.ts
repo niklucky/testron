@@ -33,10 +33,10 @@ export const activityTone: Record<ActivityKind, { icon: IconName; tone: Tone; la
   fixed: { icon: 'check', tone: 'good', label: 'Fixed' },
 };
 
-export const manualTone: Record<ManualVerdict, { tone: Tone; label: string; key: string }> = {
-  pass: { tone: 'good', label: 'Pass', key: 'p' },
-  fail: { tone: 'critical', label: 'Fail', key: 'f' },
-  block: { tone: 'warning', label: 'Blocked', key: 'x' },
+export const manualTone: Record<ManualVerdict, { tone: Tone; label: string }> = {
+  pass: { tone: 'good', label: 'Pass' },
+  fail: { tone: 'critical', label: 'Fail' },
+  block: { tone: 'warning', label: 'Blocked' },
 };
 
 /** Series definition shared by the runs chart, its legend and its tooltip. */
