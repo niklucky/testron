@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM node:24-alpine AS build
 
 RUN corepack enable
@@ -7,14 +5,17 @@ WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/server/package.json apps/server/package.json
+COPY apps/webapp/package.json apps/webapp/package.json
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/protocol/package.json packages/protocol/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY apps/server apps/server
+COPY apps/webapp apps/webapp
 COPY packages/domain packages/domain
 COPY packages/protocol packages/protocol
 RUN pnpm --filter @testron/server build
+RUN pnpm --filter @testron/webapp build
 RUN pnpm --filter @testron/server deploy --prod --legacy /opt/testron-server
 
 FROM node:24-alpine AS runtime
@@ -23,6 +24,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY --from=build --chown=node:node /opt/testron-server ./
+COPY --from=build --chown=node:node /workspace/apps/webapp/dist ./public
 
 USER node
 EXPOSE 4400

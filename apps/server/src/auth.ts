@@ -104,6 +104,11 @@ export class AuthenticationService {
     return user;
   }
 
+  async revoke(accessToken: string | undefined): Promise<void> {
+    if (!accessToken) return;
+    await this.db.delete(sessions).where(eq(sessions.tokenHash, hash(accessToken)));
+  }
+
   async updateProfile(user: AuthenticatedUser, value: unknown): Promise<AuthenticatedUser> {
     const input = updateAccountProfileRequestSchema.parse(value);
     const [updated] = await this.db

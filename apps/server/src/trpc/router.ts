@@ -17,6 +17,7 @@ import {
   getTestProcedure,
   getTestRevisionHistoryProcedure,
   getWorkspaceProcedure,
+  getWebWorkspaceProcedure,
   listTestSuitesProcedure,
   lookupInviteeProcedure,
   finishTestRunProcedure,
@@ -29,6 +30,7 @@ import {
   updateProfileProcedure,
   updateProjectProcedure,
   updateTestSuiteProcedure,
+  type AuthSessionOutput,
 } from '@testron/protocol';
 import {
   AuthenticationError,
@@ -39,6 +41,7 @@ import { RepositoryError, type CanonicalRepository } from '../database/repositor
 
 export interface TrpcContext {
   user?: AuthenticatedUser;
+  setSession?(session: AuthSessionOutput): void;
 }
 
 export interface RouterServices {
@@ -93,11 +96,19 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
       register: publicProcedure
         .input(authRegisterInputSchema)
         .output(authSessionOutputSchema)
-        .mutation(({ input }) => callAuthentication(() => authentication.register(input))),
+        .mutation(async ({ ctx, input }) => {
+          const session = await callAuthentication(() => authentication.register(input));
+          ctx.setSession?.(session);
+          return session;
+        }),
       login: publicProcedure
         .input(authLoginInputSchema)
         .output(authSessionOutputSchema)
-        .mutation(({ input }) => callAuthentication(() => authentication.login(input))),
+        .mutation(async ({ ctx, input }) => {
+          const session = await callAuthentication(() => authentication.login(input));
+          ctx.setSession?.(session);
+          return session;
+        }),
     }),
     account: t.router({
       updateProfile: authenticatedProcedure
@@ -192,6 +203,21 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(getWorkspaceProcedure.input)
         .output(getWorkspaceProcedure.output)
         .query(({ ctx }) => call(() => repository.getWorkspace(ctx.user))),
+      getWeb: authenticatedProcedure
+        .input(getWebWorkspaceProcedure.input)
+        .output(getWebWorkspaceProcedure.output)
+        .query(({ ctx }) =>
+          call(async () => {
+            const workspace = await repository.getWorkspace(ctx.user);
+            return {
+              ...workspace,
+              profiles: workspace.profiles.map((profile) => ({
+                ...profile,
+                variables: profile.variables.map(({ name, sensitive }) => ({ name, sensitive })),
+              })),
+            };
+          }),
+        ),
     }),
     test: t.router({
       create: authenticatedProcedure

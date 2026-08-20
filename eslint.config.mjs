@@ -7,6 +7,7 @@ export default tseslint.config(
       '.vite/**',
       '**/.vite/**',
       '**/dist/**',
+      '**/routeTree.gen.ts',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

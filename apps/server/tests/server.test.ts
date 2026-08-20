@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
@@ -13,6 +16,7 @@ const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/test
 const expectedDatabase = 'testron_test';
 const expectedUser = 'testron_test';
 let server: RunningTestronServer;
+let webappDirectory: string;
 const deliveredInvitationIds: string[] = [];
 
 const assertIsolatedTestDatabase = async (): Promise<void> => {
@@ -28,6 +32,10 @@ const assertIsolatedTestDatabase = async (): Promise<void> => {
 };
 
 beforeAll(async () => {
+  webappDirectory = await mkdtemp(path.join(tmpdir(), 'testron-webapp-'));
+  await mkdir(path.join(webappDirectory, 'assets'));
+  await writeFile(path.join(webappDirectory, 'index.html'), '<main>Testron webapp</main>');
+  await writeFile(path.join(webappDirectory, 'assets', 'app.js'), 'export {};');
   server = await startTestronServer({
     databaseUrl,
     migrate: false,
@@ -36,6 +44,7 @@ beforeAll(async () => {
         deliveredInvitationIds.push(invitation.id);
       },
     },
+    webappDirectory,
   });
   await assertIsolatedTestDatabase();
   await server.database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
@@ -52,6 +61,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await server.close();
+  await rm(webappDirectory, { recursive: true });
 });
 
 const requestMeta = (): RequestMetadata => ({
@@ -120,6 +130,17 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(response.status).toBe(200);
   });
 
+  it('serves webapp assets and falls back to the SPA entry point', async () => {
+    const entry = await fetch(`${server.url}/projects/example`);
+    expect(await entry.text()).toContain('Testron webapp');
+    expect(entry.headers.get('cache-control')).toBe('no-cache');
+
+    const asset = await fetch(`${server.url}/assets/app.js`);
+    expect(await asset.text()).toBe('export {};');
+    expect(asset.headers.get('cache-control')).toContain('immutable');
+    expect((await fetch(`${server.url}/assets/missing.js`)).status).toBe(404);
+  });
+
   it('registers and logs in without a browser device flow', async () => {
     const email = 'owner@example.test';
     const password = 'correct horse battery staple';
@@ -137,6 +158,72 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       client(login.accessToken).workspace.get.query({ meta: requestMeta() }),
     ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
+  });
+
+  it('authenticates browser requests with an HttpOnly session cookie', async () => {
+    let cookie: string | undefined;
+    const browser = createTRPCClient<AppRouter>({
+      links: [
+        httpBatchLink({
+          url: `${server.url}/api/trpc`,
+          fetch: async (input, init) => {
+            const response = await fetch(input, init as RequestInit);
+            cookie = response.headers.get('set-cookie')?.split(';')[0];
+            return response;
+          },
+        }),
+      ],
+    });
+    await browser.auth.register.mutate({
+      name: 'Browser User',
+      email: 'browser@example.test',
+      password: 'correct horse battery staple',
+    });
+    expect(cookie).toMatch(/^testron_session=/);
+    expect(cookie).not.toContain('Bearer');
+
+    const cookieClient = createTRPCClient<AppRouter>({
+      links: [
+        httpBatchLink({
+          url: `${server.url}/api/trpc`,
+          headers: () => ({ cookie: cookie ?? '' }),
+        }),
+      ],
+    });
+    await expect(cookieClient.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      viewer: { email: 'browser@example.test' },
+    });
+
+    const project = await cookieClient.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Browser project',
+    });
+    const environment = await cookieClient.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    await cookieClient.profile.create.mutate({
+      meta: mutationMeta(),
+      environmentId: environment.id,
+      name: 'Admin',
+      authenticationType: 'credentials',
+      variables: [{ name: 'PASSWORD', value: 'never-send-this', sensitive: true }],
+    });
+    const webWorkspace = await cookieClient.workspace.getWeb.query({ meta: requestMeta() });
+    expect(webWorkspace.profiles[0]?.variables).toEqual([{ name: 'PASSWORD', sensitive: true }]);
+    expect(JSON.stringify(webWorkspace)).not.toContain('never-send-this');
+
+    const logout = await fetch(`${server.url}/api/auth/logout`, {
+      method: 'POST',
+      headers: { cookie: cookie ?? '' },
+    });
+    expect(logout.status).toBe(204);
+    await expect(cookieClient.workspace.get.query({ meta: requestMeta() })).rejects.toMatchObject({
+      data: { code: 'UNAUTHORIZED' },
+    });
   });
 
   it('updates the account name and changes the password after verifying the current password', async () => {

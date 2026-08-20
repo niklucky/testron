@@ -1,4 +1,6 @@
 import { startTestronServer } from './server.js';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 try {
   process.loadEnvFile(new URL('../../../.env', import.meta.url));
@@ -13,6 +15,10 @@ const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFrom = process.env.RESEND_FROM_EMAIL;
+const bundledWebappDirectory = fileURLToPath(new URL('../public', import.meta.url));
+const webappDirectory =
+  process.env.TESTRON_WEBAPP_DIR ??
+  (existsSync(bundledWebappDirectory) ? bundledWebappDirectory : undefined);
 if (resendApiKey && !resendFrom)
   throw new Error('RESEND_FROM_EMAIL is required when RESEND_API_KEY is configured.');
 const server = await startTestronServer({
@@ -20,6 +26,7 @@ const server = await startTestronServer({
   host,
   port,
   publicBaseUrl,
+  ...(webappDirectory ? { webappDirectory } : {}),
   ...(resendApiKey && resendFrom ? { resend: { apiKey: resendApiKey, from: resendFrom } } : {}),
 });
 
