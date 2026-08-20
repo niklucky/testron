@@ -27,9 +27,9 @@ describe('desktop application command schema', () => {
         title: 'x'.repeat(201),
       }).success,
     ).toBe(false);
-    expect(appCommandSchema.parse({ type: 'prepare-new-test', title: '  Checkout flow  ' })).toEqual(
-      { type: 'prepare-new-test', title: 'Checkout flow' },
-    );
+    expect(
+      appCommandSchema.parse({ type: 'prepare-new-test', title: '  Checkout flow  ' }),
+    ).toEqual({ type: 'prepare-new-test', title: 'Checkout flow' });
   });
 
   it('validates the desktop login commands', () => {
