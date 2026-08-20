@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -27,6 +28,7 @@ export const ProfileSheet = ({
   onCancel: () => void;
   onSave: (name: string, variables: ProfileVariableInput[]) => void;
 }) => {
+  const { t } = useTranslation();
   const editing = Boolean(profile);
   const [name, setName] = useState(profile?.name ?? 'Administrator');
   const [variables, setVariables] = useState<ProfileVariableInput[]>(
@@ -51,51 +53,52 @@ export const ProfileSheet = ({
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Authentication profile"
+        aria-label={t('authentication_profile')}
         className="w-full max-w-[560px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
       >
-        <h2 className="text-lg font-semibold">{editing ? 'Edit profile' : 'New profile'}</h2>
+        <h2 className="text-lg font-semibold">{editing ? t('edit_profile') : t('new_profile')}</h2>
         <p className="mt-1 text-base text-ink-3">
-          Credentials for {environment}. Recorded tests store variable names, never these values.
+          {t('credentials_for')} {environment}
+          {t('recorded_tests_store_variable_names_never_these_values')}
         </p>
 
         <label className="mt-4 block">
-          <span className="text-sm text-ink-3">Profile name</span>
+          <span className="text-sm text-ink-3">{t('profile_name')}</span>
           <input
-            aria-label="Profile name"
+            aria-label={t('profile_name')}
             value={name}
             onChange={(event) => setName(event.target.value)}
             className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
           />
         </label>
         <label className="mt-3 block">
-          <span className="text-sm text-ink-3">Authentication type</span>
+          <span className="text-sm text-ink-3">{t('authentication_type')}</span>
           <select
-            aria-label="Authentication type"
+            aria-label={t('authentication_type')}
             className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none"
           >
-            <option value="credentials">Login / password</option>
-            <option disabled>OAuth — coming later</option>
-            <option disabled>Authentication header — coming later</option>
-            <option disabled>Cookie — coming later</option>
+            <option value="credentials">{t('login_password')}</option>
+            <option disabled>{t('oauth_coming_later')}</option>
+            <option disabled>{t('authentication_header_coming_later')}</option>
+            <option disabled>{t('cookie_coming_later')}</option>
           </select>
         </label>
 
         <div className="mt-4">
           {editing && (
             <p className="mb-3 text-sm text-ink-3">
-              Re-enter variable values to replace the saved credentials.
+              {t('re_enter_variable_values_to_replace_the_saved_credentials')}
             </p>
           )}
           <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-sm text-ink-3">
-            <span>Name</span>
-            <span>Value</span>
+            <span>{t('name')}</span>
+            <span>{t('value')}</span>
             <span />
           </div>
           {variables.map((variable, index) => (
             <div key={index} className="mb-2 grid grid-cols-[1fr_1.35fr_70px] gap-2">
               <input
-                aria-label={`Variable ${index + 1} name`}
+                aria-label={t('variable_name', { value1: index + 1 })}
                 value={variable.name}
                 onChange={(event) =>
                   setVariables((current) =>
@@ -113,7 +116,7 @@ export const ProfileSheet = ({
                 className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
               />
               <input
-                aria-label={`Variable ${index + 1} value`}
+                aria-label={t('variable_value', { value1: index + 1 })}
                 type={variable.sensitive ? 'password' : 'text'}
                 value={variable.value}
                 onChange={(event) =>
@@ -132,7 +135,7 @@ export const ProfileSheet = ({
                   setVariables((current) => current.filter((_, entryIndex) => entryIndex !== index))
                 }
               >
-                Remove
+                {t('remove')}
               </Button>
             </div>
           ))}
@@ -143,9 +146,11 @@ export const ProfileSheet = ({
               setVariables((current) => [...current, { name: '', value: '', sensitive: false }])
             }
           >
-            + Variable
+            {t('variable')}
           </Button>
-          {!unique && <p className="mt-2 text-sm text-critical">Variable names must be unique.</p>}
+          {!unique && (
+            <p className="mt-2 text-sm text-critical">{t('variable_names_must_be_unique')}</p>
+          )}
         </div>
 
         <div className="mt-5 flex items-center gap-2">
@@ -162,10 +167,10 @@ export const ProfileSheet = ({
               )
             }
           >
-            {editing ? 'Save profile' : 'Create and select'}
+            {editing ? t('save_profile') : t('create_and_select')}
           </Button>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t('cancel')}
           </Button>
         </div>
       </section>

@@ -1,18 +1,21 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
 import { Avatar, Badge, Button, EmptyState, Icon, Panel, PanelHeader } from '../design';
 import { canCancelInvitation, canManageMembers } from './access';
 
-const initials = (name: string) =>
-  name
+const initials = (name: string) => {
+  return name
     .split(/[\s@._-]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join('');
+};
 
 export const Members = ({ library }: { library: LibrarySnapshot }) => {
+  const { t } = useTranslation();
   const project =
     library.projects.find((candidate) => candidate.id === library.selectedProjectId) ??
     library.projects[0];
@@ -57,7 +60,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
   if (!library.server?.configured)
     return (
       <div className="min-h-0 overflow-y-auto p-5">
-        <EmptyState>Member management requires a configured Testron server.</EmptyState>
+        <EmptyState>{t('member_management_requires_a_configured_testron_server')}</EmptyState>
       </div>
     );
 
@@ -65,7 +68,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
     return (
       <div className="min-h-0 overflow-y-auto p-5">
         <EmptyState>
-          No project selected. Accept a pending invitation or create a project to manage members.
+          {t('no_project_selected_accept_a_pending_invitation_or_create_a_proj')}
         </EmptyState>
       </div>
     );
@@ -74,18 +77,20 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
     <div className="min-h-0 overflow-y-auto p-5">
       <div className="mx-auto max-w-[1040px]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-[-0.02em]">Members</h1>
-          <p className="mt-1 text-base text-ink-3">Manage access to {project.name}.</p>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('members')}</h1>
+          <p className="mt-1 text-base text-ink-3">
+            {t('manage_access_to')} {project.name}.
+          </p>
         </div>
 
         <Panel className="mt-5">
           <PanelHeader
-            title="Invite a member"
-            subtitle="Invitations remain pending until accepted."
+            title={t('invite_a_member')}
+            subtitle={t('invitations_remain_pending_until_accepted')}
           />
           <form className="flex items-start gap-3 border-t border-line p-4" onSubmit={invite}>
             <label className="min-w-0 flex-1">
-              <span className="sr-only">Email address</span>
+              <span className="sr-only">{t('email_address')}</span>
               <input
                 type="email"
                 required
@@ -96,7 +101,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                   if (event.target.value.trim().toLowerCase() !== submittedEmail)
                     setSubmittedEmail(undefined);
                 }}
-                placeholder="teammate@example.com"
+                placeholder={t('teammate_example_com')}
                 className="h-10 w-full rounded-md border border-line bg-plane px-3 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent"
               />
               {email.trim() && (
@@ -104,13 +109,13 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                   {lookup
                     ? lookup.name
                       ? `Account: ${lookup.name}`
-                      : 'No account yet — they can register before accepting.'
-                    : 'Looking up account…'}
+                      : t('no_account_yet_they_can_register_before_accepting')
+                    : t('looking_up_account')}
                 </span>
               )}
             </label>
             <Button type="submit" variant="primary" icon="plus" disabled={pending || !email.trim()}>
-              Invite
+              {t('invite')}
             </Button>
           </form>
           {library.server?.status === 'error' && library.server.message && (
@@ -125,7 +130,10 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
         </Panel>
 
         <Panel className="mt-5">
-          <PanelHeader title="Project members" subtitle={`${members.length} people`} />
+          <PanelHeader
+            title={t('project_members')}
+            subtitle={t('people', { value1: members.length })}
+          />
           <div className="divide-y divide-line border-t border-line">
             {members.map((member) => {
               const label = member.user.name ?? member.user.email;
@@ -152,7 +160,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                         })
                       }
                     >
-                      {member.status === 'blocked' ? 'Unblock' : 'Block'}
+                      {member.status === 'blocked' ? t('unblock') : t('block')}
                     </Button>
                   )}
                 </div>
@@ -162,9 +170,14 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
         </Panel>
 
         <Panel className="mt-5">
-          <PanelHeader title="Invitations" subtitle={`${invitations.length} total`} />
+          <PanelHeader
+            title={t('invitations')}
+            subtitle={t('total_2', { value1: invitations.length })}
+          />
           {invitations.length === 0 ? (
-            <div className="border-t border-line p-5 text-sm text-ink-3">No invitations yet.</div>
+            <div className="border-t border-line p-5 text-sm text-ink-3">
+              {t('no_invitations_yet')}
+            </div>
           ) : (
             <div className="divide-y divide-line border-t border-line">
               {invitations.map((invitation) => {
@@ -176,7 +189,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                         {invitation.inviteeName ?? invitation.email}
                       </p>
                       <p className="truncate text-sm text-ink-3">
-                        {invitation.email} · invited by{' '}
+                        {invitation.email} {t('invited_by')}{' '}
                         {invitation.invitedBy.name ?? invitation.invitedBy.email}
                       </p>
                     </div>
@@ -193,7 +206,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                           })
                         }
                       >
-                        Cancel
+                        {t('cancel')}
                       </Button>
                     )}
                   </div>

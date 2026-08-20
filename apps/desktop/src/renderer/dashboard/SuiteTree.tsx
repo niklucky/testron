@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useRef, useState } from 'react';
 
 import { Badge, Icon, IconButton, SplitBar, StatusDot } from '../design';
@@ -76,6 +77,7 @@ const SuiteBranch = ({
   onDeleteSuite: (suite: SuiteRecord) => void;
   onLog: (message: string) => void;
 }) => {
+  const { t } = useTranslation();
   const [showAll, setShowAll] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   // A ref, not state: the drop handler must read the index the drag started
@@ -130,7 +132,7 @@ const SuiteBranch = ({
         <IconButton
           icon="plus"
           size="sm"
-          label={`Add a test to ${suite.name}`}
+          label={t('add_a_test_to', { value1: suite.name })}
           className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
           onClick={() => onNewTest(suite)}
         />
@@ -138,7 +140,7 @@ const SuiteBranch = ({
           <IconButton
             icon="dots"
             size="sm"
-            label={`More actions for ${suite.name}`}
+            label={t('more_actions_for', { value1: suite.name })}
             className={`focus-visible:opacity-100 group-hover:opacity-100 ${
               actionsOpen ? 'opacity-100' : 'opacity-0'
             }`}
@@ -159,7 +161,7 @@ const SuiteBranch = ({
                   onEditSuite(suite);
                 }}
               >
-                Edit
+                {t('edit')}
               </button>
               <button
                 type="button"
@@ -170,7 +172,7 @@ const SuiteBranch = ({
                   onDeleteSuite(suite);
                 }}
               >
-                Delete
+                {t('delete')}
               </button>
             </div>
           )}
@@ -226,7 +228,7 @@ const SuiteBranch = ({
                 className="w-full rounded px-2 py-1.5 text-left text-sm text-ink-3 hover:bg-raised hover:text-ink"
                 onClick={() => setShowAll((current) => !current)}
               >
-                {showAll ? 'Show less' : `Show ${hidden} more`}
+                {showAll ? t('show_less') : t('show_more_count', { count: hidden })}
               </button>
             </li>
           )}

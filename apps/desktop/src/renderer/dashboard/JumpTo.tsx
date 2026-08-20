@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useHotkeys } from '@tanstack/react-hotkeys';
@@ -23,6 +24,7 @@ export const JumpTo = ({
   shortcut: string;
   onClose(): void;
 }) => {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
@@ -86,7 +88,7 @@ export const JumpTo = ({
         className="h-fit w-full max-w-[620px] overflow-hidden rounded-xl border border-line bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.38)]"
       >
         <h2 id={titleId} className="sr-only">
-          Jump to
+          {t('jump_to_2')}
         </h2>
         <label className="flex h-14 items-center gap-3 border-b border-line px-4">
           <Icon name="search" size={17} className="shrink-0 text-ink-3" />
@@ -97,7 +99,7 @@ export const JumpTo = ({
               setQuery(event.target.value);
               setCursor(0);
             }}
-            placeholder="Search views, test suites, and tests…"
+            placeholder={t('search_views_test_suites_and_tests')}
             className="min-w-0 flex-1 bg-transparent text-lg text-ink outline-none placeholder:text-ink-3"
           />
           <Kbd>{shortcut}</Kbd>
@@ -105,7 +107,7 @@ export const JumpTo = ({
 
         <div className="max-h-[430px] overflow-y-auto p-2">
           {results.length ? (
-            <ul role="listbox" aria-label="Jump destinations">
+            <ul role="listbox" aria-label={t('jump_destinations')}>
               {results.map((item, index) => (
                 <li key={item.id}>
                   <button
@@ -130,13 +132,15 @@ export const JumpTo = ({
               ))}
             </ul>
           ) : (
-            <p className="px-3 py-10 text-center text-sm text-ink-3">No matching destination</p>
+            <p className="px-3 py-10 text-center text-sm text-ink-3">
+              {t('no_matching_destination')}
+            </p>
           )}
         </div>
         <footer className="flex items-center gap-4 border-t border-line px-4 py-2 text-xs text-ink-3">
-          <span>↑↓ navigate</span>
-          <span>↵ open</span>
-          <span>Esc close</span>
+          <span>{t('navigate')}</span>
+          <span>{t('open')}</span>
+          <span>{t('esc_close')}</span>
         </footer>
       </section>
     </div>,

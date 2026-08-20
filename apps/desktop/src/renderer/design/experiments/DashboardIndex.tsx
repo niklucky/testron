@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 const dashboards = [
   {
     href: '#/experiments/glass',
@@ -29,32 +30,35 @@ const dashboards = [
   },
 ];
 
-export const DashboardIndex = () => (
-  <main className="dashboard-gallery">
-    <div className="gallery-content">
-      <header>
-        <span>TESTRON / UI STUDIES</span>
-        <h1>Choose a dashboard</h1>
-        <p>Four directions for the same testing workspace. 04 shipped.</p>
-      </header>
-      <div className="gallery-grid">
-        {dashboards.map((dashboard) => (
-          <a href={dashboard.href} key={dashboard.href} className="gallery-card">
-            <div className={`gallery-preview ${dashboard.className}`}>
-              <i className="gallery-sidebar" />
-              <i className="gallery-canvas" />
-              <span>{dashboard.number}</span>
-            </div>
-            <div className="gallery-card-copy">
-              <div>
-                <strong>{dashboard.title}</strong>
-                <span>Open →</span>
+export const DashboardIndex = () => {
+  const { t } = useTranslation();
+  return (
+    <main className="dashboard-gallery">
+      <div className="gallery-content">
+        <header>
+          <span>{t('testron_ui_studies')}</span>
+          <h1>{t('choose_a_dashboard')}</h1>
+          <p>{t('four_directions_for_the_same_testing_workspace_04_shipped')}</p>
+        </header>
+        <div className="gallery-grid">
+          {dashboards.map((dashboard) => (
+            <a href={dashboard.href} key={dashboard.href} className="gallery-card">
+              <div className={`gallery-preview ${dashboard.className}`}>
+                <i className="gallery-sidebar" />
+                <i className="gallery-canvas" />
+                <span>{dashboard.number}</span>
               </div>
-              <p>{dashboard.description}</p>
-            </div>
-          </a>
-        ))}
+              <div className="gallery-card-copy">
+                <div>
+                  <strong>{dashboard.title}</strong>
+                  <span>{t('open_2')}</span>
+                </div>
+                <p>{dashboard.description}</p>
+              </div>
+            </a>
+          ))}
+        </div>
       </div>
-    </div>
-  </main>
-);
+    </main>
+  );
+};

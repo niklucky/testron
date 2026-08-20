@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { SegmentedControl } from '../../design';
 import type { Failure } from '../types';
 
@@ -23,6 +24,7 @@ export const ShotView = ({
   view: 'actual' | 'expected';
   onView: (view: 'actual' | 'expected') => void;
 }) => {
+  const { t } = useTranslation();
   const failedAt = failure.steps.findIndex((step) => step.state === 'failed');
   const failing = failure.steps[failedAt];
   const isControl = failing?.call === 'locator.click' || failing?.call === 'locator.fill';
@@ -33,16 +35,23 @@ export const ShotView = ({
     <div>
       <div className="mb-3 flex items-center gap-2">
         <SegmentedControl
-          label="Screenshot"
+          label={t('screenshot')}
           items={views}
           value={view}
           onChange={(value) => onView(value as 'actual' | 'expected')}
         />
-        <p className="ui-mono text-sm text-ink-3">captured at step {failedAt + 1} · 1280×800</p>
+        <p className="ui-mono text-sm text-ink-3">
+          {t('captured_at_step')} {failedAt + 1} · 1280×800
+        </p>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-line">
-        <svg viewBox="0 0 640 360" className="w-full" role="img" aria-label="Captured screenshot">
+        <svg
+          viewBox="0 0 640 360"
+          className="w-full"
+          role="img"
+          aria-label={t('captured_screenshot')}
+        >
           <rect width="640" height="360" fill="var(--ui-shot-bg)" />
           <rect x="0" y="0" width="640" height="34" fill="var(--ui-shot-chrome)" />
           <circle cx="18" cy="17" r="4" fill="var(--ui-shot-block)" />
@@ -87,7 +96,7 @@ export const ShotView = ({
                     fontSize="12"
                     fontFamily="monospace"
                   >
-                    We use cookies to improve your experience
+                    {t('we_use_cookies_to_improve_your_experience')}
                   </text>
                 </>
               )}
@@ -114,7 +123,7 @@ export const ShotView = ({
                 {label}
               </text>
               <text x="378" y="252" fill="var(--ui-good)" fontSize="11" fontFamily="monospace">
-                enabled · click accepted
+                {t('enabled_click_accepted')}
               </text>
             </>
           )}
@@ -124,7 +133,7 @@ export const ShotView = ({
       <p className="mt-2 text-sm text-ink-3">
         {view === 'actual'
           ? failure.message.split('\n')[0]
-          : 'Baseline from the last green run on the same commit.'}
+          : t('baseline_from_the_last_green_run_on_the_same_commit')}
       </p>
     </div>
   );

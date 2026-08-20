@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -29,6 +30,7 @@ import type { RecordedStep } from './types';
  * panel, the widening has not happened and moves are ignored.
  */
 export const PanelHost = ({ panel }: { panel: PanelId }) => {
+  const { t } = useTranslation();
   const [state, setState] = useState<RecordPanelState>();
 
   const send = (event: RecordPanelEvent) => window.testron?.sendRecordEvent(event);
@@ -74,7 +76,7 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
     <main className="ui-root relative h-screen w-screen overflow-hidden font-sans text-ink antialiased">
       <GlassPanel
         side={panel === 'steps' ? 'left' : 'right'}
-        title={panel === 'steps' ? 'Test steps' : 'Auto test'}
+        title={panel === 'steps' ? t('test_steps') : t('auto_test')}
         subtitle={
           panel === 'steps'
             ? `${steps.length} · ${clock(state?.elapsed ?? 0)}`
@@ -92,14 +94,14 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
           panel === 'steps' ? (
             state?.mode === 'assert' ? (
               <Badge tone="good" icon="eye" size="sm">
-                Assert
+                {t('assert')}
               </Badge>
             ) : undefined
           ) : (
             <IconButton
               icon="copy"
               size="sm"
-              label="Copy the spec"
+              label={t('copy_the_spec')}
               onClick={() => send({ type: 'copy' })}
             />
           )

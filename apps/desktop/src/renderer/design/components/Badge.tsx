@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import type { ReactNode } from 'react';
 
 import { Icon, type IconName } from '../icons';
@@ -52,26 +53,32 @@ export const StatusDot = ({
   label: string;
   size?: number;
   className?: string;
-}) => (
-  <span
-    className={`inline-block shrink-0 rounded-full ${className}`}
-    style={{ width: size, height: size, background: toneFill[tone] }}
-    title={label}
-    role="img"
-    aria-label={label}
-  />
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <span
+      className={`inline-block shrink-0 rounded-full ${className}`}
+      style={{ width: size, height: size, background: toneFill[tone] }}
+      title={t(label)}
+      role="img"
+      aria-label={t(label)}
+    />
+  );
+};
 
 /** A dot with a soft halo — for "something is happening right now". */
-export const PulseDot = ({ tone = 'good' as Tone, label }: { tone?: Tone; label: string }) => (
-  <span className="relative flex h-[7px] w-[7px] shrink-0" title={label}>
-    <span
-      className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
-      style={{ background: toneFill[tone] }}
-    />
-    <span
-      className="relative inline-flex h-[7px] w-[7px] rounded-full"
-      style={{ background: toneFill[tone] }}
-    />
-  </span>
-);
+export const PulseDot = ({ tone = 'good' as Tone, label }: { tone?: Tone; label: string }) => {
+  const { t } = useTranslation();
+  return (
+    <span className="relative flex h-[7px] w-[7px] shrink-0" title={t(label)}>
+      <span
+        className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
+        style={{ background: toneFill[tone] }}
+      />
+      <span
+        className="relative inline-flex h-[7px] w-[7px] rounded-full"
+        style={{ background: toneFill[tone] }}
+      />
+    </span>
+  );
+};

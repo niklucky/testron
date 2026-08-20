@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
@@ -194,79 +195,86 @@ const changes = [
   },
 ];
 
-const AreaChart = () => (
-  <div className="chart-wrap" aria-label="Test runs over the last seven days">
-    <svg viewBox="0 0 720 238" role="img">
-      <defs>
-        <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="var(--blue)" stopOpacity=".4" />
-          <stop offset="1" stopColor="var(--blue)" stopOpacity=".02" />
-        </linearGradient>
-      </defs>
-      {[38, 88, 138, 188].map((y) => (
-        <line key={y} x1="28" x2="704" y1={y} y2={y} className="chart-grid" />
-      ))}
-      <path
-        d="M28 174 C80 170 91 112 141 121 S208 164 258 128 S328 61 374 89 S445 151 492 112 S565 54 611 72 S670 105 704 48 L704 214 L28 214Z"
-        fill="url(#areaFill)"
-      />
-      <path
-        d="M28 174 C80 170 91 112 141 121 S208 164 258 128 S328 61 374 89 S445 151 492 112 S565 54 611 72 S670 105 704 48"
-        className="chart-line"
-      />
-      {[
-        ['28', '174'],
-        ['141', '121'],
-        ['258', '128'],
-        ['374', '89'],
-        ['492', '112'],
-        ['611', '72'],
-        ['704', '48'],
-      ].map(([x, y]) => (
-        <circle key={x} cx={x} cy={y} r="4" className="chart-point" />
-      ))}
-    </svg>
-    <div className="chart-labels">
-      <span>Mon</span>
-      <span>Tue</span>
-      <span>Wed</span>
-      <span>Thu</span>
-      <span>Fri</span>
-      <span>Sat</span>
-      <span>Sun</span>
+const AreaChart = () => {
+  const { t } = useTranslation();
+  return (
+    <div className="chart-wrap" aria-label={t('test_runs_over_the_last_seven_days')}>
+      <svg viewBox="0 0 720 238" role="img">
+        <defs>
+          <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--blue)" stopOpacity=".4" />
+            <stop offset="1" stopColor="var(--blue)" stopOpacity=".02" />
+          </linearGradient>
+        </defs>
+        {[38, 88, 138, 188].map((y) => (
+          <line key={y} x1="28" x2="704" y1={y} y2={y} className="chart-grid" />
+        ))}
+        <path
+          d="M28 174 C80 170 91 112 141 121 S208 164 258 128 S328 61 374 89 S445 151 492 112 S565 54 611 72 S670 105 704 48 L704 214 L28 214Z"
+          fill="url(#areaFill)"
+        />
+        <path
+          d="M28 174 C80 170 91 112 141 121 S208 164 258 128 S328 61 374 89 S445 151 492 112 S565 54 611 72 S670 105 704 48"
+          className="chart-line"
+        />
+        {[
+          ['28', '174'],
+          ['141', '121'],
+          ['258', '128'],
+          ['374', '89'],
+          ['492', '112'],
+          ['611', '72'],
+          ['704', '48'],
+        ].map(([x, y]) => (
+          <circle key={x} cx={x} cy={y} r="4" className="chart-point" />
+        ))}
+      </svg>
+      <div className="chart-labels">
+        <span>{t('mon')}</span>
+        <span>{t('tue')}</span>
+        <span>{t('wed')}</span>
+        <span>{t('thu')}</span>
+        <span>{t('fri')}</span>
+        <span>{t('sat')}</span>
+        <span>{t('sun')}</span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
-const DonutChart = () => (
-  <div className="donut-layout">
-    <div className="donut" aria-label="92 percent passing tests">
-      <div>
-        <strong>92%</strong>
-        <span>passing</span>
+const DonutChart = () => {
+  const { t } = useTranslation();
+  return (
+    <div className="donut-layout">
+      <div className="donut" aria-label={t('92_percent_passing_tests')}>
+        <div>
+          <strong>92%</strong>
+          <span>{t('passing')}</span>
+        </div>
+      </div>
+      <div className="donut-legend">
+        <div>
+          <i className="legend-dot passed" />
+          <span>{t('passed')}</span>
+          <strong>156</strong>
+        </div>
+        <div>
+          <i className="legend-dot failed" />
+          <span>{t('failed_2')}</span>
+          <strong>9</strong>
+        </div>
+        <div>
+          <i className="legend-dot skipped" />
+          <span>{t('skipped')}</span>
+          <strong>4</strong>
+        </div>
       </div>
     </div>
-    <div className="donut-legend">
-      <div>
-        <i className="legend-dot passed" />
-        <span>Passed</span>
-        <strong>156</strong>
-      </div>
-      <div>
-        <i className="legend-dot failed" />
-        <span>Failed</span>
-        <strong>9</strong>
-      </div>
-      <div>
-        <i className="legend-dot skipped" />
-        <span>Skipped</span>
-        <strong>4</strong>
-      </div>
-    </div>
-  </div>
-);
+  );
+};
 
 export const Dashboard = () => {
+  const { t } = useTranslation();
   const [theme, setTheme] = useState<Theme>(() =>
     localStorage.getItem('testron-theme') === 'dark' ? 'dark' : 'light',
   );
@@ -312,9 +320,11 @@ export const Dashboard = () => {
     >
       <button
         className="sidebar-toggle fixed z-30 grid place-items-center"
-        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-label={sidebarCollapsed ? t('expand_sidebar') : t('collapse_sidebar')}
         aria-expanded={!sidebarCollapsed}
-        title={`${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar (⌘B)`}
+        title={t('sidebar_b', {
+          value1: sidebarCollapsed ? t('expand') : t('collapse'),
+        })}
         onClick={() => setSidebarCollapsed((current) => !current)}
       >
         <Icon name="sidebar" size={17} />
@@ -323,7 +333,7 @@ export const Dashboard = () => {
         <div className="project-control">
           <button
             className="project-selector"
-            aria-label={`Current project: ${selectedProject.name}`}
+            aria-label={t('current_project', { value1: selectedProject.name })}
             aria-expanded={!sidebarCollapsed && projectMenuOpen}
             onClick={() => {
               if (sidebarCollapsed) setSidebarCollapsed(false);
@@ -340,7 +350,7 @@ export const Dashboard = () => {
               <Icon name="chevron" size={15} />
             </span>
           </button>
-          <button className="project-add" aria-label="Add project" title="Add project">
+          <button className="project-add" aria-label={t('add_project')} title={t('add_project')}>
             <Icon name="plus" size={17} />
           </button>
           {projectMenuOpen && !sidebarCollapsed && (
@@ -364,25 +374,25 @@ export const Dashboard = () => {
           )}
         </div>
 
-        <nav className="main-nav grid gap-1" aria-label="Project navigation">
+        <nav className="main-nav grid gap-1" aria-label={t('project_navigation')}>
           <a className="active" href="#/experiments">
             <Icon name="grid" />
-            Overview
+            {t('overview')}
           </a>
         </nav>
 
         <button
           className="collapsed-suites-button"
-          aria-label="Test suites"
-          title="Test suites"
+          aria-label={t('test_suites')}
+          title={t('test_suites')}
           onClick={() => setSidebarCollapsed(false)}
         >
           <Icon name="folder" />
         </button>
-        <section className="suites" aria-label="Test suites">
+        <section className="suites" aria-label={t('test_suites')}>
           <div className="suite-section-title">
-            <span>Test suites</span>
-            <button aria-label="Add test suite" title="Add test suite">
+            <span>{t('test_suites')}</span>
+            <button aria-label={t('add_test_suite')} title={t('add_test_suite')}>
               <Icon name="plus" size={15} />
             </button>
           </div>
@@ -426,15 +436,15 @@ export const Dashboard = () => {
         <div className="sidebar-spacer flex-1" />
         <a className="settings-link" href="#/recorder">
           <Icon name="settings" />
-          Settings
+          {t('settings')}
         </a>
         <button className="profile-card">
           <span className="avatar">
-            NS
+            {t('ns')}
             <span className="presence" />
           </span>
           <span className="profile-copy">
-            <strong>Nikita S.</strong>
+            <strong>{t('nikita_s')}</strong>
           </span>
           <Icon name="dots" size={17} />
         </button>
@@ -444,49 +454,49 @@ export const Dashboard = () => {
         <header className="topbar flex items-center justify-between gap-8">
           <div>
             <p className="eyebrow">{selectedProject.name.toUpperCase()}</p>
-            <h1>Project overview</h1>
-            <p>Monitor test health, runs, and recent changes for this project.</p>
+            <h1>{t('project_overview')}</h1>
+            <p>{t('monitor_test_health_runs_and_recent_changes_for_this_project')}</p>
           </div>
           <div className="top-actions flex items-center gap-2">
             <label className="search-box">
               <Icon name="search" size={17} />
-              <input aria-label="Search" placeholder="Search tests…" />
-              <kbd>⌘ K</kbd>
+              <input aria-label={t('search')} placeholder={t('search_tests')} />
+              <kbd>{t('k_2')}</kbd>
             </label>
-            <div className="color-switcher" role="group" aria-label="Background gradient">
+            <div className="color-switcher" role="group" aria-label={t('background_gradient')}>
               {gradientPresets.map((preset) => (
                 <button
                   key={preset.value}
                   className={`gradient-swatch ${preset.value}${gradient === preset.value ? ' active' : ''}`}
-                  aria-label={`Use ${preset.label} gradient`}
+                  aria-label={t('use_gradient', { value1: preset.label })}
                   aria-pressed={gradient === preset.value}
-                  title={`${preset.label} gradient`}
+                  title={t('gradient', { value1: preset.label })}
                   onClick={() => setGradient(preset.value)}
                 />
               ))}
             </div>
             <button
               className="icon-button"
-              aria-label="Toggle color theme"
+              aria-label={t('toggle_color_theme')}
               onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
             >
               <Icon name={theme === 'light' ? 'moon' : 'sun'} />
             </button>
-            <button className="icon-button notification" aria-label="Notifications">
+            <button className="icon-button notification" aria-label={t('notifications')}>
               <Icon name="bell" />
               <i />
             </button>
             <a className="primary-button" href="#/recorder">
               <Icon name="plus" size={17} />
-              New test
+              {t('new_test')}
             </a>
           </div>
         </header>
 
-        <section className="metric-grid grid grid-cols-4 gap-[13px]" aria-label="Key metrics">
+        <section className="metric-grid grid grid-cols-4 gap-[13px]" aria-label={t('key_metrics')}>
           <article className="glass metric-card">
             <div className="metric-heading">
-              <span>Total tests</span>
+              <span>{t('total_tests')}</span>
               <i className="metric-icon blue">
                 <Icon name="tests" />
               </i>
@@ -494,40 +504,40 @@ export const Dashboard = () => {
             <div className="metric-value">184</div>
             <div className="metric-foot positive">
               <strong>↗ 12.4%</strong>
-              <span>vs. last month</span>
+              <span>{t('vs_last_month')}</span>
             </div>
           </article>
           <article className="glass metric-card">
             <div className="metric-heading">
-              <span>Pass rate</span>
+              <span>{t('pass_rate')}</span>
               <i className="metric-icon green">✓</i>
             </div>
             <div className="metric-value">92.3%</div>
             <div className="metric-foot positive">
               <strong>↗ 2.1%</strong>
-              <span>vs. last month</span>
+              <span>{t('vs_last_month')}</span>
             </div>
           </article>
           <article className="glass metric-card">
             <div className="metric-heading">
-              <span>Avg. duration</span>
+              <span>{t('avg_duration')}</span>
               <i className="metric-icon violet">◷</i>
             </div>
-            <div className="metric-value">1m 38s</div>
+            <div className="metric-value">{t('1m_38s')}</div>
             <div className="metric-foot positive">
               <strong>↓ 8.2%</strong>
-              <span>faster this month</span>
+              <span>{t('faster_this_month')}</span>
             </div>
           </article>
           <article className="glass metric-card">
             <div className="metric-heading">
-              <span>Needs attention</span>
+              <span>{t('needs_attention')}</span>
               <i className="metric-icon coral">!</i>
             </div>
             <div className="metric-value">9</div>
             <div className="metric-foot negative">
-              <strong>3 new</strong>
-              <span>since yesterday</span>
+              <strong>{t('3_new')}</strong>
+              <span>{t('since_yesterday')}</span>
             </div>
           </article>
         </section>
@@ -536,11 +546,11 @@ export const Dashboard = () => {
           <article className="glass panel area-panel">
             <div className="panel-header">
               <div>
-                <h2>Test activity</h2>
-                <p>Runs across all environments</p>
+                <h2>{t('test_activity')}</h2>
+                <p>{t('runs_across_all_environments')}</p>
               </div>
               <button className="select-button">
-                Last 7 days <span>⌄</span>
+                {t('last_7_days')} <span>⌄</span>
               </button>
             </div>
             <div className="chart-summary">
@@ -552,16 +562,16 @@ export const Dashboard = () => {
           <article className="glass panel health-panel">
             <div className="panel-header">
               <div>
-                <h2>Test health</h2>
-                <p>Current suite status</p>
+                <h2>{t('test_health')}</h2>
+                <p>{t('current_suite_status')}</p>
               </div>
-              <button className="icon-button mini" aria-label="More options">
+              <button className="icon-button mini" aria-label={t('more_options')}>
                 <Icon name="dots" />
               </button>
             </div>
             <DonutChart />
             <a className="panel-link" href="#/recorder">
-              View all tests <Icon name="arrow" size={15} />
+              {t('view_all_tests')} <Icon name="arrow" size={15} />
             </a>
           </article>
         </section>
@@ -570,19 +580,19 @@ export const Dashboard = () => {
           <article className="glass panel table-panel">
             <div className="panel-header">
               <div>
-                <h2>Recent test runs</h2>
-                <p>Latest activity across your projects</p>
+                <h2>{t('recent_test_runs')}</h2>
+                <p>{t('latest_activity_across_your_projects')}</p>
               </div>
               <a href="#/recorder" className="text-button">
-                View all
+                {t('view_all')}
               </a>
             </div>
             <div className="data-table" role="table">
               <div className="table-row table-head" role="row">
-                <span>TEST</span>
-                <span>ENVIRONMENT</span>
-                <span>DURATION</span>
-                <span>STATUS</span>
+                <span>{t('test_2')}</span>
+                <span>{t('environment_2')}</span>
+                <span>{t('duration_2')}</span>
+                <span>{t('status')}</span>
                 <span />
               </div>
               {testRuns.map((run) => (
@@ -604,7 +614,7 @@ export const Dashboard = () => {
                   <span>
                     <i className={`status-pill ${run.status.toLowerCase()}`}>{run.status}</i>
                   </span>
-                  <button aria-label={`Open ${run.name}`}>
+                  <button aria-label={t('open_4', { value1: run.name })}>
                     <Icon name="chevron" size={16} />
                   </button>
                 </div>
@@ -614,11 +624,11 @@ export const Dashboard = () => {
           <article className="glass panel changes-panel">
             <div className="panel-header">
               <div>
-                <h2>Recent changes</h2>
-                <p>Updates to your test suite</p>
+                <h2>{t('recent_changes')}</h2>
+                <p>{t('updates_to_your_test_suite')}</p>
               </div>
               <a href="#/recorder" className="text-button">
-                View all
+                {t('view_all')}
               </a>
             </div>
             <div className="change-list">
@@ -636,8 +646,8 @@ export const Dashboard = () => {
             <div className="activity-note">
               <span className="activity-icon">↗</span>
               <span>
-                <strong>27 changes this week</strong>
-                <small>That’s 14% more than last week</small>
+                <strong>{t('27_changes_this_week')}</strong>
+                <small>{t('that_s_14_more_than_last_week')}</small>
               </span>
             </div>
           </article>

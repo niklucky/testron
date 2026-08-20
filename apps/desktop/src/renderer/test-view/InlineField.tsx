@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Icon } from '../design';
@@ -27,6 +28,7 @@ export const InlineText = ({
   className?: string;
   label: string;
 }) => {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
@@ -75,7 +77,7 @@ export const InlineText = ({
   return (
     <button
       type="button"
-      aria-label={`${label} — click to edit`}
+      aria-label={t('click_to_edit', { value1: label })}
       onClick={() => setEditing(true)}
       className={`w-full rounded border border-transparent px-1 py-px text-left hover:border-line hover:bg-raised ${
         mono ? 'ui-mono' : ''
@@ -128,24 +130,27 @@ export const Chip = ({
   onClick?: () => void;
   onRemove?: () => void;
   children: React.ReactNode;
-}) => (
-  <span
-    className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-xs ${
-      on ? 'border-accent bg-accent-wash text-accent' : 'border-line text-ink-3 hover:text-ink'
-    }`}
-  >
-    <button type="button" onClick={onClick} aria-pressed={on}>
-      {children}
-    </button>
-    {onRemove && (
-      <button
-        type="button"
-        aria-label="Remove"
-        className="text-ink-3 hover:text-ink"
-        onClick={onRemove}
-      >
-        <Icon name="close" size={10} />
+}) => {
+  const { t } = useTranslation();
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-xs ${
+        on ? 'border-accent bg-accent-wash text-accent' : 'border-line text-ink-3 hover:text-ink'
+      }`}
+    >
+      <button type="button" onClick={onClick} aria-pressed={on}>
+        {children}
       </button>
-    )}
-  </span>
-);
+      {onRemove && (
+        <button
+          type="button"
+          aria-label={t('remove')}
+          className="text-ink-3 hover:text-ink"
+          onClick={onRemove}
+        >
+          <Icon name="close" size={10} />
+        </button>
+      )}
+    </span>
+  );
+};

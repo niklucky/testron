@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { Step } from '@testron/domain/steps/schema';
@@ -51,6 +52,7 @@ const StepEditor = ({
   index: number;
   command: (command: AppCommand) => void;
 }) => {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(step);
   useEffect(() => setDraft(step), [step]);
@@ -109,14 +111,17 @@ const StepEditor = ({
 
   return (
     <span className="step-editor">
-      <button aria-label={`Edit step ${index + 1}`} onClick={() => setEditing(!editing)}>
+      <button
+        aria-label={t('edit_step', { value1: index + 1 })}
+        onClick={() => setEditing(!editing)}
+      >
         ✎
       </button>
       {editing && (
         <span className="editor-panel">
           {draft.kind === 'assertElement' && (
             <select
-              aria-label="Assertion type"
+              aria-label={t('assertion_type')}
               value={
                 draft.assertion.type === 'text'
                   ? `text${draft.assertion.match === 'contains' ? 'Contains' : 'Equals'}`
@@ -160,21 +165,21 @@ const StepEditor = ({
             >
               {assertionOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.label)}
                 </option>
               ))}
             </select>
           )}
           {stringValue !== undefined && (
             <input
-              aria-label="Step value"
+              aria-label={t('step_value')}
               value={stringValue}
               onChange={(event) => setString(event.target.value)}
             />
           )}
           {targeted && targeted.target.alternatives.length > 0 && (
             <select
-              aria-label="Alternative locator"
+              aria-label={t('alternative_locator')}
               defaultValue=""
               onChange={(event) => {
                 if (!event.target.value) return;
@@ -186,7 +191,7 @@ const StepEditor = ({
                 setEditing(false);
               }}
             >
-              <option value="">Use alternative locator…</option>
+              <option value="">{t('use_alternative_locator')}</option>
               {targeted.target.alternatives.map((locator, alternativeIndex) => (
                 <option key={JSON.stringify(locator)} value={alternativeIndex}>
                   {locator.strategy}: {JSON.stringify(locator)}
@@ -200,7 +205,7 @@ const StepEditor = ({
               setEditing(false);
             }}
           >
-            Save
+            {t('save')}
           </button>
         </span>
       )}
@@ -209,6 +214,7 @@ const StepEditor = ({
 };
 
 export const RecorderApp = () => {
+  const { t } = useTranslation();
   const [url, setUrl] = useState('http://127.0.0.1:4174');
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [projectName, setProjectName] = useState('');
@@ -261,14 +267,14 @@ export const RecorderApp = () => {
   return (
     <main className="toolbar recorder-app">
       <a className="back-to-dashboard" href="#/">
-        ← Overview
+        {t('overview_2')}
       </a>
       <section className="controls">
         <div className="brand">
-          <span className="brand-mark">T</span>
+          <span className="brand-mark">{t('t')}</span>
           <div>
-            <strong>Testron</strong>
-            <small>Local-first test recorder</small>
+            <strong>{t('testron')}</strong>
+            <small>{t('local_first_test_recorder')}</small>
           </div>
         </div>
         <form
@@ -278,30 +284,34 @@ export const RecorderApp = () => {
             navigate();
           }}
         >
-          <input aria-label="URL" value={url} onChange={(event) => setUrl(event.target.value)} />
-          <button type="submit">Go</button>
+          <input
+            aria-label={t('url')}
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+          />
+          <button type="submit">{t('go')}</button>
         </form>
         <span className={`status ${snapshot.recording ? 'live' : ''}`}>
           {snapshot.status === 'recording'
             ? snapshot.captureMode === 'verify'
-              ? '◆ Verify'
-              : '● Recording'
+              ? t('verify_2')
+              : t('recording_2')
             : snapshot.status === 'paused'
-              ? 'Paused'
-              : `${snapshot.steps.length} steps`}
+              ? t('paused_2')
+              : t('steps_count', { count: snapshot.steps.length })}
         </span>
       </section>
 
-      <section className="library" aria-label="Test library">
+      <section className="library" aria-label={t('test_library')}>
         <div className="entity">
-          <label>Project</label>
+          <label>{t('project')}</label>
           <select
-            aria-label="Project"
+            aria-label={t('project')}
             value={library.selectedProjectId ?? ''}
             onChange={(event) => command({ type: 'select-project', projectId: event.target.value })}
           >
             <option value="" disabled>
-              Choose project
+              {t('choose_project')}
             </option>
             {library.projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -310,8 +320,8 @@ export const RecorderApp = () => {
             ))}
           </select>
           <input
-            aria-label="New project name"
-            placeholder="New project"
+            aria-label={t('new_project_name')}
+            placeholder={t('new_project')}
             value={projectName}
             onChange={(event) => setProjectName(event.target.value)}
           />
@@ -322,14 +332,14 @@ export const RecorderApp = () => {
               setProjectName('');
             }}
           >
-            Add
+            {t('add')}
           </button>
         </div>
 
         <div className="entity environment">
-          <label>Environment</label>
+          <label>{t('environment')}</label>
           <select
-            aria-label="Environment"
+            aria-label={t('environment')}
             value={library.selectedEnvironmentId ?? ''}
             disabled={!library.selectedProjectId}
             onChange={(event) => {
@@ -345,7 +355,7 @@ export const RecorderApp = () => {
             }}
           >
             <option value="" disabled>
-              Choose environment
+              {t('choose_environment')}
             </option>
             {environments.map((environment) => (
               <option key={environment.id} value={environment.id}>
@@ -354,20 +364,20 @@ export const RecorderApp = () => {
             ))}
           </select>
           <input
-            aria-label="New environment name"
-            placeholder="Name"
+            aria-label={t('new_environment_name')}
+            placeholder={t('name')}
             value={environmentName}
             onChange={(event) => setEnvironmentName(event.target.value)}
           />
           <input
-            aria-label="Environment base URL"
-            placeholder="Base URL"
+            aria-label={t('environment_base_url')}
+            placeholder={t('base_url')}
             value={environmentUrl}
             onChange={(event) => setEnvironmentUrl(event.target.value)}
           />
           <input
-            aria-label="Test ID attribute"
-            placeholder="Test ID attribute"
+            aria-label={t('test_id_attribute')}
+            placeholder={t('test_id_attribute')}
             value={testIdAttribute}
             onChange={(event) => setTestIdAttribute(event.target.value)}
           />
@@ -384,20 +394,20 @@ export const RecorderApp = () => {
               });
             }}
           >
-            Add
+            {t('add')}
           </button>
         </div>
 
         <div className="entity">
-          <label>Test</label>
+          <label>{t('test')}</label>
           <select
-            aria-label="Test"
+            aria-label={t('test')}
             value={library.selectedTestId ?? ''}
             disabled={!library.selectedProjectId}
             onChange={(event) => command({ type: 'select-test', testId: event.target.value })}
           >
             <option value="" disabled>
-              Choose test
+              {t('choose_test')}
             </option>
             {tests.map((test) => (
               <option key={test.id} value={test.id}>
@@ -406,8 +416,8 @@ export const RecorderApp = () => {
             ))}
           </select>
           <input
-            aria-label="New test title"
-            placeholder="New test title"
+            aria-label={t('new_test_title')}
+            placeholder={t('new_test_title')}
             value={testTitle}
             onChange={(event) => setTestTitle(event.target.value)}
           />
@@ -426,7 +436,7 @@ export const RecorderApp = () => {
               setTestTitle('');
             }}
           >
-            Add
+            {t('add')}
           </button>
         </div>
       </section>
@@ -438,29 +448,29 @@ export const RecorderApp = () => {
             disabled={library.projects.length > 0 && !library.selectedTestId}
             onClick={() => command({ type: 'start-recording' })}
           >
-            Start recording
+            {t('start_recording')}
           </button>
         ) : snapshot.status === 'recording' ? (
           <button className="pause" onClick={() => command({ type: 'pause-recording' })}>
-            Pause
+            {t('pause')}
           </button>
         ) : (
           <button className="record" onClick={() => command({ type: 'resume-recording' })}>
-            Resume
+            {t('resume')}
           </button>
         )}
         <button
           disabled={snapshot.steps.length === 0}
           onClick={() => command({ type: 'undo-step' })}
         >
-          Undo
+          {t('undo')}
         </button>
         <button
           className="finish"
           disabled={!['recording', 'paused'].includes(snapshot.status)}
           onClick={() => command({ type: 'finish-recording' })}
         >
-          Finish
+          {t('finish')}
         </button>
         {snapshot.status === 'recording' && (
           <>
@@ -470,7 +480,7 @@ export const RecorderApp = () => {
                 command({ type: 'set-capture-mode', mode: 'record', assertion: verifyAssertion })
               }
             >
-              Record
+              {t('record')}
             </button>
             <button
               className={snapshot.captureMode === 'verify' ? 'verify mode-active' : ''}
@@ -478,10 +488,10 @@ export const RecorderApp = () => {
                 command({ type: 'set-capture-mode', mode: 'verify', assertion: verifyAssertion })
               }
             >
-              Verify
+              {t('verify')}
             </button>
             <select
-              aria-label="Assertion"
+              aria-label={t('assertion')}
               value={verifyAssertion}
               onChange={(event) => {
                 const assertion = event.target.value as VerifyAssertion;
@@ -491,7 +501,7 @@ export const RecorderApp = () => {
             >
               {assertionOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.label)}
                 </option>
               ))}
             </select>
@@ -508,30 +518,34 @@ export const RecorderApp = () => {
                 }
               }}
             >
-              Verify URL path
+              {t('verify_url_path')}
             </button>
           </>
         )}
-        {selectedEnvironment && <small>Using {selectedEnvironment.testIdAttribute}</small>}
+        {selectedEnvironment && (
+          <small>
+            {t('using')} {selectedEnvironment.testIdAttribute}
+          </small>
+        )}
       </section>
 
       <section className="review">
         <div className="review-header">
           <div className="tabs">
             <button className={tab === 'human' ? 'active' : ''} onClick={() => setTab('human')}>
-              Human-readable
+              {t('human_readable')}
             </button>
             <button className={tab === 'source' ? 'active' : ''} onClick={() => setTab('source')}>
-              Playwright
+              {t('playwright')}
             </button>
             <button className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}>
-              Run & diagnose
+              {t('run_diagnose')}
             </button>
           </div>
           <div className="export-actions">
             {snapshot.replay.status === 'running' ? (
               <button className="finish" onClick={() => command({ type: 'cancel-run' })}>
-                Cancel run
+                {t('cancel_run')}
               </button>
             ) : (
               <button
@@ -547,21 +561,23 @@ export const RecorderApp = () => {
                   });
                 }}
               >
-                Run test
+                {t('run_test')}
               </button>
             )}
             <button disabled={!snapshot.source} onClick={() => command({ type: 'copy-source' })}>
-              Copy
+              {t('copy')}
             </button>
             <button disabled={!snapshot.source} onClick={() => command({ type: 'export-source' })}>
-              Export .spec.ts
+              {t('export_spec_ts')}
             </button>
           </div>
         </div>
         <div className="human" hidden={tab !== 'human'}>
           <ol>
             {snapshot.descriptions.length === 0 ? (
-              <li className="empty">Create a test, start recording, then use the page below.</li>
+              <li className="empty">
+                {t('create_a_test_start_recording_then_use_the_page_below')}
+              </li>
             ) : (
               snapshot.descriptions.map((description, index) => (
                 <li key={`${index}-${description}`}>
@@ -576,27 +592,27 @@ export const RecorderApp = () => {
                   <span className="step-actions">
                     <StepEditor step={snapshot.steps[index]} index={index} command={command} />
                     <button
-                      aria-label={`Duplicate step ${index + 1}`}
+                      aria-label={t('duplicate_step', { value1: index + 1 })}
                       onClick={() => command({ type: 'duplicate-step', index })}
                     >
                       ⧉
                     </button>
                     <button
-                      aria-label={`Move step ${index + 1} up`}
+                      aria-label={t('move_step_up', { value1: index + 1 })}
                       disabled={index === 0}
                       onClick={() => command({ type: 'move-step', index, direction: -1 })}
                     >
                       ↑
                     </button>
                     <button
-                      aria-label={`Move step ${index + 1} down`}
+                      aria-label={t('move_step_down', { value1: index + 1 })}
                       disabled={index === snapshot.steps.length - 1}
                       onClick={() => command({ type: 'move-step', index, direction: 1 })}
                     >
                       ↓
                     </button>
                     <button
-                      aria-label={`Delete step ${index + 1}`}
+                      aria-label={t('delete_step', { value1: index + 1 })}
                       onClick={() => command({ type: 'delete-step', index })}
                     >
                       ×
@@ -608,21 +624,21 @@ export const RecorderApp = () => {
           </ol>
         </div>
         <div className="source" hidden={tab !== 'source'}>
-          <pre>{snapshot.source || '// Generated source appears here'}</pre>
+          <pre>{snapshot.source || t('generated_source_appears_here')}</pre>
         </div>
         <div className="run-results" hidden={tab !== 'run'}>
           <div className="run-config">
             <label>
-              Timeout
+              {t('timeout')}
               <input
-                aria-label="Run timeout in seconds"
+                aria-label={t('run_timeout_in_seconds')}
                 type="number"
                 min="1"
                 max="600"
                 value={timeoutSeconds}
                 onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
               />
-              seconds
+              {t('seconds')}
             </label>
             <label>
               <input
@@ -630,14 +646,15 @@ export const RecorderApp = () => {
                 checked={reuseAuthState}
                 onChange={(event) => setReuseAuthState(event.target.checked)}
               />
-              Reuse auth for this environment (revision {selectedEnvironment?.authRevision ?? 1})
+              {t('reuse_auth_for_this_environment_revision')}{' '}
+              {selectedEnvironment?.authRevision ?? 1})
             </label>
-            <button onClick={() => command({ type: 'clear-auth-state' })}>Clear auth</button>
+            <button onClick={() => command({ type: 'clear-auth-state' })}>{t('clear_auth')}</button>
             {requiredProfileVariables.map((name) => (
               <label key={name}>
                 {name}
                 <input
-                  aria-label={`Profile variable ${name}`}
+                  aria-label={t('profile_variable', { value1: name })}
                   type="password"
                   value={environmentVariables[name] ?? ''}
                   onChange={(event) =>
@@ -651,24 +668,46 @@ export const RecorderApp = () => {
             ))}
           </div>
           <div className={`run-summary ${snapshot.replay.status}`}>
-            Run: {snapshot.replay.status}
-            {snapshot.replay.durationMs !== undefined && ` · ${snapshot.replay.durationMs} ms`}
+            {t('run')} {snapshot.replay.status}
+            {snapshot.replay.durationMs !== undefined &&
+              t('duration_ms', { duration: snapshot.replay.durationMs })}
           </div>
           {snapshot.replay.error && <div className="failure-detail">{snapshot.replay.error}</div>}
           <ol className="replay-steps">
             {snapshot.replay.steps.map((result) => (
               <li className={result.status} key={result.index}>
                 <strong>{result.status}</strong> {result.action}
-                {result.locator && <code>Locator: {result.locator}</code>}
-                {result.error && <code className="failure-detail">Error: {result.error}</code>}
-                {result.pageUrl && <code>Page URL: {result.pageUrl}</code>}
+                {result.locator && (
+                  <code>
+                    {t('locator')} {result.locator}
+                  </code>
+                )}
+                {result.error && (
+                  <code className="failure-detail">
+                    {t('error')} {result.error}
+                  </code>
+                )}
+                {result.pageUrl && (
+                  <code>
+                    {t('page_url')} {result.pageUrl}
+                  </code>
+                )}
               </li>
             ))}
           </ol>
           {(snapshot.replay.screenshotPath || snapshot.replay.tracePath) && (
             <div className="artifacts">
-              {snapshot.replay.screenshotPath && <>Screenshot: {snapshot.replay.screenshotPath}</>}
-              {snapshot.replay.tracePath && <> · Trace: {snapshot.replay.tracePath}</>}
+              {snapshot.replay.screenshotPath && (
+                <>
+                  {t('screenshot_2')} {snapshot.replay.screenshotPath}
+                </>
+              )}
+              {snapshot.replay.tracePath && (
+                <>
+                  {' '}
+                  {t('trace')} {snapshot.replay.tracePath}
+                </>
+              )}
             </div>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Legend, Ribbon, SectionLabel } from '../../design';
 import { age } from '../format';
 import { ribbonColor, verdictTone } from '../tone';
@@ -11,13 +12,14 @@ const legendOrder: RunVerdict[] = ['passed', 'failed', 'flaky', 'skipped'];
  * known point.
  */
 export const HistoryView = ({ failure }: { failure: Failure }) => {
+  const { t } = useTranslation();
   const failed = failure.history.filter((verdict) => verdict === 'failed').length;
 
   return (
     <div className="space-y-4">
       <div>
         <div className="mb-2 flex items-center gap-3">
-          <SectionLabel>Last 24 runs</SectionLabel>
+          <SectionLabel>{t('last_24_runs')}</SectionLabel>
           <Legend
             shape="square"
             className="ml-auto"
@@ -38,13 +40,15 @@ export const HistoryView = ({ failure }: { failure: Failure }) => {
         />
 
         <p className="mt-2 text-sm text-ink-3">
-          {failed} failures in 24 runs · first seen {age(failure.ageMinutes)} ago ·{' '}
-          {failure.kind === 'flaky' ? 'alternates green and red on the same commit' : 'consistent'}
+          {failed} {t('failures_in_24_runs_first_seen')} {age(failure.ageMinutes)} {t('ago_2')}{' '}
+          {failure.kind === 'flaky'
+            ? t('alternates_green_and_red_on_the_same_commit')
+            : t('consistent')}
         </p>
       </div>
 
       <div className="rounded-lg border border-line bg-plane p-3">
-        <SectionLabel>Timeline</SectionLabel>
+        <SectionLabel>{t('timeline')}</SectionLabel>
         <ul className="mt-2 space-y-2 text-base">
           {[
             [`${age(failure.ageMinutes)} ago`, `First failure on ${failure.env}`],

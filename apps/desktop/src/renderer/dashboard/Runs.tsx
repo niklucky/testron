@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useMemo } from 'react';
 
 import {
@@ -71,6 +72,7 @@ export const Runs = ({
   onState: (state: RunsState) => void;
   onLog: (message: string) => void;
 }) => {
+  const { t } = useTranslation();
   const { range, environment, verdict, query } = state;
   const patch = (next: Partial<RunsState>) => onState({ ...state, ...next });
 
@@ -114,16 +116,18 @@ export const Runs = ({
   return (
     <section className="ui-scroll min-h-0 overflow-y-auto bg-surface px-5 py-4">
       <div className="mb-4 flex items-center gap-2">
-        <h1 className="text-xl font-semibold">Run history</h1>
+        <h1 className="text-xl font-semibold">{t('run_history')}</h1>
         {now.running > 0 && (
           <span className="flex items-center gap-1.5 rounded-md border border-line bg-plane px-2 py-1">
-            <PulseDot label="Runs in flight" />
-            <span className="text-sm text-ink-2">{now.running} in flight</span>
+            <PulseDot label={t('runs_in_flight')} />
+            <span className="text-sm text-ink-2">
+              {now.running} {t('in_flight')}
+            </span>
           </span>
         )}
         <SegmentedControl
           className="ml-auto"
-          label="Range"
+          label={t('range')}
           items={ranges}
           value={String(range)}
           onChange={(value) => patch({ range: Number(value) })}
@@ -133,44 +137,51 @@ export const Runs = ({
       <div className="mb-4 grid grid-cols-4 gap-3">
         <StatCard
           icon="history"
-          label="Runs"
+          label={t('runs')}
           value={now.total}
-          foot={`${now.failed} failed · ${now.flaky} flaky`}
+          foot={t('failed_flaky', { value1: now.failed, value2: now.flaky })}
         />
         <StatCard
           icon="check"
-          label="Pass rate"
+          label={t('pass_rate')}
           value={`${now.passRate.toFixed(1)}%`}
           delta={
             comparable ? <Trend value={now.passRate - before.passRate} unit="pt" /> : undefined
           }
           foot={
             comparable
-              ? `Previous ${range} days: ${before.passRate.toFixed(1)}%`
-              : `${now.passed} of ${now.total - now.running - now.flaky} green`
+              ? t('previous_days_rate', { days: range, rate: before.passRate.toFixed(1) })
+              : t('green_runs_ratio', {
+                  passed: now.passed,
+                  total: now.total - now.running - now.flaky,
+                })
           }
         />
         <StatCard
           icon="clock"
-          label="Median duration"
+          label={t('median_duration')}
           value={ms(now.median * 1000)}
           delta={
             comparable ? <Trend value={now.median - before.median} unit="s" goodDown /> : undefined
           }
-          foot={`Across ${now.total - now.running} finished runs`}
+          foot={t('across_finished_runs', { value1: now.total - now.running })}
         />
         <StatCard
           icon="alert"
-          label="Flaky runs"
+          label={t('flaky_runs')}
           value={now.flaky}
-          foot={`${((now.flaky / Math.max(1, now.total)) * 100).toFixed(1)}% of everything that ran`}
+          foot={t('of_everything_that_ran', {
+            value1: ((now.flaky / Math.max(1, now.total)) * 100).toFixed(1),
+          })}
         />
       </div>
 
       <Panel className="mb-4 p-4">
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-md font-semibold">Failures by suite</h2>
-          <span className="text-sm text-ink-3">last {range} days</span>
+          <h2 className="text-md font-semibold">{t('failures_by_suite')}</h2>
+          <span className="text-sm text-ink-3">
+            {t('last')} {range} {t('days')}
+          </span>
         </div>
         {/* One row per suite, one cell per day: where the breakage clusters. */}
         <HeatMap
@@ -180,14 +191,22 @@ export const Runs = ({
             `${row.label} · ${dayLabel(range - 1 - index)} · ${value} failed`
           }
           legendLabels={['none', '1', '2', '3–4', '5+']}
-          meta={<span className="text-xs text-ink-3">{range} days</span>}
+          meta={
+            <span className="text-xs text-ink-3">
+              {range} {t('days')}
+            </span>
+          }
         />
       </Panel>
 
       <Panel>
         <PanelHeader
-          title="Runs"
-          subtitle={`${rows.length} of ${period.length} in the last ${range} days`}
+          title={t('runs')}
+          subtitle={t('of_in_the_last_days', {
+            value1: rows.length,
+            value2: period.length,
+            value3: range,
+          })}
         />
 
         {/* The filters get their own row rather than the header's right edge:
@@ -195,7 +214,7 @@ export const Runs = ({
             is the one view where filtering *is* the work. */}
         <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-4 py-2">
           <SegmentedControl
-            label="Verdict"
+            label={t('verdict')}
             variant="pill"
             items={verdicts}
             value={verdict}
@@ -203,7 +222,7 @@ export const Runs = ({
           />
           <span className="h-4 w-px bg-line" />
           <SegmentedControl
-            label="Environment"
+            label={t('environment')}
             variant="pill"
             items={[
               { id: 'all', label: 'All envs' },
@@ -213,8 +232,8 @@ export const Runs = ({
             onChange={(value) => patch({ environment: value })}
           />
           <SearchField
-            label="Filter runs"
-            placeholder="test, branch, signature…"
+            label={t('filter_runs')}
+            placeholder={t('test_branch_signature')}
             size="sm"
             className="ml-auto w-[180px]"
             value={query}
@@ -226,22 +245,22 @@ export const Runs = ({
           className={`grid ${columns} border-b border-line-soft px-4 py-2 text-2xs font-bold uppercase tracking-[0.09em] text-ink-3`}
         >
           <span />
-          <span>Test</span>
-          <span>Trigger</span>
-          <span>Commit</span>
-          <span className="text-right">Duration</span>
-          <span className="text-right">When</span>
+          <span>{t('test')}</span>
+          <span>{t('trigger')}</span>
+          <span>{t('commit')}</span>
+          <span className="text-right">{t('duration')}</span>
+          <span className="text-right">{t('when')}</span>
         </div>
 
-        {rows.length === 0 && <EmptyState>No run matches this filter.</EmptyState>}
+        {rows.length === 0 && <EmptyState>{t('no_run_matches_this_filter')}</EmptyState>}
 
         {groups.map(([day, entries]) => (
           <div key={day}>
             <p className="flex items-center gap-2 border-b border-line-soft bg-plane/40 px-4 py-1.5 text-xs text-ink-3">
               <span className="font-semibold text-ink-2">{dayLabel(day)}</span>
               <span>
-                {entries.length} runs · {entries.filter((run) => run.verdict === 'failed').length}{' '}
-                failed
+                {entries.length} {t('runs_2')}{' '}
+                {entries.filter((run) => run.verdict === 'failed').length} {t('failed')}
               </span>
             </p>
 
@@ -262,7 +281,7 @@ export const Runs = ({
                   className={`grid ${columns} cursor-default border-b border-line-soft px-4 py-2 last:border-b-0 hover:bg-raised/60`}
                 >
                   {run.verdict === 'running' ? (
-                    <PulseDot tone="accent" label="Running" />
+                    <PulseDot tone="accent" label={t('running')} />
                   ) : (
                     <StatusDot tone={tone.tone} label={tone.label} />
                   )}
@@ -275,7 +294,7 @@ export const Runs = ({
                     <span className="min-w-0 flex-1 truncate text-base">{run.test}</span>
                     {run.attempts > 1 && (
                       <Badge size="sm" tone="warning">
-                        {run.attempts} attempts
+                        {run.attempts} {t('attempts')}
                       </Badge>
                     )}
                     {/* Both the name and the signature give ground as the
@@ -311,7 +330,7 @@ export const Runs = ({
                   </span>
 
                   <span className="ui-mono text-right text-xs text-ink-3">
-                    {age(run.minutesAgo)} ago
+                    {age(run.minutesAgo)} {t('ago')}
                   </span>
                 </div>
               );
@@ -326,7 +345,7 @@ export const Runs = ({
             icon="caret"
             onClick={() => onLog('Older runs · pagination is not wired up yet')}
           >
-            Older runs
+            {t('older_runs')}
           </Button>
         </div>
       </Panel>

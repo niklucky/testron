@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -42,6 +43,7 @@ export const ProjectSettings = ({
   library: LibrarySnapshot;
   onClose: () => void;
 }) => {
+  const { t } = useTranslation();
   const project =
     library.projects.find((candidate) => candidate.id === library.selectedProjectId) ??
     library.projects[0];
@@ -164,13 +166,13 @@ export const ProjectSettings = ({
         <aside className="border-r border-line bg-plane/60 p-3">
           <div className="px-2 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.11em] text-ink-3">
-              Project settings
+              {t('project_settings')}
             </p>
             <h2 id="project-settings-title" className="mt-1 truncate text-md font-semibold">
               {project.name}
             </h2>
           </div>
-          <nav className="mt-2 space-y-1" aria-label="Settings sections">
+          <nav className="mt-2 space-y-1" aria-label={t('settings_sections')}>
             {(
               [
                 ['general', 'settings', 'General'],
@@ -195,36 +197,43 @@ export const ProjectSettings = ({
         <div className="flex min-h-0 flex-col">
           <header className="flex h-14 shrink-0 items-center border-b border-line px-5">
             <h3 className="text-lg font-semibold">
-              {tab === 'general' ? 'General' : 'Environments'}
+              {tab === 'general' ? t('general') : t('environments')}
             </h3>
-            <IconButton icon="close" label="Close settings" className="ml-auto" onClick={onClose} />
+            <IconButton
+              icon="close"
+              label={t('close_settings')}
+              className="ml-auto"
+              onClick={onClose}
+            />
           </header>
 
           {tab === 'general' ? (
             <form className="min-h-0 flex-1 overflow-y-auto p-6" onSubmit={saveGeneral}>
               <div className="max-w-[600px] space-y-6">
-                <Field label="Project name" value={projectName} onChange={setProjectName} />
+                <Field label={t('project_name')} value={projectName} onChange={setProjectName} />
                 <div>
-                  <span className="text-sm font-medium text-ink-2">Icon</span>
+                  <span className="text-sm font-medium text-ink-2">{t('icon')}</span>
                   <div className="mt-1.5 flex items-center gap-3 rounded-lg border border-dashed border-line bg-plane p-4">
                     <span className="ui-mono grid h-12 w-12 place-items-center rounded-xl bg-accent text-xl font-bold text-accent-ink">
-                      {projectName.trim().charAt(0).toUpperCase() || 'P'}
+                      {projectName.trim().charAt(0).toUpperCase() || t('p')}
                     </span>
                     <div>
-                      <p className="text-base font-medium">Project logo</p>
-                      <p className="text-sm text-ink-3">Upload and cropping will be added later.</p>
+                      <p className="text-base font-medium">{t('project_logo')}</p>
+                      <p className="text-sm text-ink-3">
+                        {t('upload_and_cropping_will_be_added_later')}
+                      </p>
                     </div>
                     <Button className="ml-auto" disabled>
-                      Choose image
+                      {t('choose_image')}
                     </Button>
                   </div>
                 </div>
                 <Field
-                  label="Project URL"
+                  label={t('project_url')}
                   type="url"
                   value={projectUrl}
                   onChange={setProjectUrl}
-                  placeholder="https://example.com"
+                  placeholder={t('https_example_com')}
                 />
                 <div className="flex justify-end border-t border-line-soft pt-5">
                   <Button
@@ -232,7 +241,7 @@ export const ProjectSettings = ({
                     variant="primary"
                     disabled={!project.revision || !projectName.trim()}
                   >
-                    Save changes
+                    {t('save_changes')}
                   </Button>
                 </div>
               </div>
@@ -242,12 +251,12 @@ export const ProjectSettings = ({
               <aside className="min-h-0 overflow-y-auto border-r border-line p-3">
                 <div className="flex items-center px-2 pb-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-3">
-                    Environments
+                    {t('environments')}
                   </p>
                   <IconButton
                     icon="plus"
                     size="sm"
-                    label="Add environment"
+                    label={t('add_environment')}
                     className="ml-auto"
                     onClick={startEnvironmentCreation}
                   />
@@ -272,7 +281,7 @@ export const ProjectSettings = ({
                   </button>
                 ))}
                 {environments.length === 0 && (
-                  <p className="px-2 py-4 text-sm text-ink-3">No environments yet.</p>
+                  <p className="px-2 py-4 text-sm text-ink-3">{t('no_environments_yet')}</p>
                 )}
               </aside>
 
@@ -280,23 +289,23 @@ export const ProjectSettings = ({
                 <form className="min-h-0 overflow-y-auto p-6" onSubmit={createEnvironment}>
                   <div className="max-w-[560px] space-y-5">
                     <div>
-                      <h4 className="text-md font-semibold">Add environment</h4>
+                      <h4 className="text-md font-semibold">{t('add_environment')}</h4>
                       <p className="mt-1 text-sm text-ink-3">
-                        Create another target for this project.
+                        {t('create_another_target_for_this_project')}
                       </p>
                     </div>
                     <Field
-                      label="Environment name"
+                      label={t('environment_name')}
                       value={newEnvironmentName}
                       onChange={setNewEnvironmentName}
-                      placeholder="Staging"
+                      placeholder={t('staging')}
                     />
                     <Field
-                      label="URL"
+                      label={t('url')}
                       type="url"
                       value={newEnvironmentUrl}
                       onChange={setNewEnvironmentUrl}
-                      placeholder="https://staging.example.com"
+                      placeholder={t('https_staging_example_com')}
                     />
                     <div className="flex justify-end gap-2 border-t border-line-soft pt-5">
                       <Button
@@ -305,7 +314,7 @@ export const ProjectSettings = ({
                           setCreatingEnvironmentSubmitted(false);
                         }}
                       >
-                        Cancel
+                        {t('cancel')}
                       </Button>
                       <Button
                         type="submit"
@@ -316,7 +325,7 @@ export const ProjectSettings = ({
                           !newEnvironmentUrl.trim()
                         }
                       >
-                        {creatingEnvironmentSubmitted ? 'Creating…' : 'Create environment'}
+                        {creatingEnvironmentSubmitted ? t('creating') : t('create_environment')}
                       </Button>
                     </div>
                   </div>
@@ -325,12 +334,12 @@ export const ProjectSettings = ({
                 <form className="min-h-0 overflow-y-auto p-6" onSubmit={saveEnvironment}>
                   <div className="space-y-5">
                     <Field
-                      label="Environment name"
+                      label={t('environment_name')}
                       value={environmentName}
                       onChange={setEnvironmentName}
                     />
                     <Field
-                      label="URL"
+                      label={t('url')}
                       type="url"
                       value={environmentUrl}
                       onChange={setEnvironmentUrl}
@@ -339,14 +348,14 @@ export const ProjectSettings = ({
                     <section className="border-t border-line pt-5">
                       <div className="flex items-center">
                         <div>
-                          <h4 className="text-md font-semibold">Profiles</h4>
+                          <h4 className="text-md font-semibold">{t('profiles')}</h4>
                           <p className="text-sm text-ink-3">
-                            Authentication variants for this environment.
+                            {t('authentication_variants_for_this_environment')}
                           </p>
                         </div>
                         <IconButton
                           icon="plus"
-                          label="Add profile"
+                          label={t('add_profile')}
                           className="ml-auto"
                           onClick={() => setEditingProfileId('new')}
                         />
@@ -365,11 +374,11 @@ export const ProjectSettings = ({
                               <span className="min-w-0 flex-1 truncate text-base font-medium">
                                 {profile.name}
                               </span>
-                              <span className="text-sm text-ink-3">Login / password</span>
+                              <span className="text-sm text-ink-3">{t('login_password')}</span>
                               <IconButton
                                 icon="pencil"
                                 size="sm"
-                                label={`Edit ${profile.name}`}
+                                label={t('edit_2', { value1: profile.name })}
                                 onClick={() => setEditingProfileId(profile.id)}
                               />
                             </div>
@@ -381,7 +390,7 @@ export const ProjectSettings = ({
                           className="mt-3 w-full rounded-lg border border-dashed border-line p-5 text-sm text-ink-3 hover:bg-raised"
                           onClick={() => setEditingProfileId('new')}
                         >
-                          + Add the first profile
+                          {t('add_the_first_profile')}
                         </button>
                       )}
                     </section>
@@ -396,14 +405,14 @@ export const ProjectSettings = ({
                           !environmentUrl.trim()
                         }
                       >
-                        Save environment
+                        {t('save_environment')}
                       </Button>
                     </div>
                   </div>
                 </form>
               ) : (
                 <div className="grid place-items-center text-base text-ink-3">
-                  Select an environment.
+                  {t('select_an_environment')}
                 </div>
               )}
             </div>

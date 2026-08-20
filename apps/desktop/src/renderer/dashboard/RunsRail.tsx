@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Badge, Meter, Ribbon, SectionLabel, Sparkline } from '../design';
 import { age } from './format';
 import { byTest, signatures, type ProjectRun } from './runHistory';
@@ -18,6 +19,7 @@ export const RunsRail = ({
   period: ProjectRun[];
   onFilter: (query: string) => void;
 }) => {
+  const { t } = useTranslation();
   const tests = byTest(period);
   const unreliable = [...tests].sort((a, b) => a.passRate - b.passRate).slice(0, 5);
   const slowest = [...tests].sort((a, b) => b.slowest - a.slowest).slice(0, 4);
@@ -26,7 +28,7 @@ export const RunsRail = ({
   return (
     <aside className="ui-scroll min-h-0 space-y-4 overflow-y-auto border-l border-line px-3 py-3">
       <section>
-        <SectionLabel className="mb-2 block">Least reliable</SectionLabel>
+        <SectionLabel className="mb-2 block">{t('least_reliable')}</SectionLabel>
         <ul className="space-y-2.5">
           {unreliable.map((entry) => (
             <li key={entry.test}>
@@ -51,10 +53,10 @@ export const RunsRail = ({
                   }))}
                 />
                 <span className="mt-1 flex items-center gap-1.5 text-xs text-ink-3">
-                  {entry.suite} · {entry.runs} runs
+                  {entry.suite} · {entry.runs} {t('runs_3')}
                   {entry.flaky > 0 && (
                     <Badge size="sm" tone="warning">
-                      {entry.flaky} flaky
+                      {entry.flaky} {t('flaky')}
                     </Badge>
                   )}
                 </span>
@@ -65,14 +67,15 @@ export const RunsRail = ({
       </section>
 
       <section className="border-t border-line-soft pt-3">
-        <SectionLabel className="mb-2 block">Slowest</SectionLabel>
+        <SectionLabel className="mb-2 block">{t('slowest')}</SectionLabel>
         <ul className="space-y-2">
           {slowest.map((entry) => (
             <li key={entry.test}>
               <p className="flex items-baseline gap-2">
                 <span className="min-w-0 flex-1 truncate text-base">{entry.test}</span>
                 <span className="ui-mono shrink-0 text-xs text-ink-3">
-                  {entry.slowest.toFixed(0)}s
+                  {entry.slowest.toFixed(0)}
+                  {t('s')}
                 </span>
               </p>
               <Meter
@@ -80,7 +83,7 @@ export const RunsRail = ({
                 height={4}
                 value={entry.slowest / Math.max(1, slowest[0].slowest)}
                 tone="neutral"
-                label={`${entry.slowest.toFixed(0)}s at its worst`}
+                label={t('s_at_its_worst', { value1: entry.slowest.toFixed(0) })}
               />
             </li>
           ))}
@@ -88,7 +91,7 @@ export const RunsRail = ({
       </section>
 
       <section className="border-t border-line-soft pt-3">
-        <SectionLabel className="mb-2 block">Failure signatures</SectionLabel>
+        <SectionLabel className="mb-2 block">{t('failure_signatures')}</SectionLabel>
         <ul className="space-y-2">
           {failures.map((entry) => (
             <li key={entry.signature}>
@@ -99,19 +102,19 @@ export const RunsRail = ({
               >
                 <span className="ui-mono block truncate text-sm text-ink-2">{entry.signature}</span>
                 <span className="flex items-center gap-1.5 text-xs text-ink-3">
-                  {entry.count} runs · last {age(entry.lastSeen)} ago
+                  {entry.count} {t('runs_last')} {age(entry.lastSeen)} {t('ago')}
                 </span>
               </button>
             </li>
           ))}
           {failures.length === 0 && (
-            <li className="text-sm text-ink-3">Nothing failed. Enjoy it.</li>
+            <li className="text-sm text-ink-3">{t('nothing_failed_enjoy_it')}</li>
           )}
         </ul>
       </section>
 
       <section className="border-t border-line-soft pt-3">
-        <SectionLabel className="mb-2 block">Volume</SectionLabel>
+        <SectionLabel className="mb-2 block">{t('volume')}</SectionLabel>
         <div className="flex items-center gap-2">
           <Sparkline
             width={120}
@@ -121,9 +124,9 @@ export const RunsRail = ({
               (_, index) =>
                 period.filter((run) => Math.floor(run.minutesAgo / 1_440) === 13 - index).length,
             )}
-            label="Runs per day"
+            label={t('runs_per_day')}
           />
-          <span className="text-xs text-ink-3">runs per day</span>
+          <span className="text-xs text-ink-3">{t('runs_per_day_2')}</span>
         </div>
       </section>
     </aside>

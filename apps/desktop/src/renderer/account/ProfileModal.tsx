@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -15,6 +16,7 @@ export const ProfileModal = ({
   library: LibrarySnapshot;
   onClose: () => void;
 }) => {
+  const { t } = useTranslation();
   const titleId = useId();
   const [name, setName] = useState(library.viewer?.name ?? '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -80,14 +82,16 @@ export const ProfileModal = ({
       >
         <div className="flex items-start gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.11em] text-accent">Account</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.11em] text-accent">
+              {t('account')}
+            </p>
             <h2 id={titleId} className="mt-1 text-2xl font-semibold">
-              Profile
+              {t('profile')}
             </h2>
             <p className="mt-1 text-sm text-ink-3">{library.viewer?.email}</p>
           </div>
           <Button className="ml-auto" disabled={pending} onClick={onClose}>
-            Close
+            {t('close')}
           </Button>
         </div>
 
@@ -106,9 +110,9 @@ export const ProfileModal = ({
         )}
 
         <form className="mt-6" onSubmit={saveName}>
-          <h3 className="text-md font-semibold">Personal information</h3>
+          <h3 className="text-md font-semibold">{t('personal_information')}</h3>
           <label className="mt-4 block">
-            <span className="text-sm font-medium text-ink-2">Name</span>
+            <span className="text-sm font-medium text-ink-2">{t('name')}</span>
             <input
               autoFocus
               required
@@ -125,15 +129,15 @@ export const ProfileModal = ({
               variant="primary"
               disabled={pending || !name.trim() || name.trim() === library.viewer?.name}
             >
-              {visibleAction?.type === 'profile' && pending ? 'Saving…' : 'Save name'}
+              {visibleAction?.type === 'profile' && pending ? t('saving') : t('save_name')}
             </Button>
           </div>
         </form>
 
         <form className="mt-6 border-t border-line pt-6" onSubmit={savePassword}>
-          <h3 className="text-md font-semibold">Change password</h3>
+          <h3 className="text-md font-semibold">{t('change_password')}</h3>
           <p className="mt-1 text-sm text-ink-3">
-            Existing signed-in sessions remain active after this change.
+            {t('existing_signed_in_sessions_remain_active_after_this_change')}
           </p>
           <div className="mt-4 space-y-4">
             {[
@@ -168,7 +172,7 @@ export const ProfileModal = ({
                 confirmation.length < 12
               }
             >
-              {visibleAction?.type === 'password' && pending ? 'Updating…' : 'Update password'}
+              {visibleAction?.type === 'password' && pending ? t('updating') : t('update_password')}
             </Button>
           </div>
         </form>

@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { HeatMap, Icon, Kbd, Meter, Panel, SectionLabel } from '../design';
 import { failures, owners, pulse } from './data';
 import { dashboardShortcutGroups, displayShortcutGroup } from './hotkeys';
@@ -8,6 +9,7 @@ import { dashboardShortcutGroups, displayShortcutGroup } from './hotkeys';
  * the first thing to go in focus mode.
  */
 export const ContextRail = ({ failing }: { failing: number }) => {
+  const { t } = useTranslation();
   const busiest = Math.max(...owners.map((owner) => owner.open));
 
   return (
@@ -20,16 +22,16 @@ export const ContextRail = ({ failing }: { failing: number }) => {
           { label: 'Runs today', value: '38', sub: '6 in the last hour' },
         ].map((tile) => (
           <Panel key={tile.label} className="p-2.5">
-            <p className="text-sm text-ink-3">{tile.label}</p>
+            <p className="text-sm text-ink-3">{t(tile.label)}</p>
             <p className="mt-1 text-2xl font-semibold leading-none tabular-nums">{tile.value}</p>
-            <p className="mt-1.5 text-xs text-ink-3">{tile.sub}</p>
+            <p className="mt-1.5 text-xs text-ink-3">{t(tile.sub)}</p>
           </Panel>
         ))}
       </div>
 
       <div>
         <h3 className="mb-2">
-          <SectionLabel>Suite pulse · failures / day</SectionLabel>
+          <SectionLabel>{t('suite_pulse_failures_day')}</SectionLabel>
         </h3>
         <HeatMap
           rows={pulse}
@@ -38,7 +40,7 @@ export const ContextRail = ({ failing }: { failing: number }) => {
           meta="14 days"
           cellLabel={(row, value, index) =>
             `${row.label} · day −${row.values.length - index} · ${
-              value === 0 ? 'no failures' : `${value} failures`
+              value === 0 ? t('no_failures') : t('failures_count', { count: value })
             }`
           }
         />
@@ -46,13 +48,17 @@ export const ContextRail = ({ failing }: { failing: number }) => {
 
       <div>
         <h3 className="mb-2">
-          <SectionLabel>Queue by owner</SectionLabel>
+          <SectionLabel>{t('queue_by_owner')}</SectionLabel>
         </h3>
         <ul className="space-y-1.5">
           {owners.map((owner) => (
             <li key={owner.name} className="flex items-center gap-2">
               <span className="w-[88px] shrink-0 truncate text-sm text-ink-2">{owner.name}</span>
-              <Meter className="flex-1" value={owner.open / busiest} label={`${owner.open} open`} />
+              <Meter
+                className="flex-1"
+                value={owner.open / busiest}
+                label={t('open_3', { value1: owner.open })}
+              />
               <span className="ui-mono w-4 shrink-0 text-right text-sm text-ink-3">
                 {owner.open}
               </span>
@@ -64,7 +70,7 @@ export const ContextRail = ({ failing }: { failing: number }) => {
       <Panel className="p-3">
         <h3 className="mb-2 flex items-center gap-1.5">
           <Icon name="keyboard" size={14} className="text-ink-2" />
-          <SectionLabel>Hands stay home</SectionLabel>
+          <SectionLabel>{t('hands_stay_home')}</SectionLabel>
         </h3>
         <ul className="space-y-1.5 text-sm text-ink-3">
           {dashboardShortcutGroups.map((group) => (

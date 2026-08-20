@@ -1,3 +1,5 @@
+import { useTranslation } from '@warpunit/slang-react';
+
 import { Icon, type IconName } from '../icons';
 
 export type SegmentedItem<T extends string> = { id: T; label: string; icon?: IconName };
@@ -24,11 +26,12 @@ export const SegmentedControl = <T extends string>({
   label: string;
   className?: string;
 }) => {
+  const { t } = useTranslation();
   const pill = variant === 'pill';
   return (
     <div
       role="group"
-      aria-label={label}
+      aria-label={t(label)}
       className={`flex items-center ${
         pill ? 'gap-1' : 'rounded-md border border-line bg-surface p-0.5'
       } ${className}`}
@@ -54,7 +57,7 @@ export const SegmentedControl = <T extends string>({
             onClick={() => onChange(item.id)}
           >
             {item.icon && <Icon name={item.icon} size={13} />}
-            {item.label}
+            {t(item.label)}
           </button>
         );
       })}
@@ -78,25 +81,28 @@ export const Tabs = <T extends string>({
   onChange: (value: T) => void;
   label: string;
   className?: string;
-}) => (
-  <div role="tablist" aria-label={label} className={`flex items-center gap-1 ${className}`}>
-    {items.map((item) => {
-      const on = item.id === value;
-      return (
-        <button
-          key={item.id}
-          type="button"
-          role="tab"
-          aria-selected={on}
-          className={`flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-base transition-colors ${
-            on ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
-          }`}
-          onClick={() => onChange(item.id)}
-        >
-          {item.icon && <Icon name={item.icon} size={14} />}
-          {item.label}
-        </button>
-      );
-    })}
-  </div>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div role="tablist" aria-label={t(label)} className={`flex items-center gap-1 ${className}`}>
+      {items.map((item) => {
+        const on = item.id === value;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            className={`flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-base transition-colors ${
+              on ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
+            }`}
+            onClick={() => onChange(item.id)}
+          >
+            {item.icon && <Icon name={item.icon} size={14} />}
+            {t(item.label)}
+          </button>
+        );
+      })}
+    </div>
+  );
+};

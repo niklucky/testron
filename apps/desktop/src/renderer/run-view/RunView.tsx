@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Badge, Button, Icon, IconButton, Meter, StatCard, Trend, useTheme } from '../design';
@@ -24,6 +25,7 @@ import { Waterfall } from './Waterfall';
  * retries are marked in the UI as not captured, because they are not.
  */
 export const RunView = () => {
+  const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [selectedId, setSelectedId] = useState(runs[0].id);
   const [filter, setFilter] = useState<'all' | 'failed'>('all');
@@ -70,7 +72,7 @@ export const RunView = () => {
           <IconButton
             icon="arrowLeft"
             size="sm"
-            label="Back to the test"
+            label={t('back_to_the_test')}
             onClick={() => {
               window.location.hash = '#/test';
             }}
@@ -85,19 +87,23 @@ export const RunView = () => {
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <span className="ui-mono px-1.5 text-md text-ink-2">{run.id}</span>
           <Badge tone={verdict.tone} icon={run.verdict === 'passed' ? 'check' : 'alert'}>
-            {verdict.label}
+            {t(verdict.label)}
           </Badge>
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
           <span className="text-sm text-ink-3">
-            {run.trigger === 'ci' ? 'CI' : run.trigger === 'schedule' ? 'Scheduled' : 'Manual'} ·{' '}
-            {age(run.minutesAgo)} ago
+            {run.trigger === 'ci'
+              ? t('ci')
+              : run.trigger === 'schedule'
+                ? t('scheduled')
+                : t('manual')}{' '}
+            · {age(run.minutesAgo)} {t('ago')}
           </span>
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"
-            label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
             onClick={toggle}
           />
         </div>
@@ -109,23 +115,23 @@ export const RunView = () => {
           icon="rerun"
           onClick={() => setLog(`Re-run queued on ${run.environment}`)}
         >
-          Re-run
+          {t('re_run')}
         </Button>
         <Button icon="history" onClick={() => setLog(`Trace opened · runs/${run.id}/trace.zip`)}>
-          Open trace
+          {t('open_trace')}
         </Button>
         <Button icon="copy" onClick={() => setLog('Artifacts exported to ~/Downloads')}>
-          Export artifacts
+          {t('export_artifacts')}
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
         <Button icon="bug" onClick={() => setLog(`Bug drafted · ${run.id} → tracker`)}>
-          File bug
+          {t('file_bug')}
         </Button>
         <Button
           icon="shield"
           onClick={() => setLog('Quarantined · this test will not block the pipeline')}
         >
-          Quarantine
+          {t('quarantine')}
         </Button>
 
         <span className="ml-auto flex items-center gap-2 text-sm text-ink-3">
@@ -155,36 +161,36 @@ export const RunView = () => {
             <section className="rounded-xl border border-line bg-surface p-4">
               <div className="flex items-start gap-3">
                 <Badge tone="critical" icon="alert" className="mt-0.5">
-                  Failed
+                  {t('failed_2')}
                 </Badge>
                 <div className="min-w-0 flex-1">
                   <h1 className="text-lg font-semibold">
-                    Step {failing.index + 1} timed out after {ms(failing.ms)}
+                    {t('step_2')} {failing.index + 1} {t('timed_out_after')} {ms(failing.ms)}
                   </h1>
                   <p className="ui-mono mt-1 truncate text-base text-ink-2">
                     {failingStep.locator || failingStep.label}
                   </p>
                   <p className="mt-1.5 text-base text-ink-3">
                     {run.attempts.length > 1
-                      ? 'Attempt 1 failed and attempt 2 passed on the same commit — this is flaky, not broken.'
-                      : 'The button stayed disabled; the payment intent request returned 502.'}
+                      ? t('attempt_1_failed_and_attempt_2_passed_on_the_same_commit_this_is')
+                      : t('the_button_stayed_disabled_the_payment_intent_request_returned_5')}
                   </p>
                 </div>
                 <Button
                   icon="history"
                   onClick={() => setLog(`Trace opened at step ${failing.index + 1}`)}
                 >
-                  Trace at step {failing.index + 1}
+                  {t('trace_at_step')} {failing.index + 1}
                 </Button>
               </div>
             </section>
           ) : (
             <section className="flex items-center gap-3 rounded-xl border border-line bg-surface p-4">
               <Badge tone="good" icon="check">
-                Passed
+                {t('passed')}
               </Badge>
               <p className="text-base text-ink-2">
-                All {attempt.steps.length} steps passed in {ms(attempt.ms)}.
+                {t('all')} {attempt.steps.length} {t('steps_passed_in')} {ms(attempt.ms)}.
               </p>
             </section>
           )}
@@ -192,14 +198,16 @@ export const RunView = () => {
           <div className="grid grid-cols-3 gap-3">
             <StatCard
               icon="clock"
-              label="Duration"
+              label={t('duration')}
               value={ms(attempt.ms)}
               delta={drift === undefined ? undefined : <Trend value={drift} unit="%" goodDown />}
-              foot={baseline ? `Last green run took ${ms(baseline.ms)}` : 'No green run to compare'}
+              foot={
+                baseline ? `Last green run took ${ms(baseline.ms)}` : t('no_green_run_to_compare')
+              }
             />
             <StatCard
               icon="steps"
-              label="Steps"
+              label={t('steps_2')}
               value={`${attempt.steps.filter((result) => result.status === 'passed').length}/${attempt.steps.length}`}
               foot={
                 <span className="block">
@@ -211,16 +219,19 @@ export const RunView = () => {
                       attempt.steps.length
                     }
                     tone={failing ? 'critical' : 'good'}
-                    label="Steps completed"
+                    label={t('steps_completed')}
                   />
                 </span>
               }
             />
             <StatCard
               icon="alert"
-              label="Slowest step"
+              label={t('slowest_step')}
               value={ms(slowest?.ms ?? 0)}
-              foot={`Step ${(slowest?.index ?? 0) + 1} · ${(((slowest?.ms ?? 0) / attempt.ms) * 100).toFixed(0)}% of the run`}
+              foot={t('step_of_the_run', {
+                value1: (slowest?.index ?? 0) + 1,
+                value2: (((slowest?.ms ?? 0) / attempt.ms) * 100).toFixed(0),
+              })}
             />
           </div>
 
@@ -243,13 +254,18 @@ export const RunView = () => {
       </div>
 
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
-        <span className="ui-mono truncate text-ink-2">runs/{run.id}/</span>
+        <span className="ui-mono truncate text-ink-2">
+          {t('runs_4')}
+          {run.id}/
+        </span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
-          <span>{run.attempts.length === 1 ? '1 attempt' : `${run.attempts.length} attempts`}</span>
-          <span>{run.artifacts.filter((artifact) => artifact.captured).length} artifacts</span>
+          <span>{t('attempts_count', { count: run.attempts.length })}</span>
+          <span>
+            {run.artifacts.filter((artifact) => artifact.captured).length} {t('artifacts_2')}
+          </span>
           <a href="#/test" className="text-ink-3 no-underline hover:text-ink">
-            Back to test
+            {t('back_to_test')}
           </a>
         </span>
       </footer>

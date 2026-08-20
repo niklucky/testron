@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 export type Split = { id: string; value: number; color: string; label: string };
 
 /**
@@ -17,6 +18,7 @@ export const SplitBar = ({
   height?: number;
   className?: string;
 }) => {
+  const { t } = useTranslation();
   const sum = total ?? segments.reduce((value, segment) => value + segment.value, 0);
   const scale = Math.max(1, sum);
   return (
@@ -24,7 +26,7 @@ export const SplitBar = ({
       className={`flex gap-[2px] overflow-hidden rounded-full bg-line-soft ${className}`}
       style={{ height }}
       role="img"
-      aria-label={segments.map((segment) => `${segment.value} ${segment.label}`).join(', ')}
+      aria-label={segments.map((segment) => `${segment.value} ${t(segment.label)}`).join(', ')}
     >
       {segments
         .filter((segment) => segment.value > 0)
@@ -32,7 +34,7 @@ export const SplitBar = ({
           <span
             key={segment.id}
             className="rounded-full"
-            title={`${segment.value} ${segment.label}`}
+            title={t('message', { value1: segment.value, value2: t(segment.label) })}
             style={{ width: `${(segment.value / scale) * 100}%`, background: segment.color }}
           />
         ))}

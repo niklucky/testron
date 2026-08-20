@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -18,6 +19,7 @@ export const TestSuiteForm = ({
   onSave: (name: string) => void;
   onClose: () => void;
 }) => {
+  const { t } = useTranslation();
   const [name, setName] = useState(suite?.name ?? '');
   const titleId = useId();
   const nameId = useId();
@@ -53,12 +55,12 @@ export const TestSuiteForm = ({
         className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
       >
         <h2 id={titleId} className="text-2xl font-semibold tracking-[-0.02em]">
-          {editing ? 'Update test suite' : 'New test suite'}
+          {editing ? t('update_test_suite') : t('new_test_suite')}
         </h2>
 
         <form className="mt-6" onSubmit={submit}>
           <label htmlFor={nameId} className="block text-sm font-medium text-ink-2">
-            Name
+            {t('name')}
           </label>
           <input
             id={nameId}
@@ -71,9 +73,9 @@ export const TestSuiteForm = ({
           />
 
           <div className="mt-6 flex justify-end gap-2">
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={onClose}>{t('cancel')}</Button>
             <Button type="submit" variant="primary" disabled={!name.trim()}>
-              {editing ? 'Save changes' : 'Create test suite'}
+              {editing ? t('save_changes') : t('create_test_suite')}
             </Button>
           </div>
         </form>

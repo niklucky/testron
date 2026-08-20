@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useState } from 'react';
 
 import { HeatMap } from './charts/HeatMap';
@@ -70,6 +71,7 @@ const Row = ({
  * here before it shows up in the product.
  */
 export const Showcase = () => {
+  const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [segment, setSegment] = useState('14');
   const [tab, setTab] = useState('steps');
@@ -80,23 +82,28 @@ export const Showcase = () => {
       <div className="mx-auto max-w-[1080px] p-6">
         <header className="mb-5 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.02em]">Testron design system</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em]">
+              {t('testron_design_system')}
+            </h1>
             <p className="mt-1 text-base text-ink-3">
-              Every primitive the app is built from, in the theme you are looking at.
+              {t('every_primitive_the_app_is_built_from_in_the_theme_you_are_looki')}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button icon={theme === 'dark' ? 'sun' : 'moon'} onClick={toggle}>
-              {theme === 'dark' ? 'Light' : 'Dark'}
+              {theme === 'dark' ? t('light') : t('dark')}
             </Button>
             <Button variant="ghost" onClick={() => (window.location.hash = '#/')}>
-              Back to the app
+              {t('back_to_the_app')}
             </Button>
           </div>
         </header>
 
         <div className="grid gap-3">
-          <Row title="Surfaces" note="Plane sits behind surface; raised is a state, not a level.">
+          <Row
+            title={t('surfaces')}
+            note="Plane sits behind surface; raised is a state, not a level."
+          >
             {surfaces.map(([token, use]) => (
               <span key={token} className="w-[168px]">
                 <span
@@ -109,11 +116,11 @@ export const Showcase = () => {
             ))}
           </Row>
 
-          <Row title="Ink">
+          <Row title={t('ink')}>
             {inks.map(([token, use]) => (
               <span key={token} className="w-[168px]">
                 <span className="block text-md" style={{ color: `var(${token})` }}>
-                  The quick brown fox
+                  {t('the_quick_brown_fox')}
                 </span>
                 <span className="ui-mono mt-1 block text-xs text-ink-3">
                   {token} · {use}
@@ -123,7 +130,7 @@ export const Showcase = () => {
           </Row>
 
           <Row
-            title="Tones"
+            title={t('tones')}
             note="fill for marks · ink for text · wash for the background under it."
           >
             {tones.map((tone) => (
@@ -141,12 +148,12 @@ export const Showcase = () => {
             ))}
           </Row>
 
-          <Row title="Type scale" note="13px body; the steps are tight on purpose.">
+          <Row title={t('type_scale')} note="13px body; the steps are tight on purpose.">
             <table className="w-full">
               <tbody>
                 {typeScale.map(([name, size, use]) => (
                   <tr key={name} className="border-b border-line-soft last:border-0">
-                    <td className={`py-1.5 ${name}`}>Failing since 14:02</td>
+                    <td className={`py-1.5 ${name}`}>{t('failing_since_14_02')}</td>
                     <td className="ui-mono w-24 text-right text-xs text-ink-3">{name}</td>
                     <td className="ui-mono w-16 text-right text-xs text-ink-3">{size}</td>
                     <td className="w-44 pl-4 text-xs text-ink-3">{use}</td>
@@ -156,51 +163,54 @@ export const Showcase = () => {
             </table>
           </Row>
 
-          <Row title="Buttons" note="At most one primary per screen.">
+          <Row title={t('buttons')} note="At most one primary per screen.">
             <Button variant="primary" icon="play">
-              Run all
+              {t('run_all')}
             </Button>
             <Button icon="search" kbd="⌘K">
-              Jump to…
+              {t('jump_to')}
             </Button>
             <Button variant="soft" icon="rerun" kbd="r">
-              Re-run
+              {t('re_run')}
             </Button>
             <Button variant="ghost" icon="settings">
-              Settings
+              {t('settings')}
             </Button>
             <Button icon="alert" tone="critical" pressed>
-              Needs attention
+              {t('needs_attention')}
             </Button>
             <Button disabled icon="shield">
-              Disabled
+              {t('disabled')}
             </Button>
-            <IconButton icon="density" label="Row density" />
-            <IconButton icon="focus" label="Focus mode" active />
+            <IconButton icon="density" label={t('row_density')} />
+            <IconButton icon="focus" label={t('focus_mode')} active />
           </Row>
 
-          <Row title="Status marks" note="Colour never travels alone — each mark carries a label.">
+          <Row
+            title={t('status_marks')}
+            note="Colour never travels alone — each mark carries a label."
+          >
             {tones.map((tone) => (
               <Badge key={tone} tone={tone} icon="alert">
                 {tone}
               </Badge>
             ))}
-            <Badge>neutral</Badge>
+            <Badge>{t('neutral')}</Badge>
             <Badge uppercase tone="warning" size="sm">
-              flaky
+              {t('flaky')}
             </Badge>
             {tones.slice(1).map((tone) => (
               <StatusDot key={tone} tone={tone} label={tone} />
             ))}
-            <PulseDot label="Runs in flight" />
-            <Kbd>⌘K</Kbd>
+            <PulseDot label={t('runs_in_flight')} />
+            <Kbd>{t('k')}</Kbd>
             <Avatar initials="NS" />
           </Row>
 
-          <Row title="Selection">
+          <Row title={t('selection')}>
             <SegmentedControl
               variant="solid"
-              label="Range"
+              label={t('range')}
               value={segment}
               onChange={setSegment}
               items={[
@@ -211,7 +221,7 @@ export const Showcase = () => {
             />
             <SegmentedControl
               variant="pill"
-              label="Scope"
+              label={t('scope')}
               value={segment}
               onChange={setSegment}
               items={[
@@ -221,7 +231,7 @@ export const Showcase = () => {
               ]}
             />
             <Tabs
-              label="Evidence"
+              label={t('evidence')}
               value={tab}
               onChange={setTab}
               items={[
@@ -232,10 +242,10 @@ export const Showcase = () => {
             />
           </Row>
 
-          <Row title="Input">
+          <Row title={t('input')}>
             <SearchField
-              label="Filter suites"
-              placeholder="Filter suites…"
+              label={t('filter_suites_2')}
+              placeholder={t('filter_suites')}
               className="w-[220px]"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -243,16 +253,16 @@ export const Showcase = () => {
             <SearchField
               size="sm"
               mono
-              label="Filter failures"
-              placeholder="filter failures"
-              hint={<Kbd>esc</Kbd>}
+              label={t('filter_failures')}
+              placeholder={t('filter_failures_2')}
+              hint={<Kbd>{t('esc')}</Kbd>}
               className="w-[220px]"
             />
             <span className="w-[260px]">
               <TextArea
-                label="Session notes"
+                label={t('session_notes')}
                 className="h-16"
-                placeholder="Reproduced on a cold cache…"
+                placeholder={t('reproduced_on_a_cold_cache')}
               />
             </span>
           </Row>
@@ -260,43 +270,43 @@ export const Showcase = () => {
           <div className="grid grid-cols-3 gap-3 max-[900px]:grid-cols-1">
             <StatCard
               icon="check"
-              label="Pass rate"
+              label={t('pass_rate')}
               value="94.2%"
               delta={<Trend value={2.1} unit="pts" />}
               foot="181 passed · 6 skipped · 11 failed"
             />
             <StatCard
               icon="clock"
-              label="Median triage"
+              label={t('median_triage')}
               value="12m"
               delta={<Trend value={-8.4} unit="%" goodDown />}
               foot="last 7 days"
             />
             <Panel className="p-4">
-              <SectionLabel>Navigation</SectionLabel>
+              <SectionLabel>{t('navigation')}</SectionLabel>
               <div className="mt-2 space-y-0.5">
-                <NavItem icon="grid" label="Overview" active />
-                <NavItem icon="triage" label="Triage" badge={9} />
+                <NavItem icon="grid" label={t('overview')} active />
+                <NavItem icon="triage" label={t('triage')} badge={9} />
               </div>
             </Panel>
           </div>
 
           <Panel>
             <PanelHeader
-              title="Panel"
-              subtitle="Header, body, and an action that belongs to this panel only"
+              title={t('panel')}
+              subtitle={t('header_body_and_an_action_that_belongs_to_this_panel_only')}
               action={
                 <Button size="sm" icon="plus">
-                  Add
+                  {t('add')}
                 </Button>
               }
             />
-            <EmptyState>No suites match “checkout”.</EmptyState>
+            <EmptyState>{t('no_suites_match_checkout')}</EmptyState>
           </Panel>
 
-          <Row title="Data viz" note="Every chart ships a legend; every cell has a tooltip.">
+          <Row title={t('data_viz')} note="Every chart ships a legend; every cell has a tooltip.">
             <span className="flex w-[200px] flex-col gap-2">
-              <Sparkline values={[2, 1, 4, 3, 6, 5, 9]} label="7-day trend" />
+              <Sparkline values={[2, 1, 4, 3, 6, 5, 9]} label={t('7_day_trend')} />
               <SplitBar
                 segments={[
                   { id: 'passed', value: 18, color: toneFill.good, label: 'Passed' },
@@ -304,9 +314,11 @@ export const Showcase = () => {
                   { id: 'failed', value: 3, color: toneFill.critical, label: 'Failed' },
                 ]}
               />
-              <Meter value={0.62} label="62% recorded" />
+              <Meter value={0.62} label={t('62_recorded')} />
               <Tooltip content="Tooltips are CSS-only">
-                <span className="text-sm text-ink-3 underline decoration-dotted">hover me</span>
+                <span className="text-sm text-ink-3 underline decoration-dotted">
+                  {t('hover_me')}
+                </span>
               </Tooltip>
             </span>
 
@@ -359,7 +371,7 @@ export const Showcase = () => {
             </span>
           </Row>
 
-          <Row title="Icons" note="One set, 1.6px stroke, 24px grid, always currentColor.">
+          <Row title={t('icons')} note="One set, 1.6px stroke, 24px grid, always currentColor.">
             {iconNames.map((name) => (
               <span key={name} className="flex w-[84px] flex-col items-center gap-1 text-ink-2">
                 <Icon name={name} size={18} />

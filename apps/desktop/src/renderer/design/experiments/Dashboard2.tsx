@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
 type IconName =
@@ -109,6 +110,7 @@ const runColors = {
 } as const;
 
 export const Dashboard2 = () => {
+  const { t } = useTranslation();
   const [activeProject, setActiveProject] = useState(0);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [expandedSuites, setExpandedSuites] = useState<string[]>(['Checkout']);
@@ -127,7 +129,7 @@ export const Dashboard2 = () => {
         <div className="relative mb-2 grid grid-cols-[minmax(0,1fr)_36px] gap-1.5 max-[800px]:grid-cols-1">
           <button
             className="grid h-10! w-full grid-cols-[34px_minmax(0,1fr)_16px] items-center gap-2 rounded-full! bg-white/25! p-0! pr-2! text-left text-[#292a25]! transition hover:bg-white/45! max-[800px]:mx-auto max-[800px]:h-11! max-[800px]:w-11 max-[800px]:grid-cols-1 max-[800px]:place-items-center max-[800px]:pr-0!"
-            aria-label={`Current project: ${selectedProject.name}`}
+            aria-label={t('current_project', { value1: selectedProject.name })}
             aria-expanded={projectMenuOpen}
             onClick={() => setProjectMenuOpen((current) => !current)}
           >
@@ -147,7 +149,7 @@ export const Dashboard2 = () => {
           </button>
           <button
             className="grid h-9! w-9 place-items-center self-center rounded-full! bg-white/25! p-0! text-[#65645d]! hover:bg-white/45! max-[800px]:mx-auto"
-            aria-label="Add project"
+            aria-label={t('add_project')}
           >
             <Icon name="plus" size={16} />
           </button>
@@ -176,25 +178,25 @@ export const Dashboard2 = () => {
           )}
         </div>
 
-        <nav className="grid gap-1" aria-label="Project navigation">
+        <nav className="grid gap-1" aria-label={t('project_navigation')}>
           <a
             className="flex h-[42px] items-center gap-3 rounded-full bg-white/40 px-3 text-[14px] font-semibold text-[#34352f] no-underline max-[800px]:mx-auto max-[800px]:h-11 max-[800px]:w-11 max-[800px]:justify-center max-[800px]:px-0"
             href="#/experiments/codex"
           >
             <Icon name="grid" />
-            <span className="max-[800px]:hidden">Overview</span>
+            <span className="max-[800px]:hidden">{t('overview')}</span>
           </a>
         </nav>
 
         <section
           className="min-h-0 overflow-y-auto max-[800px]:overflow-visible"
-          aria-label="Test suites"
+          aria-label={t('test_suites')}
         >
           <div className="mb-2 mt-5 flex items-center justify-between px-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#817f76] max-[800px]:justify-center max-[800px]:px-0">
-            <span className="max-[800px]:hidden">Test suites</span>
+            <span className="max-[800px]:hidden">{t('test_suites')}</span>
             <button
               className="grid h-6! w-6 place-items-center bg-transparent! p-0! text-[#77756d]!"
-              aria-label="Add test suite"
+              aria-label={t('add_test_suite')}
             >
               <Icon name="plus" size={14} />
             </button>
@@ -254,15 +256,17 @@ export const Dashboard2 = () => {
           href="#/recorder"
         >
           <Icon name="settings" />
-          <span className="max-[800px]:hidden">Settings</span>
+          <span className="max-[800px]:hidden">{t('settings')}</span>
         </a>
         <button className="grid h-[52px]! w-full grid-cols-[34px_1fr_auto] items-center gap-2 rounded-full! bg-white/25! p-2! text-left text-[#292a25]! hover:bg-white/40! max-[800px]:mx-auto max-[800px]:h-11! max-[800px]:w-11 max-[800px]:grid-cols-1 max-[800px]:place-items-center max-[800px]:p-1!">
           <span className="grid h-[34px] w-[34px] place-items-center rounded-full bg-[#c9ded5] text-[10px] font-bold text-[#385149]">
-            NS
+            {t('ns')}
           </span>
           <span className="min-w-0 max-[800px]:hidden">
-            <strong className="block text-[12px] font-semibold">Nikita S.</strong>
-            <small className="mt-0.5 block text-[10px] text-[#817f76]">Local workspace</small>
+            <strong className="block text-[12px] font-semibold">{t('nikita_s')}</strong>
+            <small className="mt-0.5 block text-[10px] text-[#817f76]">
+              {t('local_workspace')}
+            </small>
           </span>
           <span className="text-[#817f76] max-[800px]:hidden">
             <Icon name="dots" size={15} />
@@ -276,20 +280,20 @@ export const Dashboard2 = () => {
             href="#/experiments"
             className="text-[12px] text-[#89877f] no-underline hover:text-[#292a25]"
           >
-            All designs
+            {t('all_designs')}
           </a>
           <div className="flex items-center gap-2">
             <button
               className="grid h-[34px]! w-[34px] place-items-center rounded-lg! bg-transparent! p-0! text-[#716f68]! hover:bg-[#f0eee8]!"
-              aria-label="Search"
+              aria-label={t('search')}
             >
               <Icon name="search" />
             </button>
             <button
               className="grid h-[34px]! w-[34px] place-items-center rounded-full! bg-[#c9ded5]! p-0! text-[10px] font-bold text-[#385149]!"
-              aria-label="Account"
+              aria-label={t('account')}
             >
-              NS
+              {t('ns')}
             </button>
           </div>
         </header>
@@ -300,32 +304,32 @@ export const Dashboard2 = () => {
               {selectedProject.name.toUpperCase()}
             </p>
             <h1 className="m-0 text-[clamp(30px,3vw,42px)] font-medium tracking-[-0.045em] text-[#282923]">
-              Good morning, Nikita
+              {t('good_morning_nikita')}
             </h1>
             <span className="mt-2 block text-[15px] text-[#89877f]">
-              What would you like to test today?
+              {t('what_would_you_like_to_test_today')}
             </span>
           </section>
 
           <section
             className="mt-[30px] rounded-[15px] border border-[#dedbd2] bg-white p-[7px] shadow-[0_10px_30px_rgb(57_51_43_/_7%),0_1px_2px_rgb(57_51_43_/_5%)]"
-            aria-label="Create a test"
+            aria-label={t('create_a_test')}
           >
             <textarea
               className="block h-[82px] w-full resize-none border-0 bg-transparent px-[14px] py-[13px] text-[14px] text-[#292a25] outline-none placeholder:text-[#aaa79e]"
-              aria-label="Describe a test"
-              placeholder="Describe the flow you want to test…"
+              aria-label={t('describe_a_test')}
+              placeholder={t('describe_the_flow_you_want_to_test')}
             />
             <div className="flex items-center justify-between p-0.5">
               <button className="flex h-[34px]! items-center gap-2 rounded-lg! bg-[#f5f3ee]! px-2.5! text-[12px] text-[#747169]!">
-                <Icon name="sparkle" size={16} /> Production{' '}
+                <Icon name="sparkle" size={16} /> {t('production')}{' '}
                 <span className="text-[#aaa79e]">⌄</span>
               </button>
               <button
                 className="flex h-[34px]! items-center gap-2 rounded-lg! bg-[#292a25]! py-0! pl-3! pr-1! text-[12px] font-semibold text-white!"
                 onClick={() => (window.location.hash = '#/recorder')}
               >
-                Start recording
+                {t('start_recording')}
                 <span className="grid h-6 w-6 place-items-center rounded-md bg-white/10">
                   <Icon name="chevron" size={15} />
                 </span>
@@ -335,7 +339,7 @@ export const Dashboard2 = () => {
 
           <section
             className="my-[46px] grid grid-cols-3 border-y border-[#e8e6df] max-[800px]:grid-cols-1"
-            aria-label="Test statistics"
+            aria-label={t('test_statistics')}
           >
             {[
               ['184', 'Total tests', '+12 this month'],
@@ -358,11 +362,11 @@ export const Dashboard2 = () => {
           <section>
             <div className="mb-[14px] flex items-end justify-between">
               <div>
-                <h2 className="m-0 text-[17px] font-semibold text-[#34352f]">Recent runs</h2>
-                <p className="mt-1 text-[11px] text-[#99968d]">Your latest test activity</p>
+                <h2 className="m-0 text-[17px] font-semibold text-[#34352f]">{t('recent_runs')}</h2>
+                <p className="mt-1 text-[11px] text-[#99968d]">{t('your_latest_test_activity')}</p>
               </div>
               <button className="flex h-[30px]! items-center gap-1 bg-transparent! p-0! text-[11px] text-[#6f6d65]!">
-                View all <Icon name="chevron" size={14} />
+                {t('view_all')} <Icon name="chevron" size={14} />
               </button>
             </div>
             <div className="border-t border-[#e8e6df]">

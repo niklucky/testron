@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import {
   Badge,
   Ribbon,
@@ -46,6 +47,7 @@ export const RunRail = ({
   onFilter: (filter: 'all' | 'failed') => void;
   onSelect: (id: string) => void;
 }) => {
+  const { t } = useTranslation();
   const ordered = [...runs].reverse();
   const shown = runs.filter((run) => filter === 'all' || run.verdict !== 'passed');
   const passed = runs.filter((run) => run.verdict === 'passed').length;
@@ -54,9 +56,12 @@ export const RunRail = ({
     <aside className="flex min-h-0 flex-col border-r border-line">
       <div className="shrink-0 space-y-2.5 border-b border-line px-3 py-3">
         <div className="flex items-center gap-2">
-          <SectionLabel>Last {runs.length} runs</SectionLabel>
+          <SectionLabel>
+            {t('last_2')} {runs.length} {t('runs_3')}
+          </SectionLabel>
           <span className="ui-mono ml-auto text-xs text-ink-3">
-            {Math.round((passed / runs.length) * 100)}% green
+            {Math.round((passed / runs.length) * 100)}
+            {t('green')}
           </span>
         </div>
 
@@ -65,19 +70,19 @@ export const RunRail = ({
           cells={ordered.map((run) => ({
             id: run.id,
             color: toneFill[verdictTone[run.verdict].tone],
-            label: `${run.id} · ${verdictTone[run.verdict].label}`,
+            label: `${run.id} · ${t(verdictTone[run.verdict].label)}`,
           }))}
         />
 
         <div className="flex items-center gap-2">
-          <Sparkline values={ordered.map((run) => run.ms / 1000)} label="Duration trend" />
-          <span className="text-sm text-ink-3">duration trend</span>
+          <Sparkline values={ordered.map((run) => run.ms / 1000)} label={t('duration_trend')} />
+          <span className="text-sm text-ink-3">{t('duration_trend_2')}</span>
         </div>
       </div>
 
       <div className="flex h-9 shrink-0 items-center px-3">
         <SegmentedControl
-          label="Run filter"
+          label={t('run_filter')}
           variant="pill"
           items={[...filters]}
           value={filter}
@@ -101,17 +106,19 @@ export const RunRail = ({
               >
                 <span className="flex items-center gap-2">
                   <StatusDot tone={verdict.tone} label={verdict.label} />
-                  <span className="text-base text-ink">{verdict.label}</span>
+                  <span className="text-base text-ink">{t(verdict.label)}</span>
                   {run.attempts.length > 1 && (
                     <Badge size="sm" tone="warning">
-                      {run.attempts.length} attempts
+                      {run.attempts.length} {t('attempts')}
                     </Badge>
                   )}
                   <span className="ui-mono ml-auto text-xs text-ink-3">{ms(run.ms)}</span>
                 </span>
                 <span className="mt-1 flex items-center gap-1.5 text-xs text-ink-3">
                   <span>{run.environment}</span>·<span className="truncate">{run.by}</span>·
-                  <span className="shrink-0">{age(run.minutesAgo)} ago</span>
+                  <span className="shrink-0">
+                    {age(run.minutesAgo)} {t('ago')}
+                  </span>
                 </span>
                 <span className="ui-mono mt-0.5 block truncate text-xs text-ink-3">
                   {run.branch} · {run.commit}

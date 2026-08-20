@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type RefObject } from 'react';
 
 import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
@@ -60,15 +61,21 @@ export const SessionBar = ({
   test: string;
   onTestEdit: () => void;
 }) => {
+  const { t } = useTranslation();
   return (
     <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
       <div className="w-[74px] shrink-0" />
 
       <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
-        <IconButton icon="arrowLeft" size="sm" label="Back to the dashboard" onClick={onBack} />
+        <IconButton
+          icon="arrowLeft"
+          size="sm"
+          label={t('back_to_the_dashboard')}
+          onClick={onBack}
+        />
         <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
           <select
-            aria-label="Recording project"
+            aria-label={t('recording_project')}
             value={projectId ?? ''}
             onChange={(event) => onProject(event.target.value)}
             className="max-w-40 bg-transparent py-1 outline-none"
@@ -84,12 +91,12 @@ export const SessionBar = ({
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
           <select
-            aria-label="Recording test suite"
+            aria-label={t('recording_test_suite')}
             value={suiteId ?? ''}
             onChange={(event) => onSuite(event.target.value)}
             className="max-w-40 bg-transparent py-1 outline-none"
           >
-            <option value="">{suites.length ? 'Choose test suite' : suite}</option>
+            <option value="">{suites.length ? t('choose_test_suite') : suite}</option>
             {suites.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
@@ -101,7 +108,7 @@ export const SessionBar = ({
         <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
           <Icon name="grid" size={13} />
           <select
-            aria-label="Recording environment"
+            aria-label={t('recording_environment')}
             value={environmentId ?? ''}
             onChange={(event) => onEnvironment(event.target.value)}
             className="max-w-36 bg-transparent py-1 outline-none"
@@ -116,14 +123,14 @@ export const SessionBar = ({
         </label>
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
         <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
-          <span className="text-ink-3">Profile</span>
+          <span className="text-ink-3">{t('profile')}</span>
           <select
-            aria-label="Recording profile"
+            aria-label={t('recording_profile')}
             value={profileId ?? ''}
             onChange={(event) => onProfile(event.target.value)}
             className="max-w-36 bg-transparent py-1 outline-none"
           >
-            <option value="">No profile</option>
+            <option value="">{t('no_profile')}</option>
             {profiles.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
@@ -134,7 +141,7 @@ export const SessionBar = ({
         <IconButton
           icon="pencil"
           size="sm"
-          label={profile ? `Configure ${profile}` : 'Create authentication profile'}
+          label={profile ? `Configure ${profile}` : t('create_authentication_profile')}
           onClick={onConfigureProfile}
         />
         <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
@@ -147,13 +154,14 @@ export const SessionBar = ({
         {status !== 'idle' && (
           <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1">
             {status === 'recording' ? (
-              <PulseDot tone="critical" label="Recording" />
+              <PulseDot tone="critical" label={t('recording')} />
             ) : (
               <span className="h-[7px] w-[7px] rounded-full bg-neutral" />
             )}
             <span className="ui-mono text-sm text-ink-2">{clock(elapsed)}</span>
             <span className="text-sm text-ink-3">
-              · {steps} step{steps === 1 ? '' : 's'}
+              · {steps} {t('step')}
+              {steps === 1 ? '' : t('s')}
             </span>
           </span>
         )}
@@ -212,17 +220,18 @@ export const BrowserBar = ({
   panels: Record<PanelId, boolean>;
   onPanel: (panel: PanelId) => void;
 }) => {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState(url);
   useEffect(() => setDraft(url), [url]);
   const recording = status === 'recording';
 
   return (
     <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-line px-3">
-      <IconButton icon="arrowLeft" label="Back" onClick={() => onNavigate('back')} />
-      <IconButton icon="arrowRight" label="Forward" onClick={() => onNavigate('forward')} />
+      <IconButton icon="arrowLeft" label={t('back')} onClick={() => onNavigate('back')} />
+      <IconButton icon="arrowRight" label={t('forward')} onClick={() => onNavigate('forward')} />
       <IconButton
         icon={loading ? 'stop' : 'rerun'}
-        label={loading ? 'Stop loading' : 'Reload'}
+        label={loading ? t('stop_loading') : t('reload')}
         onClick={() => onNavigate(loading ? 'stop' : 'reload')}
       />
 
@@ -236,7 +245,7 @@ export const BrowserBar = ({
         <Icon name="lock" size={12} className="shrink-0 text-good" />
         <input
           ref={inputRef}
-          aria-label="Address"
+          aria-label={t('address')}
           value={draft}
           spellCheck={false}
           onChange={(event) => setDraft(event.target.value)}
@@ -248,8 +257,8 @@ export const BrowserBar = ({
 
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 
-      <IconButton icon="undo" label="Undo last step" disabled={!canUndo} onClick={onUndo} />
-      <IconButton icon="redo" label="Redo" disabled={!canRedo} onClick={onRedo} />
+      <IconButton icon="undo" label={t('undo_last_step')} disabled={!canUndo} onClick={onUndo} />
+      <IconButton icon="redo" label={t('redo')} disabled={!canRedo} onClick={onRedo} />
 
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 
@@ -260,15 +269,19 @@ export const BrowserBar = ({
           onClick={onRecord}
           kbd={displayRecordShortcut('record')}
         >
-          {status === 'paused' ? 'Resume' : editingExisting ? 'Continue recording' : 'Record'}
+          {status === 'paused'
+            ? t('resume')
+            : editingExisting
+              ? t('continue_recording')
+              : t('record')}
         </Button>
       ) : (
         <Button icon="pause" onClick={onPause} kbd={displayRecordShortcut('record')}>
-          Pause
+          {t('pause')}
         </Button>
       )}
       <Button icon="check" onClick={onFinish} disabled={steps === 0 || status === 'finished'}>
-        Finish
+        {t('finish')}
       </Button>
       <Button
         icon="eye"
@@ -278,26 +291,26 @@ export const BrowserBar = ({
         kbd={displayRecordShortcut('assert')}
         onClick={() => onMode(mode === 'assert' ? 'act' : 'assert')}
       >
-        Assert
+        {t('assert')}
       </Button>
       {mode === 'assert' && (
         <select
-          aria-label="Assertion type"
+          aria-label={t('assertion_type')}
           value={assertion}
           onChange={(event) => onAssertion(event.target.value as VerifyAssertion)}
           className="h-8 max-w-40 rounded-md border border-line bg-plane px-2 text-sm text-ink outline-none focus:border-accent"
         >
-          <option value="visible">Visible</option>
-          <option value="hidden">Hidden</option>
-          <option value="textContains">Text contains</option>
-          <option value="textEquals">Text equals</option>
-          <option value="value">Input value</option>
-          <option value="enabled">Enabled</option>
-          <option value="disabled">Disabled</option>
-          <option value="checked">Checked</option>
-          <option value="unchecked">Unchecked</option>
-          <option value="countExactly">Count exactly</option>
-          <option value="countAtLeast">Count at least</option>
+          <option value="visible">{t('visible')}</option>
+          <option value="hidden">{t('hidden')}</option>
+          <option value="textContains">{t('text_contains')}</option>
+          <option value="textEquals">{t('text_equals')}</option>
+          <option value="value">{t('input_value')}</option>
+          <option value="enabled">{t('enabled')}</option>
+          <option value="disabled">{t('disabled')}</option>
+          <option value="checked">{t('checked')}</option>
+          <option value="unchecked">{t('unchecked')}</option>
+          <option value="countExactly">{t('count_exactly')}</option>
+          <option value="countAtLeast">{t('count_at_least')}</option>
         </select>
       )}
 
@@ -309,7 +322,7 @@ export const BrowserBar = ({
         onClick={() => onPanel('steps')}
         kbd={displayRecordShortcut('stepsPanel')}
       >
-        Test steps
+        {t('test_steps')}
       </Button>
       <Button
         icon="panelRight"
@@ -317,11 +330,11 @@ export const BrowserBar = ({
         onClick={() => onPanel('code')}
         kbd={displayRecordShortcut('codePanel')}
       >
-        Auto test
+        {t('auto_test')}
       </Button>
       {status === 'finished' && (
         <Badge tone="good" icon="check" className="ml-1">
-          Saved
+          {t('saved')}
         </Badge>
       )}
     </div>

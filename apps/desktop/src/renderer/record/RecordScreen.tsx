@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -69,6 +70,7 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
  *
  */
 export const RecordScreen = () => {
+  const { t } = useTranslation();
   /** True in Electron, where the page and the panels are native views. */
   const hosted = typeof window.testron !== 'undefined';
   const { theme } = useTheme();
@@ -573,15 +575,15 @@ export const RecordScreen = () => {
         {!hosted && panels.steps && (
           <GlassPanel
             side="left"
-            title="Test steps"
-            subtitle={`${steps.length} · ${clock(elapsed)}`}
+            title={t('test_steps')}
+            subtitle={t('message_2', { value1: steps.length, value2: clock(elapsed) })}
             width={widths.steps}
             onResize={(width) => setWidths((current) => ({ ...current, steps: width }))}
             onClose={() => togglePanel('steps')}
             action={
               mode === 'assert' ? (
                 <Badge tone="good" icon="eye" size="sm">
-                  Assert
+                  {t('assert')}
                 </Badge>
               ) : undefined
             }
@@ -607,12 +609,14 @@ export const RecordScreen = () => {
         {!hosted && panels.code && (
           <GlassPanel
             side="right"
-            title="Auto test"
+            title={t('auto_test')}
             subtitle={context.file.split('/').at(-1)}
             width={widths.code}
             onResize={(width) => setWidths((current) => ({ ...current, code: width }))}
             onClose={() => togglePanel('code')}
-            action={<IconButton icon="copy" size="sm" label="Copy the spec" onClick={copySource} />}
+            action={
+              <IconButton icon="copy" size="sm" label={t('copy_the_spec')} onClick={copySource} />
+            }
           >
             <CodePanel lines={lines} selectedId={selectedId} onSelectStep={setSelectedId} />
           </GlassPanel>
@@ -680,7 +684,9 @@ export const RecordScreen = () => {
         <span className="ui-mono truncate text-ink-2">{context.file}</span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
-          <span>{lines.length} lines generated</span>
+          <span>
+            {lines.length} {t('lines_generated')}
+          </span>
           <span className="ui-mono">{context.testIdAttribute}</span>
           <span>{context.environment}</span>
         </span>
@@ -708,45 +714,48 @@ const FinishSheet = ({
   file: string;
   onCancel: () => void;
   onSave: () => void;
-}) => (
-  <div
-    className="absolute inset-0 z-40 grid place-items-center"
-    style={{ background: 'var(--ui-overlay)' }}
-  >
-    <section
-      role="dialog"
-      aria-label="Finish recording"
-      className="w-[420px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="absolute inset-0 z-40 grid place-items-center"
+      style={{ background: 'var(--ui-overlay)' }}
     >
-      <h2 className="text-lg font-semibold">Finish recording</h2>
-      <p className="mt-1 text-base text-ink-3">
-        {steps} steps over {clock(elapsed)} in {environment}. The spec is saved next to the suite
-        and opens in the test view.
-      </p>
+      <section
+        role="dialog"
+        aria-label={t('finish_recording')}
+        className="w-[420px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
+      >
+        <h2 className="text-lg font-semibold">{t('finish_recording')}</h2>
+        <p className="mt-1 text-base text-ink-3">
+          {steps} {t('steps_over')} {clock(elapsed)} {t('in_2')} {environment}. The spec is saved
+          next to the suite and opens in the test view.
+        </p>
 
-      <label className="mt-4 block">
-        <span className="text-sm text-ink-3">Test name</span>
-        <input
-          value={name}
-          onChange={(event) => onName(event.target.value)}
-          className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
-        />
-      </label>
+        <label className="mt-4 block">
+          <span className="text-sm text-ink-3">{t('test_name')}</span>
+          <input
+            value={name}
+            onChange={(event) => onName(event.target.value)}
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
+          />
+        </label>
 
-      <p className="ui-mono mt-3 flex items-center gap-1.5 text-sm text-ink-3">
-        <Icon name="test" size={13} />
-        {file}
-      </p>
+        <p className="ui-mono mt-3 flex items-center gap-1.5 text-sm text-ink-3">
+          <Icon name="test" size={13} />
+          {file}
+        </p>
 
-      <div className="mt-5 flex items-center gap-2">
-        <Button variant="primary" icon="check" onClick={onSave} disabled={!name.trim()}>
-          Save and open test
-        </Button>
-        <Button variant="ghost" onClick={onCancel}>
-          Keep recording
-        </Button>
-        <Kbd className="ml-auto">{displayRecordShortcut('escape')}</Kbd>
-      </div>
-    </section>
-  </div>
-);
+        <div className="mt-5 flex items-center gap-2">
+          <Button variant="primary" icon="check" onClick={onSave} disabled={!name.trim()}>
+            {t('save_and_open_test')}
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>
+            {t('keep_recording')}
+          </Button>
+          <Kbd className="ml-auto">{displayRecordShortcut('escape')}</Kbd>
+        </div>
+      </section>
+    </div>
+  );
+};

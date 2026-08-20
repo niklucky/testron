@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
@@ -5,6 +6,7 @@ import { Button, Icon, IconButton, PulseDot, useTheme } from '../design';
 import { viewerLabel } from './access';
 
 export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => {
+  const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -36,19 +38,19 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
         <div className="w-[66px] shrink-0" />
         <div className="flex items-center gap-2.5">
           <span className="ui-mono grid h-7 w-7 place-items-center rounded-[7px] bg-accent text-md font-bold text-accent-ink">
-            T
+            {t('t')}
           </span>
           <span className="text-md font-semibold tracking-[-0.01em]">
             {viewerLabel(library.viewer)}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2 text-sm text-ink-3 [-webkit-app-region:no-drag]">
-          <PulseDot label="Connected to server" />
-          Remote workspace
+          <PulseDot label={t('connected_to_server')} />
+          {t('remote_workspace')}
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"
-            label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
             onClick={toggle}
           />
         </div>
@@ -60,15 +62,17 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
             <Icon name={unavailable ? 'alert' : 'grid'} size={20} />
           </div>
           <span className="ui-mono mt-7 block text-xs tracking-[0.12em] text-accent uppercase">
-            First project
+            {t('first_project')}
           </span>
           <h1 className="mt-2 text-[30px] leading-tight font-semibold tracking-[-0.03em]">
-            {unavailable ? "We couldn't load your projects" : 'Create a project to get started'}
+            {unavailable
+              ? t('we_couldn_t_load_your_projects')
+              : t('create_a_project_to_get_started')}
           </h1>
           <p className="mt-3 text-md leading-6 text-ink-2">
             {unavailable
-              ? 'Reconnect to the server before creating a project. Your account and any existing projects remain safely on the server.'
-              : 'Projects keep environments, tests, and revision history together. You can add more projects from the selector at any time.'}
+              ? t('reconnect_to_the_server_before_creating_a_project_your_account_a')
+              : t('projects_keep_environments_tests_and_revision_history_together_y')}
           </p>
 
           {unavailable ? (
@@ -89,22 +93,22 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
                 disabled={server?.status === 'syncing'}
                 onClick={() => window.testron?.command({ type: 'sync-now' })}
               >
-                {server?.status === 'syncing' ? 'Reconnecting…' : 'Try again'}
+                {server?.status === 'syncing' ? t('reconnecting') : t('try_again')}
               </Button>
             </div>
           ) : (
             <form className="mt-7" onSubmit={submit}>
               <label className="block">
-                <span className="text-sm font-medium text-ink-2">Project name</span>
+                <span className="text-sm font-medium text-ink-2">{t('project_name')}</span>
                 <input
                   autoFocus
                   required
                   maxLength={100}
-                  aria-label="Project name"
+                  aria-label={t('project_name')}
                   value={name}
                   disabled={submitting}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="My website"
+                  placeholder={t('my_website')}
                   className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>
@@ -125,7 +129,7 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
                 className="mt-5"
                 disabled={!name.trim() || submitting}
               >
-                {submitting ? 'Creating project…' : 'Create project'}
+                {submitting ? t('creating_project') : t('create_project_2')}
               </Button>
             </form>
           )}

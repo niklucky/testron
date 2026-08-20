@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useRef, type ReactNode } from 'react';
 
 import { IconButton } from '../design';
@@ -34,6 +35,7 @@ export const GlassPanel = ({
   action?: ReactNode;
   children: ReactNode;
 }) => {
+  const { t } = useTranslation();
   const dragging = useRef(false);
 
   const report = (clientX: number, phase: ResizePhase) => {
@@ -57,7 +59,7 @@ export const GlassPanel = ({
           <IconButton
             icon="close"
             size="sm"
-            label={`Hide ${title.toLowerCase()}`}
+            label={t('hide', { value1: title.toLowerCase() })}
             onClick={onClose}
           />
         </div>
@@ -70,7 +72,7 @@ export const GlassPanel = ({
           panel — which, in the packaged app, means leaving the view. */}
       <div
         role="separator"
-        aria-label={`Resize ${title.toLowerCase()}`}
+        aria-label={t('resize', { value1: title.toLowerCase() })}
         aria-orientation="vertical"
         className={`absolute inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/40 ${
           side === 'left' ? '-right-[3px]' : '-left-[3px]'

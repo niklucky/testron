@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Legend, Meter, toneFill, toneInk, toneWash } from '../../design';
 import { ms } from '../format';
 import { verdictTone } from '../tone';
@@ -9,15 +10,20 @@ import type { Failure } from '../types';
  * supposed to dwarf everything above it.
  */
 export const StepsView = ({ failure }: { failure: Failure }) => {
+  const { t } = useTranslation();
   const slowest = Math.max(...failure.steps.map((step) => step.ms));
   const failedAt = failure.steps.findIndex((step) => step.state === 'failed');
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 text-sm text-ink-3">
-        <span>{failure.steps.length} steps</span>
+        <span>
+          {failure.steps.length} {t('steps')}
+        </span>
         <span>·</span>
-        <span>failed at step {failedAt + 1}</span>
+        <span>
+          {t('failed_at_step')} {failedAt + 1}
+        </span>
         <Legend
           className="ml-auto"
           items={(['passed', 'failed', 'skipped'] as const).map((state) => ({
@@ -68,7 +74,7 @@ export const StepsView = ({ failure }: { failure: Failure }) => {
                   height={4}
                   value={step.state === 'skipped' ? 0 : Math.max(0.04, step.ms / slowest)}
                   tone={failed ? 'critical' : 'accent'}
-                  label={`${ms(step.ms)} of ${ms(slowest)}`}
+                  label={t('of', { value1: ms(step.ms), value2: ms(slowest) })}
                 />
                 <span className="ui-mono w-[46px] shrink-0 text-right text-sm text-ink-3">
                   {step.state === 'skipped' ? '—' : ms(step.ms)}

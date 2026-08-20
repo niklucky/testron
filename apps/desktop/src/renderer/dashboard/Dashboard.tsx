@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -46,6 +47,7 @@ import type {
  * draws comes from ../design.
  */
 export const Dashboard = () => {
+  const { t } = useTranslation();
   const [view, setView] = useState<View>('overview');
   const [mockSuites, setMockSuites] = useState<SuiteRecord[]>(buildSuites);
   const [scope, setScope] = useState<Scope>('all');
@@ -372,17 +374,19 @@ export const Dashboard = () => {
         </div>
 
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
-          <PulseDot label="Runs in flight" />
+          <PulseDot label={t('runs_in_flight')} />
           <span className="text-base text-ink-2">
             {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}{' '}
-            {(liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0) === 1 ? 'run' : 'runs'} in
-            flight
+            {(liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0) === 1
+              ? t('run_2')
+              : t('runs_3')}{' '}
+            in flight
           </span>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 [-webkit-app-region:no-drag]">
           <Button icon="search" kbd={displayShortcut('jump')} onClick={() => setJumpOpen(true)}>
-            Jump to…
+            {t('jump_to')}
           </Button>
         </div>
       </header>
@@ -502,19 +506,22 @@ export const Dashboard = () => {
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
         <span className="ui-mono truncate text-ink-2">
           {view === 'overview'
-            ? 'Commerce app · overview'
+            ? t('commerce_app_overview')
             : view === 'members'
-              ? 'Project access · members'
+              ? t('project_access_members')
               : selected.file}
         </span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
-          <span>{quarantined.length} quarantined</span>
+          <span>
+            {quarantined.length} {t('quarantined')}
+          </span>
           <span className="flex items-center gap-1.5">
-            <span className="h-[6px] w-[6px] rounded-full bg-good" />4 workers online
+            <span className="h-[6px] w-[6px] rounded-full bg-good" />
+            {t('4_workers_online')}
           </span>
           <a href="#/experiments" className="text-ink-3 no-underline hover:text-ink">
-            UI studies
+            {t('ui_studies')}
           </a>
         </span>
       </footer>

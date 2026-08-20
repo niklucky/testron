@@ -22,6 +22,7 @@
     "@testron/domain": "workspace:*",
     "@testron/protocol": "workspace:*",
     "@trpc/client": "^11.18.0",
+    "@warpunit/slang-react": "^0.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "4.4.3"

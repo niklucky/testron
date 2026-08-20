@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Badge, Icon, IconButton, Meter, StatusDot, toneFill } from '../design';
 import { sentence } from '../record/codegen';
 import { stepStyle, type RecordedStep } from '../record/types';
@@ -35,87 +36,90 @@ export const DetailCard = ({
   onDetail: (detail: TestDetail) => void;
   onLog: (message: string) => void;
   metadataEditable?: boolean;
-}) => (
-  <Card className="!p-3">
-    <InlineText
-      label="Test name"
-      value={detail.name}
-      onChange={(name) => {
-        onDetail({ ...detail, name });
-        onLog('Test renamed');
-      }}
-      className="text-md font-semibold"
-    />
+}) => {
+  const { t } = useTranslation();
+  return (
+    <Card className="!p-3">
+      <InlineText
+        label={t('test_name')}
+        value={detail.name}
+        onChange={(name) => {
+          onDetail({ ...detail, name });
+          onLog('Test renamed');
+        }}
+        className="text-md font-semibold"
+      />
 
-    <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">Environments</p>
-    <div className="flex flex-wrap gap-1">
-      {(metadataEditable ? allEnvironments : detail.environments).map((environment) => {
-        const on = detail.environments.includes(environment);
-        return (
-          <Chip
-            key={environment}
-            on={on}
-            onClick={
-              metadataEditable
-                ? () => {
-                    onDetail({
-                      ...detail,
-                      environments: on
-                        ? detail.environments.filter((one) => one !== environment)
-                        : [...detail.environments, environment],
-                    });
-                    onLog(`${environment} ${on ? 'removed from' : 'added to'} this test`);
-                  }
-                : undefined
-            }
-          >
-            {environment}
-          </Chip>
-        );
-      })}
-    </div>
-
-    {metadataEditable && (
-      <>
-        <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">Tags</p>
-        <div className="flex flex-wrap items-center gap-1">
-          {detail.tags.map((tag) => (
+      <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">{t('environments')}</p>
+      <div className="flex flex-wrap gap-1">
+        {(metadataEditable ? allEnvironments : detail.environments).map((environment) => {
+          const on = detail.environments.includes(environment);
+          return (
             <Chip
-              key={tag}
-              on
-              onRemove={() =>
-                onDetail({ ...detail, tags: detail.tags.filter((one) => one !== tag) })
+              key={environment}
+              on={on}
+              onClick={
+                metadataEditable
+                  ? () => {
+                      onDetail({
+                        ...detail,
+                        environments: on
+                          ? detail.environments.filter((one) => one !== environment)
+                          : [...detail.environments, environment],
+                      });
+                      onLog(`${environment} ${on ? 'removed from' : 'added to'} this test`);
+                    }
+                  : undefined
               }
             >
-              {tag}
+              {environment}
             </Chip>
-          ))}
-          <IconButton
-            icon="plus"
-            size="sm"
-            label="Add a tag"
-            onClick={() =>
-              onDetail({ ...detail, tags: [...detail.tags, `tag-${detail.tags.length + 1}`] })
-            }
-          />
-        </div>
-      </>
-    )}
+          );
+        })}
+      </div>
 
-    <dl className="mt-3 space-y-1 border-t border-line-soft pt-2.5 text-xs text-ink-3">
-      {[
-        ['Created', `${detail.createdAt} · ${detail.createdBy}`],
-        ['Updated', detail.updatedAt],
-        ['Spec', detail.file],
-      ].map(([term, value]) => (
-        <div key={term} className="flex gap-2">
-          <dt className="w-14 shrink-0">{term}</dt>
-          <dd className={`min-w-0 truncate ${term === 'Spec' ? 'ui-mono' : ''}`}>{value}</dd>
-        </div>
-      ))}
-    </dl>
-  </Card>
-);
+      {metadataEditable && (
+        <>
+          <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">{t('tags')}</p>
+          <div className="flex flex-wrap items-center gap-1">
+            {detail.tags.map((tag) => (
+              <Chip
+                key={tag}
+                on
+                onRemove={() =>
+                  onDetail({ ...detail, tags: detail.tags.filter((one) => one !== tag) })
+                }
+              >
+                {tag}
+              </Chip>
+            ))}
+            <IconButton
+              icon="plus"
+              size="sm"
+              label={t('add_a_tag')}
+              onClick={() =>
+                onDetail({ ...detail, tags: [...detail.tags, `tag-${detail.tags.length + 1}`] })
+              }
+            />
+          </div>
+        </>
+      )}
+
+      <dl className="mt-3 space-y-1 border-t border-line-soft pt-2.5 text-xs text-ink-3">
+        {[
+          ['Created', `${detail.createdAt} · ${detail.createdBy}`],
+          ['Updated', detail.updatedAt],
+          ['Spec', detail.file],
+        ].map(([term, value]) => (
+          <div key={term} className="flex gap-2">
+            <dt className="w-14 shrink-0">{term}</dt>
+            <dd className={`min-w-0 truncate ${term === 'Spec' ? 'ui-mono' : ''}`}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  );
+};
 
 /* -- column two: what has to be true first ------------------------------- */
 
@@ -127,31 +131,39 @@ export const PrerequisiteCard = ({
   prerequisite: Prerequisite;
   onEdit: () => void;
   onDelete: () => void;
-}) => (
-  <Card className="group">
-    <div className="flex items-start gap-2">
-      <span className="min-w-0 flex-1">
-        <Badge size="sm" className="mb-1">
-          {prerequisiteLabels[prerequisite.kind]}
-        </Badge>
-        <span className="block truncate text-base text-ink">{prerequisite.title}</span>
-        <span className="ui-mono mt-1 block truncate text-xs text-ink-3">{prerequisite.value}</span>
-      </span>
-      <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-        <IconButton icon="pencil" size="sm" label="Edit prerequisite" onClick={onEdit} />
-        <IconButton icon="trash" size="sm" label="Delete prerequisite" onClick={onDelete} />
-      </span>
-    </div>
-  </Card>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <Card className="group">
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1">
+          <Badge size="sm" className="mb-1">
+            {prerequisiteLabels[prerequisite.kind]}
+          </Badge>
+          <span className="block truncate text-base text-ink">{prerequisite.title}</span>
+          <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
+            {prerequisite.value}
+          </span>
+        </span>
+        <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+          <IconButton icon="pencil" size="sm" label={t('edit_prerequisite')} onClick={onEdit} />
+          <IconButton icon="trash" size="sm" label={t('delete_prerequisite')} onClick={onDelete} />
+        </span>
+      </div>
+    </Card>
+  );
+};
 
-export const PrerequisitesEmpty = () => (
-  <EmptyLane>
-    Nothing has to be true before this test runs.
-    <br />
-    Add a seeded basket, a flag, or a signed-in session.
-  </EmptyLane>
-);
+export const PrerequisitesEmpty = () => {
+  const { t } = useTranslation();
+  return (
+    <EmptyLane>
+      {t('nothing_has_to_be_true_before_this_test_runs')}
+      <br />
+      {t('add_a_seeded_basket_a_flag_or_a_signed_in_session')}
+    </EmptyLane>
+  );
+};
 
 /* -- column three: what it does ------------------------------------------ */
 
@@ -180,6 +192,7 @@ export const StepCard = ({
   onDelete: () => void;
   locatorEditable?: boolean;
 }) => {
+  const { t } = useTranslation();
   const style = stepStyle[step.kind];
   return (
     <Card
@@ -198,9 +211,9 @@ export const StepCard = ({
               aims at. Everything else about a step is generated. */}
           {step.value !== undefined && !step.secret && (
             <span className="mt-1 flex items-center gap-1 text-xs text-ink-3">
-              value
+              {t('value_2')}
               <InlineText
-                label={`Step ${index + 1} value`}
+                label={t('step_value_2', { value1: index + 1 })}
                 mono
                 value={step.value}
                 onChange={(value) => onStep({ ...step, value })}
@@ -211,7 +224,7 @@ export const StepCard = ({
           {step.locator && locatorEditable && (
             <>
               <InlineText
-                label={`Step ${index + 1} locator`}
+                label={t('step_locator', { value1: index + 1 })}
                 mono
                 value={step.locator}
                 onChange={(locator) => onStep({ ...step, locator })}
@@ -219,7 +232,7 @@ export const StepCard = ({
               />
               {step.alternatives.length > 0 && (
                 <select
-                  aria-label={`Step ${index + 1} recorded locator alternatives`}
+                  aria-label={t('step_recorded_locator_alternatives', { value1: index + 1 })}
                   defaultValue=""
                   onChange={(event) => {
                     if (event.target.value) onStep({ ...step, locator: event.target.value });
@@ -227,7 +240,7 @@ export const StepCard = ({
                   }}
                   className="ui-mono mt-1 w-full rounded border border-line bg-plane px-1 py-1 text-xs text-ink-3 outline-none hover:border-accent"
                 >
-                  <option value="">Use a recorded alternative…</option>
+                  <option value="">{t('use_a_recorded_alternative')}</option>
                   {step.alternatives.map((locator) => (
                     <option key={locator} value={locator}>
                       {locator}
@@ -248,11 +261,11 @@ export const StepCard = ({
           {failed && (
             <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
               <Badge tone="critical" icon="alert" size="sm">
-                Failed here
+                {t('failed_here')}
               </Badge>
               {error && (
                 <pre
-                  aria-label="Step error"
+                  aria-label={t('step_error')}
                   className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
                 >
                   {error}
@@ -262,7 +275,7 @@ export const StepCard = ({
           )}
           {passed && !failed && (
             <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
-              <Icon name="check" size={11} /> passed
+              <Icon name="check" size={11} /> {t('passed_3')}
             </span>
           )}
         </span>
@@ -271,7 +284,7 @@ export const StepCard = ({
             <IconButton
               icon="focus"
               size="sm"
-              label={`Repick element for step ${index + 1}`}
+              label={t('repick_element_for_step', { value1: index + 1 })}
               onClick={onRepick}
             />
           )}
@@ -280,13 +293,13 @@ export const StepCard = ({
           <IconButton
             icon="eye"
             size="sm"
-            label={`Assert something after step ${index + 1}`}
+            label={t('assert_something_after_step', { value1: index + 1 })}
             onClick={onAddAssertion}
           />
           <IconButton
             icon="trash"
             size="sm"
-            label={`Delete step ${index + 1}`}
+            label={t('delete_step', { value1: index + 1 })}
             onClick={onDelete}
           />
         </span>
@@ -331,114 +344,117 @@ export const AssertionCard = ({
   kinds?: AssertionKind[];
   status?: 'pending' | 'running' | 'passed' | 'failed';
   error?: string;
-}) => (
-  <Card
-    className="group"
-    tone={
-      status === 'failed'
-        ? 'var(--ui-critical)'
-        : status === 'running'
-          ? 'var(--ui-accent)'
-          : undefined
-    }
-  >
-    <div className="flex items-start gap-2">
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <Icon name="eye" size={13} className="shrink-0 text-good" />
-          {subjectEditable ? (
-            <InlineText
-              label="Assertion subject"
-              value={assertion.label}
-              onChange={(label) => onAssertion({ ...assertion, label })}
-              className="text-base"
-            />
-          ) : (
-            <span className="truncate text-base">{assertion.label}</span>
-          )}
-        </span>
-
-        <span className="mt-1 flex flex-wrap items-center gap-1 text-sm text-ink-3">
-          <InlineSelect
-            label="Assertion"
-            value={assertion.kind}
-            options={(kinds ?? (Object.keys(assertionLabels) as AssertionKind[])).map((id) => ({
-              id,
-              label: assertionLabels[id],
-            }))}
-            onChange={(kind) => onAssertion({ ...assertion, kind })}
-            className="text-sm"
-          />
-          {assertionNeedsValue(assertion.kind) && (
-            <InlineText
-              label={
-                assertion.kind === 'countExactly' || assertion.kind === 'countAtLeast'
-                  ? 'Expected count'
-                  : 'Expected value'
-              }
-              mono
-              value={assertion.expected}
-              onChange={(expected) => onAssertion({ ...assertion, expected })}
-              className="text-sm text-ink-2"
-            />
-          )}
-        </span>
-
-        {assertion.locator && locatorEditable && (
-          <InlineText
-            label="Assertion locator"
-            mono
-            value={assertion.locator}
-            onChange={(locator) => onAssertion({ ...assertion, locator })}
-            className="mt-1 text-xs text-ink-3"
-          />
-        )}
-        {assertion.locator && !locatorEditable && (
-          <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
-            {assertion.locator}
-          </span>
-        )}
-        {status === 'failed' && (
-          <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
-            <Badge tone="critical" icon="alert" size="sm">
-              Assertion failed
-            </Badge>
-            {error && (
-              <pre
-                aria-label="Assertion error"
-                className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
-              >
-                {error}
-              </pre>
+}) => {
+  const { t } = useTranslation();
+  return (
+    <Card
+      className="group"
+      tone={
+        status === 'failed'
+          ? 'var(--ui-critical)'
+          : status === 'running'
+            ? 'var(--ui-accent)'
+            : undefined
+      }
+    >
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <Icon name="eye" size={13} className="shrink-0 text-good" />
+            {subjectEditable ? (
+              <InlineText
+                label={t('assertion_subject')}
+                value={assertion.label}
+                onChange={(label) => onAssertion({ ...assertion, label })}
+                className="text-base"
+              />
+            ) : (
+              <span className="truncate text-base">{assertion.label}</span>
             )}
-          </div>
-        )}
-        {status === 'passed' && (
-          <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
-            <Icon name="check" size={11} /> passed
           </span>
-        )}
-      </span>
-      <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-        <IconButton
-          icon="arrowUp"
-          size="sm"
-          label="Attach to the previous step"
-          disabled={!canMoveUp}
-          onClick={() => onMove(-1)}
-        />
-        <IconButton
-          icon="arrowDown"
-          size="sm"
-          label="Attach to the next step"
-          disabled={!canMoveDown}
-          onClick={() => onMove(1)}
-        />
-        <IconButton icon="trash" size="sm" label="Delete assertion" onClick={onDelete} />
-      </span>
-    </div>
-  </Card>
-);
+
+          <span className="mt-1 flex flex-wrap items-center gap-1 text-sm text-ink-3">
+            <InlineSelect
+              label={t('assertion')}
+              value={assertion.kind}
+              options={(kinds ?? (Object.keys(assertionLabels) as AssertionKind[])).map((id) => ({
+                id,
+                label: assertionLabels[id],
+              }))}
+              onChange={(kind) => onAssertion({ ...assertion, kind })}
+              className="text-sm"
+            />
+            {assertionNeedsValue(assertion.kind) && (
+              <InlineText
+                label={
+                  assertion.kind === 'countExactly' || assertion.kind === 'countAtLeast'
+                    ? t('expected_count')
+                    : t('expected_value')
+                }
+                mono
+                value={assertion.expected}
+                onChange={(expected) => onAssertion({ ...assertion, expected })}
+                className="text-sm text-ink-2"
+              />
+            )}
+          </span>
+
+          {assertion.locator && locatorEditable && (
+            <InlineText
+              label={t('assertion_locator')}
+              mono
+              value={assertion.locator}
+              onChange={(locator) => onAssertion({ ...assertion, locator })}
+              className="mt-1 text-xs text-ink-3"
+            />
+          )}
+          {assertion.locator && !locatorEditable && (
+            <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
+              {assertion.locator}
+            </span>
+          )}
+          {status === 'failed' && (
+            <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
+              <Badge tone="critical" icon="alert" size="sm">
+                {t('assertion_failed')}
+              </Badge>
+              {error && (
+                <pre
+                  aria-label={t('assertion_error')}
+                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
+                >
+                  {error}
+                </pre>
+              )}
+            </div>
+          )}
+          {status === 'passed' && (
+            <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
+              <Icon name="check" size={11} /> {t('passed_3')}
+            </span>
+          )}
+        </span>
+        <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+          <IconButton
+            icon="arrowUp"
+            size="sm"
+            label={t('attach_to_the_previous_step')}
+            disabled={!canMoveUp}
+            onClick={() => onMove(-1)}
+          />
+          <IconButton
+            icon="arrowDown"
+            size="sm"
+            label={t('attach_to_the_next_step')}
+            disabled={!canMoveDown}
+            onClick={() => onMove(1)}
+          />
+          <IconButton icon="trash" size="sm" label={t('delete_assertion')} onClick={onDelete} />
+        </span>
+      </div>
+    </Card>
+  );
+};
 
 /* -- column five: how it went -------------------------------------------- */
 
@@ -467,12 +483,13 @@ export const RunCard = ({
   onLog: (message: string) => void;
   reportAvailable?: boolean;
 }) => {
+  const { t } = useTranslation();
   const verdict = verdictTone[run.verdict];
   return (
     <Card selected={selected} onClick={onClick} className="group">
       <div className="flex items-center gap-2">
         <StatusDot tone={verdict.tone} label={verdict.label} />
-        <span className="text-base text-ink">{verdict.label}</span>
+        <span className="text-base text-ink">{t(verdict.label)}</span>
         <span className="ui-mono ml-auto text-xs text-ink-3">
           {run.verdict === 'running' ? '…' : `${run.seconds.toFixed(1)}s`}
         </span>
@@ -483,7 +500,7 @@ export const RunCard = ({
         height={4}
         value={run.completed / total}
         tone={verdict.tone === 'neutral' ? 'accent' : verdict.tone}
-        label={`${run.completed} of ${total} steps`}
+        label={t('of_steps', { value1: run.completed, value2: total })}
       />
 
       <Meta>
@@ -494,10 +511,10 @@ export const RunCard = ({
       {run.error && run.verdict !== 'running' && (
         <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
           <p className="text-xs font-medium text-critical">
-            {run.failedStepId ? 'Failed step' : 'Runner error'}
+            {run.failedStepId ? t('failed_step') : t('runner_error')}
           </p>
           <pre
-            aria-label="Run error"
+            aria-label={t('run_error')}
             className="ui-mono mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-xs text-ink-2"
           >
             {run.error}
@@ -515,7 +532,7 @@ export const RunCard = ({
             window.location.hash = '#/run';
           }}
         >
-          <Icon name="camera" size={11} /> Open report
+          <Icon name="camera" size={11} /> {t('open_report')}
         </button>
       )}
     </Card>

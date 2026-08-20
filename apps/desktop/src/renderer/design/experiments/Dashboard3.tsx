@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 /* ------------------------------------------------------------------ icons */
@@ -591,6 +592,7 @@ const PanelHeader = ({
 /* ---------------------------------------------------------------- sidebar */
 
 const SuiteItem = ({ suite }: { suite: SuiteRecord }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const visible = expanded ? suite.tests.slice(0, showAll ? undefined : 5) : [];
@@ -643,8 +645,8 @@ const SuiteItem = ({ suite }: { suite: SuiteRecord }) => {
         <button
           type="button"
           className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[#8d8878] opacity-0 transition hover:bg-[#d6d1c1] hover:text-[#2b2922] focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label={`Add test to ${suite.name}`}
-          title={`Add test to ${suite.name}`}
+          aria-label={t('add_test_to', { value1: suite.name })}
+          title={t('add_test_to', { value1: suite.name })}
           onClick={() => (window.location.hash = '#/recorder')}
         >
           <Icon name="plus" size={14} />
@@ -676,7 +678,7 @@ const SuiteItem = ({ suite }: { suite: SuiteRecord }) => {
                 className="w-full rounded-md px-2 py-[6px] text-left text-[12px] font-medium text-[#8a8474] hover:bg-[#e4e0d2] hover:text-[#2b2922]"
                 onClick={() => setShowAll((current) => !current)}
               >
-                {showAll ? 'Show less' : `Show ${hidden} more`}
+                {showAll ? t('show_less') : `Show ${hidden} more`}
               </button>
             </li>
           )}
@@ -693,6 +695,7 @@ const Sidebar = ({
   project: ProjectRecord;
   onSelectProject: (id: string) => void;
 }) => {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -703,7 +706,7 @@ const Sidebar = ({
             type="button"
             className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 text-left transition hover:bg-[#e4e0d2]"
             aria-expanded={menuOpen}
-            aria-label={`Current project: ${project.name}`}
+            aria-label={t('current_project', { value1: project.name })}
             onClick={() => setMenuOpen((current) => !current)}
           >
             <span
@@ -716,7 +719,7 @@ const Sidebar = ({
                 {project.name}
               </span>
               <span className="block truncate text-[11px] text-[#948e7e]">
-                {project.suites.length} suites · {project.totals.tests} tests
+                {project.suites.length} {t('suites')} {project.totals.tests} {t('tests_2')}
               </span>
             </span>
             <Icon
@@ -728,8 +731,8 @@ const Sidebar = ({
           <button
             type="button"
             className="grid h-12 w-9 shrink-0 place-items-center rounded-xl text-[#7d7767] transition hover:bg-[#e4e0d2] hover:text-[#2b2922]"
-            aria-label="New project"
-            title="New project"
+            aria-label={t('new_project')}
+            title={t('new_project')}
           >
             <Icon name="plus" size={17} />
           </button>
@@ -763,7 +766,7 @@ const Sidebar = ({
                     {candidate.name}
                   </span>
                   <span className="block text-[11px] text-[#948e7e]">
-                    {candidate.totals.tests} tests · {candidate.environment}
+                    {candidate.totals.tests} {t('tests_3')} {candidate.environment}
                   </span>
                 </span>
                 {candidate.id === project.id && (
@@ -778,46 +781,46 @@ const Sidebar = ({
               className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[13px] text-[#5f5b51] hover:bg-[#f3f0e7]"
             >
               <Icon name="plus" size={14} />
-              New project
+              {t('new_project')}
             </button>
           </div>
         )}
       </div>
 
-      <nav className="mt-3 grid gap-0.5" aria-label="Project">
+      <nav className="mt-3 grid gap-0.5" aria-label={t('project')}>
         <a
           href="#/experiments/workspace"
           className="flex h-10 items-center gap-2.5 rounded-lg bg-[#e4e0d2] px-2.5 text-[14px] font-medium text-[#2b2922] no-underline"
         >
           <Icon name="overview" size={16} className="text-[#5f5b51]" />
-          Overview
+          {t('overview')}
         </a>
         <a
           href="#/recorder"
           className="flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-[#5f5b51] no-underline transition hover:bg-[#e4e0d2] hover:text-[#2b2922]"
         >
           <Icon name="test" size={16} className="text-[#8a8474]" />
-          New test
-          <span className="ml-auto text-[11px] tabular-nums text-[#a49d8c]">⌘N</span>
+          {t('new_test')}
+          <span className="ml-auto text-[11px] tabular-nums text-[#a49d8c]">{t('n')}</span>
         </a>
         <button
           type="button"
           className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[14px] text-[#5f5b51] transition hover:bg-[#e4e0d2] hover:text-[#2b2922]"
         >
           <Icon name="suite" size={16} className="text-[#8a8474]" />
-          New test suite
+          {t('new_test_suite')}
         </button>
       </nav>
 
       <div className="mt-5 flex items-center justify-between pl-2.5 pr-1">
         <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#9c9585]">
-          Test suites
+          {t('test_suites')}
         </span>
         <button
           type="button"
           className="grid h-6 w-6 place-items-center rounded-md text-[#8d8878] transition hover:bg-[#e4e0d2] hover:text-[#2b2922]"
-          aria-label="Add test suite"
-          title="Add test suite"
+          aria-label={t('add_test_suite')}
+          title={t('add_test_suite')}
         >
           <Icon name="plus" size={14} />
         </button>
@@ -835,21 +838,23 @@ const Sidebar = ({
           className="flex h-10 items-center gap-2.5 rounded-lg px-2.5 text-[14px] text-[#5f5b51] no-underline transition hover:bg-[#e4e0d2] hover:text-[#2b2922]"
         >
           <Icon name="settings" size={16} className="text-[#8a8474]" />
-          Settings
+          {t('settings')}
         </a>
         <button
           type="button"
           className="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition hover:bg-[#e4e0d2]"
         >
           <span className="relative grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#cfe0d5] text-[11px] font-bold text-[#3a5449]">
-            NS
+            {t('ns')}
             <span className="absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full border-2 border-[#eceadf] bg-[#5f9d7d]" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-semibold text-[#2b2922]">
-              Nikita S.
+              {t('nikita_s')}
             </span>
-            <span className="block truncate text-[11px] text-[#948e7e]">Local workspace</span>
+            <span className="block truncate text-[11px] text-[#948e7e]">
+              {t('local_workspace')}
+            </span>
           </span>
           <Icon name="dots" size={15} className="shrink-0 text-[#a49d8c]" />
         </button>
@@ -861,6 +866,7 @@ const Sidebar = ({
 /* ------------------------------------------------------------------ chart */
 
 const RunsChart = ({ days }: { days: DayRecord[] }) => {
+  const { t } = useTranslation();
   const max = Math.max(...days.map((day) => day.passed + day.failed + day.skipped));
   const scale = Math.max(20, Math.ceil(max / 20) * 20);
   const ticks = [4, 3, 2, 1, 0].map((step) => (scale / 4) * step);
@@ -909,7 +915,9 @@ const RunsChart = ({ days }: { days: DayRecord[] }) => {
                   <p className="text-[12px] font-semibold text-[#2b2922]">
                     {day.weekday} {day.dayOfMonth}
                   </p>
-                  <p className="mb-1 text-[11px] text-[#948e7e]">{total} runs</p>
+                  <p className="mb-1 text-[11px] text-[#948e7e]">
+                    {total} {t('runs_3')}
+                  </p>
                   {(
                     [
                       ['passed', day.passed],
@@ -961,6 +969,7 @@ const activityStyle: Record<ActivityKind, { icon: IconName; chip: string; label:
 };
 
 export const Dashboard3 = () => {
+  const { t } = useTranslation();
   const [projectId, setProjectId] = useState(projects[0].id);
   const [range, setRange] = useState(14);
   const [query, setQuery] = useState('');
@@ -1061,7 +1070,7 @@ export const Dashboard3 = () => {
           <div className="flex min-w-0 items-center gap-2 text-[13px] text-[#948e7e] [-webkit-app-region:no-drag]">
             <span className="truncate">{project.name}</span>
             <Icon name="chevron" size={12} className="shrink-0 text-[#c0b9a6]" />
-            <span className="truncate font-medium text-[#2b2922]">Overview</span>
+            <span className="truncate font-medium text-[#2b2922]">{t('overview')}</span>
             <span className="ml-1 hidden shrink-0 rounded-full bg-[#f0ede3] px-2 py-[3px] text-[11px] font-medium text-[#7d7767] sm:inline">
               {project.environment}
             </span>
@@ -1071,17 +1080,17 @@ export const Dashboard3 = () => {
               <Icon name="search" size={15} />
               <input
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-[#2b2922] outline-none placeholder:text-[#b0a996]"
-                aria-label="Search tests"
-                placeholder="Search tests…"
+                aria-label={t('search_tests_2')}
+                placeholder={t('search_tests')}
               />
               <kbd className="rounded border border-[#e6e1d4] px-1 text-[10px] font-medium text-[#a9a290]">
-                ⌘K
+                {t('k')}
               </kbd>
             </label>
             <button
               type="button"
               className="relative grid h-9 w-9 place-items-center rounded-lg text-[#7d7767] transition hover:bg-[#f0ede3] hover:text-[#2b2922]"
-              aria-label="Notifications"
+              aria-label={t('notifications')}
             >
               <Icon name="bell" size={17} />
               <span className="absolute right-[7px] top-[7px] h-[6px] w-[6px] rounded-full bg-[#c85c4c] ring-2 ring-[#faf9f5]" />
@@ -1091,7 +1100,7 @@ export const Dashboard3 = () => {
               className="flex h-9 items-center gap-1.5 rounded-lg bg-[#2b2922] px-3.5 text-[13px] font-semibold text-[#faf9f5] no-underline transition hover:bg-[#3d3a31]"
             >
               <Icon name="plus" size={15} />
-              New test
+              {t('new_test')}
             </a>
           </div>
         </header>
@@ -1101,10 +1110,10 @@ export const Dashboard3 = () => {
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1 className="text-[26px] font-semibold tracking-[-0.03em] text-[#26241e]">
-                  Project overview
+                  {t('project_overview')}
                 </h1>
                 <p className="mt-1 text-[13px] text-[#8b8574]">
-                  {project.suites.length} suites · {totals.tests} tests · last run{' '}
+                  {project.suites.length} {t('suites')} {totals.tests} {t('tests_last_run')}{' '}
                   {longAge(Math.min(...project.suites.map((suite) => suite.lastRunMinutesAgo)))}
                 </p>
               </div>
@@ -1121,7 +1130,8 @@ export const Dashboard3 = () => {
                       }`}
                       onClick={() => setRange(option)}
                     >
-                      {option}d
+                      {option}
+                      {t('d')}
                     </button>
                   ))}
                 </div>
@@ -1130,7 +1140,7 @@ export const Dashboard3 = () => {
                   className="flex h-9 items-center gap-1.5 rounded-lg border border-[#e6e1d4] bg-white px-3.5 text-[13px] font-medium text-[#4b473e] transition hover:bg-[#f3f0e7]"
                 >
                   <Icon name="play" size={14} />
-                  Run all
+                  {t('run_all')}
                 </button>
               </div>
             </div>
@@ -1140,7 +1150,7 @@ export const Dashboard3 = () => {
               <Panel className="p-4">
                 <div className="flex items-center gap-2 text-[12px] font-medium text-[#8b8574]">
                   <Icon name="test" size={14} className="text-[#a49d8c]" />
-                  Total tests
+                  {t('total_tests')}
                 </div>
                 <div className="mt-2.5 flex items-baseline gap-2">
                   <strong className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
@@ -1149,14 +1159,15 @@ export const Dashboard3 = () => {
                   <Trend value={totals.testsAdded} unit="" digits={0} />
                 </div>
                 <p className="mt-2 text-[12px] text-[#948e7e]">
-                  in {project.suites.length} suites · {totals.testsAdded} added this month
+                  {t('in_2')} {project.suites.length} {t('suites')} {totals.testsAdded}{' '}
+                  {t('added_this_month')}
                 </p>
               </Panel>
 
               <Panel className="p-4">
                 <div className="flex items-center gap-2 text-[12px] font-medium text-[#8b8574]">
                   <Icon name="check" size={14} className="text-[#a49d8c]" />
-                  Pass rate
+                  {t('pass_rate')}
                 </div>
                 <div className="mt-2.5 flex items-baseline gap-2">
                   <strong className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
@@ -1171,15 +1182,15 @@ export const Dashboard3 = () => {
                   className="mt-3"
                 />
                 <p className="mt-2 text-[12px] text-[#948e7e]">
-                  {suiteTally.passed} passed · {suiteTally.skipped} skipped · {suiteTally.failed}{' '}
-                  failed
+                  {suiteTally.passed} {t('passed_2')} {suiteTally.skipped} {t('skipped_2')}{' '}
+                  {suiteTally.failed} {t('failed')}
                 </p>
               </Panel>
 
               <Panel className="p-4">
                 <div className="flex items-center gap-2 text-[12px] font-medium text-[#8b8574]">
                   <Icon name="play" size={14} className="text-[#a49d8c]" />
-                  Test runs · 30d
+                  {t('test_runs_30d')}
                 </div>
                 <div className="mt-2.5 flex items-baseline gap-2">
                   <strong className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
@@ -1188,26 +1199,27 @@ export const Dashboard3 = () => {
                   <Trend value={totals.runsDelta} unit="%" />
                 </div>
                 <p className="mt-2 text-[12px] text-[#948e7e]">
-                  avg {duration(totals.seconds)} per test · {signed(totals.secondsDelta, 0)}%
-                  duration
+                  {t('avg')} {duration(totals.seconds)} {t('per_test')}{' '}
+                  {signed(totals.secondsDelta, 0)}% duration
                 </p>
               </Panel>
 
               <Panel className="p-4">
                 <div className="flex items-center gap-2 text-[12px] font-medium text-[#8b8574]">
                   <Icon name="alert" size={14} className="text-[#a49d8c]" />
-                  Needs attention
+                  {t('needs_attention')}
                 </div>
                 <div className="mt-2.5 flex items-baseline gap-2">
                   <strong className="text-[30px] font-semibold tracking-[-0.03em] tabular-nums">
                     {totals.failing}
                   </strong>
                   <span className="rounded-full bg-[#f7f0da] px-1.5 py-[3px] text-[11px] font-semibold text-[#93701f]">
-                    {totals.flaky} flaky
+                    {totals.flaky} {t('flaky')}
                   </span>
                 </div>
                 <p className="mt-2 text-[12px] text-[#948e7e]">
-                  failing in {project.suites.filter((suite) => suite.failed > 0).length} suites
+                  {t('failing_in')} {project.suites.filter((suite) => suite.failed > 0).length}{' '}
+                  {t('suites_2')}
                 </p>
               </Panel>
             </section>
@@ -1216,8 +1228,8 @@ export const Dashboard3 = () => {
             <section className="mt-3 grid grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)] gap-3 max-[1100px]:grid-cols-1">
               <Panel>
                 <PanelHeader
-                  title="Test runs"
-                  subtitle={`Daily results across the last ${range} days`}
+                  title={t('test_runs')}
+                  subtitle={t('daily_results_across_the_last_days', { value1: range })}
                   action={
                     <div className="flex items-center gap-3">
                       {(['passed', 'skipped', 'failed'] as const).map((status) => (
@@ -1239,14 +1251,14 @@ export const Dashboard3 = () => {
 
               <Panel className="flex flex-col">
                 <PanelHeader
-                  title="Recent activity"
-                  subtitle={`${totals.changesThisWeek} changes this week`}
+                  title={t('recent_activity')}
+                  subtitle={t('changes_this_week', { value1: totals.changesThisWeek })}
                   action={
                     <button
                       type="button"
                       className="text-[12px] font-medium text-[#8b8574] transition hover:text-[#2b2922]"
                     >
-                      View all
+                      {t('view_all')}
                     </button>
                   }
                 />
@@ -1265,7 +1277,7 @@ export const Dashboard3 = () => {
                             {item.test}
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] text-[#948e7e]">
-                            {style.label} in {item.suite} · {item.author}
+                            {style.label} {t('in_2')} {item.suite} · {item.author}
                           </span>
                         </span>
                         <span className="shrink-0 text-[11px] tabular-nums text-[#a9a290]">
@@ -1281,23 +1293,26 @@ export const Dashboard3 = () => {
             {/* suites table */}
             <Panel className="mt-3">
               <PanelHeader
-                title="Test suites"
-                subtitle={`${suiteRows.length} of ${project.suites.length} suites`}
+                title={t('test_suites')}
+                subtitle={t('of_suites', {
+                  value1: suiteRows.length,
+                  value2: project.suites.length,
+                })}
                 action={
                   <div className="flex items-center gap-2">
                     <label className="flex h-8 w-[190px] items-center gap-2 rounded-lg border border-[#e6e1d4] bg-[#faf9f5] px-2.5 text-[#948e7e] focus-within:border-[#cfc7b2]">
                       <Icon name="filter" size={13} />
                       <input
                         className="min-w-0 flex-1 bg-transparent text-[13px] text-[#2b2922] outline-none placeholder:text-[#b0a996]"
-                        aria-label="Filter test suites"
-                        placeholder="Filter suites…"
+                        aria-label={t('filter_test_suites')}
+                        placeholder={t('filter_suites')}
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                       />
                       {query && (
                         <button
                           type="button"
-                          aria-label="Clear filter"
+                          aria-label={t('clear_filter')}
                           className="text-[#a9a290] hover:text-[#2b2922]"
                           onClick={() => setQuery('')}
                         >
@@ -1316,19 +1331,19 @@ export const Dashboard3 = () => {
                       onClick={() => setOnlyAttention((current) => !current)}
                     >
                       <Icon name="alert" size={13} />
-                      Needs attention
+                      {t('needs_attention')}
                     </button>
                   </div>
                 }
               />
 
               <div className="grid grid-cols-[minmax(0,2.1fr)_70px_minmax(140px,1fr)_110px_minmax(0,1fr)_28px] items-center gap-3 border-b border-[#f2efe6] px-4 py-2">
-                <SortHeader label="Suite" sortKey="name" />
-                <SortHeader label="Tests" sortKey="tests" />
-                <SortHeader label="Pass rate" sortKey="passRate" />
-                <SortHeader label="Last run" sortKey="lastRun" />
+                <SortHeader label={t('suite')} sortKey="name" />
+                <SortHeader label={t('tests')} sortKey="tests" />
+                <SortHeader label={t('pass_rate')} sortKey="passRate" />
+                <SortHeader label={t('last_run')} sortKey="lastRun" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.09em] text-[#a09a88]">
-                  Owner
+                  {t('owner')}
                 </span>
                 <span />
               </div>
@@ -1356,7 +1371,7 @@ export const Dashboard3 = () => {
                       </span>
                       {suite.failed > 0 && (
                         <span className="shrink-0 rounded-full bg-[#fae9e5] px-1.5 py-px text-[11px] font-semibold text-[#ab4132]">
-                          {suite.failed} failing
+                          {suite.failed} {t('failing')}
                         </span>
                       )}
                     </span>
@@ -1376,7 +1391,7 @@ export const Dashboard3 = () => {
                     </span>
                     <span className="flex items-center gap-1.5 text-[12px] text-[#8b8574]">
                       <Icon name="clock" size={12} className="text-[#b0a996]" />
-                      {shortAge(suite.lastRunMinutesAgo)} ago
+                      {shortAge(suite.lastRunMinutesAgo)} {t('ago')}
                     </span>
                     <span className="truncate text-[12px] text-[#8b8574]">{suite.owner}</span>
                     <Icon name="chevron" size={14} className="justify-self-end text-[#c0b9a6]" />
@@ -1386,7 +1401,8 @@ export const Dashboard3 = () => {
 
               {suiteRows.length === 0 && (
                 <p className="px-4 py-8 text-center text-[13px] text-[#948e7e]">
-                  No suites match “{query}”.
+                  {t('no_suites_match')}
+                  {query}”.
                 </p>
               )}
             </Panel>

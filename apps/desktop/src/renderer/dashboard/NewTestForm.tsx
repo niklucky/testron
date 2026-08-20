@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -18,6 +19,7 @@ export const NewTestForm = ({
   onStart: (title: string) => void;
   onClose: () => void;
 }) => {
+  const { t } = useTranslation();
   const [title, setTitle] = useState(initialTitle);
   const titleId = useId();
   const inputId = useId();
@@ -54,11 +56,15 @@ export const NewTestForm = ({
         <h2 id={titleId} className="text-2xl font-semibold tracking-[-0.02em]">
           {heading}
         </h2>
-        {suiteName && <p className="mt-1 text-sm text-ink-3">In {suiteName}</p>}
+        {suiteName && (
+          <p className="mt-1 text-sm text-ink-3">
+            {t('in')} {suiteName}
+          </p>
+        )}
 
         <form className="mt-6" onSubmit={submit}>
           <label htmlFor={inputId} className="block text-sm font-medium text-ink-2">
-            Test title
+            {t('test_title')}
           </label>
           <input
             id={inputId}
@@ -71,7 +77,7 @@ export const NewTestForm = ({
           />
 
           <div className="mt-6 flex justify-end gap-2">
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={onClose}>{t('cancel')}</Button>
             <Button type="submit" variant="primary" disabled={!title.trim()}>
               {submitLabel}
             </Button>

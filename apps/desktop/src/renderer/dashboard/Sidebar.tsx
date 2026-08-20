@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
@@ -8,6 +9,7 @@ import {
   IconButton,
   NavItem,
   SectionLabel,
+  Tooltip,
   useTheme,
   type ThemePreference,
 } from '../design';
@@ -83,6 +85,7 @@ export const Sidebar = ({
   viewer?: LibrarySnapshot['viewer'];
   canSignOut: boolean;
 }) => {
+  const { locale, setLocale, t } = useTranslation();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const { preference, setTheme } = useTheme();
@@ -119,43 +122,43 @@ export const Sidebar = ({
 
   return (
     <aside className="flex min-h-0 flex-col border-r border-line">
-      <nav className="shrink-0 space-y-0.5 p-2" aria-label="Project">
+      <nav className="shrink-0 space-y-0.5 p-2" aria-label={t('project')}>
         <NavItem
           icon="grid"
-          label="Overview"
+          label={t('overview')}
           active={view === 'overview'}
           onClick={() => onView('overview')}
         />
         <NavItem
           icon="triage"
-          label="Triage"
+          label={t('triage')}
           active={view === 'triage'}
           badge={openFailures}
           onClick={() => onView('triage')}
         />
         <NavItem
           icon="history"
-          label="Run history"
+          label={t('run_history')}
           active={view === 'runs'}
           onClick={() => onView('runs')}
         />
         <NavItem
           icon="members"
-          label="Members"
+          label={t('members')}
           active={view === 'members'}
           onClick={() => onView('members')}
         />
         <Button variant="ghost" size="lg" block icon="record" onClick={() => onNewTest()}>
-          New test
+          {t('new_test')}
         </Button>
         <Button variant="ghost" size="lg" block icon="suite" onClick={onNewSuite}>
-          New test suite
+          {t('new_test_suite')}
         </Button>
       </nav>
 
       <section className="flex min-h-0 flex-[1.25] flex-col border-t border-line">
         <div className="flex h-9 shrink-0 items-center gap-2 px-3">
-          <SectionLabel>Test suites</SectionLabel>
+          <SectionLabel>{t('test_suites')}</SectionLabel>
           <span className="ui-mono text-xs text-ink-3">
             {suites.length} ·{' '}
             {ms(suites.reduce((sum, suite) => sum + (suite.totalLatestDurationMs ?? 0), 0))}
@@ -163,7 +166,7 @@ export const Sidebar = ({
           <IconButton
             icon="plus"
             size="sm"
-            label="Add a test suite"
+            label={t('add_a_test_suite')}
             className="ml-auto"
             onClick={onNewSuite}
           />
@@ -206,13 +209,13 @@ export const Sidebar = ({
 
       <div className="shrink-0 border-t border-line p-2">
         <Button variant="ghost" size="lg" block icon="settings" onClick={onSettings}>
-          Settings
+          {t('settings')}
         </Button>
         <div className="relative" ref={accountMenuRef}>
           {accountMenuOpen && (
             <div
               role="menu"
-              aria-label="Account menu"
+              aria-label={t('account_menu')}
               className="absolute right-0 bottom-[calc(100%+6px)] left-0 z-30 rounded-lg border border-line bg-raised p-1.5 shadow-[0_14px_36px_rgba(0,0,0,0.28)]"
             >
               <button
@@ -226,13 +229,15 @@ export const Sidebar = ({
                 }}
               >
                 <Icon name="settings" size={15} />
-                Profile
+                {t('profile')}
               </button>
               <div className="my-1 h-px bg-line" />
-              <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">Change theme</div>
+              <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">
+                {t('change_theme')}
+              </div>
               <div
                 role="radiogroup"
-                aria-label="Theme"
+                aria-label={t('theme')}
                 className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-plane p-1"
               >
                 {(
@@ -242,21 +247,55 @@ export const Sidebar = ({
                     { value: 'system', icon: 'monitor' },
                   ] as const
                 ).map(({ value, icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={preference === value}
-                    className={`flex h-12 flex-col items-center justify-center gap-1 rounded-md text-xs capitalize transition-colors ${
-                      preference === value
-                        ? 'bg-raised text-ink shadow-sm'
-                        : 'text-ink-3 hover:bg-surface hover:text-ink-2'
-                    }`}
-                    onClick={() => chooseTheme(value)}
-                  >
-                    <Icon name={icon} size={16} />
-                    {value}
-                  </button>
+                  <Tooltip key={value} content={t(value)} className="block">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-label={t(value)}
+                      aria-checked={preference === value}
+                      className={`grid h-9 w-full place-items-center rounded-md transition-colors ${
+                        preference === value
+                          ? 'bg-raised text-ink shadow-sm'
+                          : 'text-ink-3 hover:bg-surface hover:text-ink-2'
+                      }`}
+                      onClick={() => chooseTheme(value)}
+                    >
+                      <Icon name={icon} size={16} />
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+              <div className="my-1 h-px bg-line" />
+              <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">
+                {t('language')}
+              </div>
+              <div
+                role="radiogroup"
+                aria-label={t('language')}
+                className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-plane p-1"
+              >
+                {(
+                  [
+                    { value: 'en', flag: '🇬🇧', name: 'english' },
+                    { value: 'ru', flag: '🇷🇺', name: 'russian' },
+                  ] as const
+                ).map(({ value, flag, name }) => (
+                  <Tooltip key={value} content={t(name)} className="block">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-label={t(name)}
+                      aria-checked={locale === value}
+                      className={`grid h-9 w-full place-items-center rounded-md text-lg leading-none transition-colors ${
+                        locale === value
+                          ? 'bg-raised text-ink shadow-sm'
+                          : 'text-ink-3 hover:bg-surface hover:text-ink-2'
+                      }`}
+                      onClick={() => setLocale(value)}
+                    >
+                      <span aria-hidden="true">{flag}</span>
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
               <div className="my-1 h-px bg-line" />
@@ -272,7 +311,7 @@ export const Sidebar = ({
                 }}
               >
                 <Icon name="arrowLeft" size={15} />
-                Sign out
+                {t('sign_out')}
               </button>
             </div>
           )}

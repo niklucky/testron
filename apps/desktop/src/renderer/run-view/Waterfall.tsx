@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Badge, Icon, Kbd, Tabs, toneFill } from '../design';
 import { ms } from '../dashboard/format';
 import { sentence } from '../record/codegen';
@@ -42,6 +43,7 @@ export const Waterfall = ({
   expanded?: number;
   onExpand: (index?: number) => void;
 }) => {
+  const { t } = useTranslation();
   const total = Math.max(
     1,
     attempt.steps.reduce((sum, result) => sum + result.ms, 0),
@@ -58,7 +60,7 @@ export const Waterfall = ({
       <div className="mb-2 flex items-center gap-3">
         {attempts.length > 1 ? (
           <Tabs
-            label="Attempt"
+            label={t('attempt')}
             value={String(attemptNumber)}
             onChange={(value) => onAttempt(Number(value))}
             items={attempts.map((entry) => ({
@@ -68,13 +70,16 @@ export const Waterfall = ({
             }))}
           />
         ) : (
-          <h2 className="text-md font-semibold">Timeline</h2>
+          <h2 className="text-md font-semibold">{t('timeline')}</h2>
         )}
         <span className="ml-auto flex items-center gap-3 text-sm text-ink-3">
-          <span>{attempt.steps.filter((result) => result.status === 'passed').length} passed</span>
+          <span>
+            {attempt.steps.filter((result) => result.status === 'passed').length} {t('passed_3')}
+          </span>
           {attempt.steps.some((result) => result.status === 'skipped') && (
             <span>
-              {attempt.steps.filter((result) => result.status === 'skipped').length} skipped
+              {attempt.steps.filter((result) => result.status === 'skipped').length}{' '}
+              {t('skipped_3')}
             </span>
           )}
           <span className="ui-mono">{ms(attempt.ms)}</span>
@@ -142,7 +147,7 @@ export const Waterfall = ({
                         width: `${Math.max(1.5, (result.ms / total) * 100)}%`,
                         background: toneFill[tone],
                       }}
-                      title={`${ms(result.ms)} at +${ms(start)}`}
+                      title={t('at', { value1: ms(result.ms), value2: ms(start) })}
                     />
                   )}
                 </span>
@@ -152,7 +157,7 @@ export const Waterfall = ({
                     <span
                       className="ui-mono text-xs"
                       style={{ color: delta > 0 ? 'var(--ui-serious)' : 'var(--ui-good)' }}
-                      title="Against the last green run"
+                      title={t('against_the_last_green_run')}
                     >
                       {delta > 0 ? '+' : '−'}
                       {ms(Math.abs(delta))}
@@ -178,15 +183,15 @@ export const Waterfall = ({
                       </pre>
                       <p className="flex items-center gap-2 text-sm text-ink-3">
                         <Badge tone="critical" icon="alert" size="sm">
-                          Stopped the run
+                          {t('stopped_the_run')}
                         </Badge>
-                        Open the trace at this step with <Kbd>T</Kbd>
+                        {t('open_the_trace_at_this_step_with')} <Kbd>{t('t')}</Kbd>
                       </p>
                     </>
                   )}
 
                   {result.status === 'skipped' && (
-                    <p className="text-sm text-ink-3">Never ran — the step before it failed.</p>
+                    <p className="text-sm text-ink-3">{t('never_ran_the_step_before_it_failed')}</p>
                   )}
                 </div>
               )}

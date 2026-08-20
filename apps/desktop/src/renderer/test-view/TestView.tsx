@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -45,6 +46,7 @@ const isAssertion = (step: Step): boolean => step.kind.startsWith('assert');
 
 /** The persisted test, read left to right from the same snapshot used by the recorder. */
 export const TestView = () => {
+  const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [loaded, setLoaded] = useState(false);
@@ -305,9 +307,9 @@ export const TestView = () => {
         <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
           <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
             <Icon name="test" size={28} className="mx-auto text-ink-3" />
-            <h1 className="mt-3 text-lg font-semibold">No test selected</h1>
+            <h1 className="mt-3 text-lg font-semibold">{t('no_test_selected')}</h1>
             <p className="mt-1 text-base text-ink-3">
-              Record and save a test before opening its board.
+              {t('record_and_save_a_test_before_opening_its_board')}
             </p>
             <Button
               variant="primary"
@@ -315,7 +317,7 @@ export const TestView = () => {
               className="mt-5"
               onClick={() => setNewTestOpen(true)}
             >
-              Record a test
+              {t('record_a_test')}
             </Button>
           </section>
         </main>
@@ -349,7 +351,7 @@ export const TestView = () => {
           <IconButton
             icon="arrowLeft"
             size="sm"
-            label="Back to the dashboard"
+            label={t('back_to_the_dashboard')}
             onClick={() => (window.location.hash = '#/')}
           />
           <Button variant="ghost" size="sm" iconEnd="caret">
@@ -358,7 +360,7 @@ export const TestView = () => {
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
             <select
-              aria-label="Test suite"
+              aria-label={t('test_suite')}
               value={selectedTest?.testSuiteId ?? snapshot.library.selectedTestSuiteId ?? ''}
               onChange={(event) => {
                 const testSuiteId = event.target.value;
@@ -372,7 +374,7 @@ export const TestView = () => {
               }}
               className="max-w-44 bg-transparent py-1 outline-none"
             >
-              <option value="">No test suite</option>
+              <option value="">{t('no_test_suite')}</option>
               {testSuites.map((suite) => (
                 <option key={suite.id} value={suite.id}>
                   {suite.name}
@@ -392,14 +394,14 @@ export const TestView = () => {
                       ? 'critical'
                       : 'accent'
               }
-              label={lastVerdict ? `Last run ${lastVerdict}` : 'Never run'}
+              label={lastVerdict ? `Last run ${lastVerdict}` : t('never_run')}
             />
             <span className="truncate">{detail.name}</span>
           </span>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
           <Badge tone="good" icon="check">
-            Persisted
+            {t('persisted')}
           </Badge>
           {snapshot.library.server?.configured && (
             <>
@@ -417,7 +419,7 @@ export const TestView = () => {
                 icon={snapshot.library.server.status === 'conflicted' ? 'alert' : 'check'}
               >
                 {snapshot.library.server.status === 'conflicted'
-                  ? 'Sync conflict'
+                  ? t('sync_conflict')
                   : snapshot.library.server.status}
               </Badge>
               {snapshot.library.server.authentication === 'signedIn' && (
@@ -427,7 +429,7 @@ export const TestView = () => {
                     icon="rerun"
                     onClick={() => window.testron?.command({ type: 'sync-now' })}
                   >
-                    Sync
+                    {t('sync')}
                   </Button>
                   <Button
                     size="sm"
@@ -437,13 +439,13 @@ export const TestView = () => {
                       window.location.hash = '#/';
                     }}
                   >
-                    Sign out
+                    {t('sign_out')}
                   </Button>
                 </>
               )}
               {snapshot.library.server.authentication === 'signedOut' && (
                 <Button size="sm" onClick={() => (window.location.hash = '#/')}>
-                  Sign in
+                  {t('sign_in')}
                 </Button>
               )}
             </>
@@ -451,7 +453,7 @@ export const TestView = () => {
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"
-            label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
             onClick={toggle}
           />
         </div>
@@ -465,7 +467,7 @@ export const TestView = () => {
           onClick={run}
           kbd={displayTestViewShortcut('run')}
         >
-          {running ? 'Cancel run' : `Run on ${detail.environments[0] ?? 'Local'}`}
+          {running ? t('cancel_run') : `Run on ${detail.environments[0] ?? t('local')}`}
         </Button>
         <Button
           icon="code"
@@ -473,26 +475,26 @@ export const TestView = () => {
           onClick={() => setSourceOpen((open) => !open)}
           kbd={displayTestViewShortcut('source')}
         >
-          {sourceOpen && wideSourceLayout ? 'Hide source' : 'View source'}
+          {sourceOpen && wideSourceLayout ? t('hide_source') : t('view_source')}
         </Button>
         <Button
           icon="pencil"
           onClick={() => (window.location.hash = '#/record')}
           kbd={displayTestViewShortcut('edit')}
         >
-          Edit in recorder
+          {t('edit_in_recorder')}
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
         <Button icon="suite" disabled>
-          Move
+          {t('move')}
         </Button>
         <Button icon="trash" disabled>
-          Delete
+          {t('delete')}
         </Button>
         <span className="ml-auto flex items-center gap-3 text-sm text-ink-3">
-          {running && <PulseDot tone="accent" label="Running" />}
+          {running && <PulseDot tone="accent" label={t('running')} />}
           <span>
-            {steps.length} actions · {assertions.length} assertions
+            {steps.length} {t('actions')} {assertions.length} {t('assertions')}
           </span>
           <span className="ui-mono">{detail.file}</span>
         </span>
@@ -503,7 +505,7 @@ export const TestView = () => {
       >
         <div data-testid="test-board" className="ui-scroll h-full min-h-0 min-w-0 overflow-x-auto">
           <div className="flex h-full min-w-max items-stretch px-4 py-3">
-            <Lane icon="test" title="Test" width={320}>
+            <Lane icon="test" title={t('test')} width={320}>
               <DetailCard
                 detail={detail}
                 metadataEditable={false}
@@ -522,19 +524,19 @@ export const TestView = () => {
             <Flow />
             <Lane
               icon="clipboard"
-              title="Prerequisites"
+              title={t('prerequisites')}
               count={prerequisites.length}
               hint="Not configured for this test."
             >
-              <EmptyLane>Prerequisites are not persisted for this test yet.</EmptyLane>
+              <EmptyLane>{t('prerequisites_are_not_persisted_for_this_test_yet')}</EmptyLane>
             </Lane>
             <Flow />
 
             <Lane
               icon="steps"
-              title="Steps"
+              title={t('steps_2')}
               count={steps.length}
-              hint={`${assertions.length} assertions hang off them.`}
+              hint={t('assertions_hint', { count: assertions.length })}
               width={360}
               contentTestId="steps-lane-scroll"
             >
@@ -612,16 +614,20 @@ export const TestView = () => {
                 );
               })}
               {steps.length === 0 && (
-                <EmptyLane>This test has no actions yet. Record it again to add steps.</EmptyLane>
+                <EmptyLane>
+                  {t('this_test_has_no_actions_yet_record_it_again_to_add_steps')}
+                </EmptyLane>
               )}
               {steps.length > 0 && assertions.length === 0 && (
-                <EmptyLane>Nothing is proved yet. Hover a step and add an assertion.</EmptyLane>
+                <EmptyLane>
+                  {t('nothing_is_proved_yet_hover_a_step_and_add_an_assertion')}
+                </EmptyLane>
               )}
             </Lane>
             <Flow />
 
-            <Lane icon="history" title="Runs" count={runs.length} hint="Recent server runs.">
-              {runs.length === 0 && <EmptyLane>This test has no completed runs.</EmptyLane>}
+            <Lane icon="history" title={t('runs')} count={runs.length} hint="Recent server runs.">
+              {runs.length === 0 && <EmptyLane>{t('this_test_has_no_completed_runs')}</EmptyLane>}
               {runs.map((entry: Run) => (
                 <RunCard
                   key={entry.id}
@@ -666,10 +672,14 @@ export const TestView = () => {
         <span className="ui-mono truncate text-ink-2">{detail.file}</span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
-          <span>{lines.length} lines</span>
-          <span>updated {detail.updatedAt}</span>
+          <span>
+            {lines.length} {t('lines')}
+          </span>
+          <span>
+            {t('updated')} {detail.updatedAt}
+          </span>
           <a href="#/record" className="text-ink-3 no-underline hover:text-ink">
-            Edit in recorder
+            {t('edit_in_recorder')}
           </a>
         </span>
       </footer>

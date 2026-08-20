@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { Kbd, Meter, TextArea, toneInk } from '../../design';
 import { displayShortcut, manualShortcutIds } from '../hotkeys';
 import { manualTone } from '../tone';
@@ -23,19 +24,20 @@ export const ManualView = ({
   onCursor: (index: number) => void;
   onVerdict: (stepId: string, verdict: ManualVerdict) => void;
 }) => {
+  const { t } = useTranslation();
   const done = failure.steps.filter((step) => results[step.id]).length;
 
   return (
     <div>
       <div className="mb-3 flex items-center gap-3">
         <div>
-          <h3 className="text-md font-semibold">Manual script</h3>
+          <h3 className="text-md font-semibold">{t('manual_script')}</h3>
           <p className="mt-0.5 text-sm text-ink-3">
-            Generated from {failure.file} — hand this to a tester, no Playwright required.
+            {t('generated_from')} {failure.file} {t('hand_this_to_a_tester_no_playwright_required')}
           </p>
         </div>
         <span className="ml-auto flex items-center gap-2 text-sm text-ink-3">
-          {done}/{failure.steps.length} recorded
+          {done}/{failure.steps.length} {t('recorded')}
           <Meter className="w-24" value={done / failure.steps.length} />
         </span>
       </div>
@@ -56,7 +58,9 @@ export const ManualView = ({
                 <span className="ui-mono mt-px w-4 shrink-0 text-base text-ink-3">{index + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-md">{step.manual}</p>
-                  <p className="mt-1 text-sm text-ink-3">Expected · {step.expected}</p>
+                  <p className="mt-1 text-sm text-ink-3">
+                    {t('expected')} {step.expected}
+                  </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {verdicts.map((option) => {
@@ -79,7 +83,7 @@ export const ManualView = ({
                           onVerdict(step.id, option);
                         }}
                       >
-                        {tint.label}
+                        {t(tint.label)}
                         {active && <Kbd>{displayShortcut(manualShortcutIds[option])}</Kbd>}
                       </button>
                     );
@@ -92,9 +96,9 @@ export const ManualView = ({
       </ol>
 
       <TextArea
-        label="Session notes"
+        label={t('session_notes')}
         className="mt-3 h-20"
-        placeholder="Reproduced on a cold cache, banner appeared after ~4s…"
+        placeholder={t('reproduced_on_a_cold_cache_banner_appeared_after_4s')}
       />
     </div>
   );

@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { LibrarySnapshot } from '../../main/persistence/repository';
@@ -6,16 +7,20 @@ import { Button, Icon, IconButton, PulseDot, useTheme } from '../design';
 type ServerState = NonNullable<LibrarySnapshot['server']>;
 type AuthMode = 'login' | 'register';
 
-export const AuthenticationLoading = () => (
-  <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
-    <div className="flex items-center gap-2 text-base text-ink-2">
-      <PulseDot label="Loading Testron" />
-      Connecting to your workspace…
-    </div>
-  </main>
-);
+export const AuthenticationLoading = () => {
+  const { t } = useTranslation();
+  return (
+    <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
+      <div className="flex items-center gap-2 text-base text-ink-2">
+        <PulseDot label={t('loading_testron')} />
+        {t('connecting_to_your_workspace')}
+      </div>
+    </main>
+  );
+};
 
 export const AuthLanding = ({ server }: { server: ServerState }) => {
+  const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
@@ -63,17 +68,17 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
         <div className="w-[66px] shrink-0" />
         <div className="flex items-center gap-2.5">
           <span className="ui-mono grid h-7 w-7 place-items-center rounded-[7px] bg-accent text-md font-bold text-accent-ink">
-            T
+            {t('t')}
           </span>
-          <span className="text-md font-semibold tracking-[-0.01em]">Testron</span>
+          <span className="text-md font-semibold tracking-[-0.01em]">{t('testron')}</span>
         </div>
         <div className="ml-auto flex items-center gap-2 text-sm text-ink-3 [-webkit-app-region:no-drag]">
           <Icon name="shield" size={14} />
-          Alpha workspace
+          {t('alpha_workspace')}
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"
-            label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
             onClick={toggle}
           />
         </div>
@@ -83,11 +88,11 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
         <div className="grid w-full max-w-[920px] grid-cols-[minmax(0,1fr)_390px] gap-16">
           <section className="flex flex-col justify-center">
             <div className="mb-5 flex w-fit items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-sm text-ink-2">
-              <PulseDot label="Remote workspace available" />
-              Remote workspace
+              <PulseDot label={t('remote_workspace_available')} />
+              {t('remote_workspace')}
             </div>
             <h1 className="max-w-[520px] text-[38px] leading-[1.08] font-semibold tracking-[-0.035em] text-ink">
-              Tests live on your server. Recording stays here.
+              {t('tests_live_on_your_server_recording_stays_here')}
             </h1>
             <p className="mt-5 max-w-[500px] text-md leading-6 text-ink-2">
               Sign in to open your projects and revisions. Testron keeps browser automation, local
@@ -101,10 +106,10 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                 </span>
                 <div>
                   <strong className="block font-medium text-ink">
-                    Session stays in Electron main
+                    {t('session_stays_in_electron_main')}
                   </strong>
                   <span className="text-sm text-ink-3">
-                    The encrypted access token never reaches tested websites.
+                    {t('the_encrypted_access_token_never_reaches_tested_websites')}
                   </span>
                 </div>
               </div>
@@ -113,9 +118,11 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                   <Icon name="check" size={14} />
                 </span>
                 <div>
-                  <strong className="block font-medium text-ink">One canonical workspace</strong>
+                  <strong className="block font-medium text-ink">
+                    {t('one_canonical_workspace')}
+                  </strong>
                   <span className="text-sm text-ink-3">
-                    The desktop loads current server data without copying the database.
+                    {t('the_desktop_loads_current_server_data_without_copying_the_databa')}
                   </span>
                 </div>
               </div>
@@ -132,7 +139,7 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                 aria-pressed={mode === 'login'}
                 onClick={() => chooseMode('login')}
               >
-                Sign in
+                {t('sign_in')}
               </button>
               <button
                 type="button"
@@ -142,71 +149,71 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                 aria-pressed={mode === 'register'}
                 onClick={() => chooseMode('register')}
               >
-                Create account
+                {t('create_account')}
               </button>
             </div>
 
             <form className="mt-6" onSubmit={submit}>
               <span className="ui-mono text-xs tracking-[0.12em] text-accent uppercase">
-                {mode === 'login' ? 'Testron account' : 'Alpha registration'}
+                {mode === 'login' ? t('testron_account') : t('alpha_registration')}
               </span>
               <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em]">
-                {mode === 'login' ? 'Welcome back' : 'Create your account'}
+                {mode === 'login' ? t('welcome_back') : t('create_your_account')}
               </h2>
               <p className="mt-2 text-base leading-5 text-ink-2">
                 {mode === 'login'
-                  ? 'Use the credentials attached to your workspace.'
-                  : 'Create an account and enter your new workspace immediately.'}
+                  ? t('use_the_credentials_attached_to_your_workspace')
+                  : t('create_an_account_and_enter_your_new_workspace_immediately')}
               </p>
 
               {mode === 'register' && (
                 <label className="mt-6 block">
-                  <span className="text-sm font-medium text-ink-2">Name</span>
+                  <span className="text-sm font-medium text-ink-2">{t('name')}</span>
                   <input
                     autoFocus
                     required
                     maxLength={100}
                     type="text"
                     autoComplete="name"
-                    aria-label="Name"
+                    aria-label={t('name')}
                     value={name}
                     disabled={authenticating}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Your name"
+                    placeholder={t('your_name')}
                     className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                   />
                 </label>
               )}
 
               <label className={`${mode === 'register' ? 'mt-4' : 'mt-6'} block`}>
-                <span className="text-sm font-medium text-ink-2">Email address</span>
+                <span className="text-sm font-medium text-ink-2">{t('email_address')}</span>
                 <input
                   autoFocus={mode === 'login'}
                   required
                   type="email"
                   autoComplete="email"
-                  aria-label="Email address"
+                  aria-label={t('email_address')}
                   value={email}
                   disabled={authenticating}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@company.com"
+                  placeholder={t('you_company_com')}
                   className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>
 
               <label className="mt-4 block">
-                <span className="text-sm font-medium text-ink-2">Password</span>
+                <span className="text-sm font-medium text-ink-2">{t('password')}</span>
                 <input
                   required
                   minLength={12}
                   maxLength={200}
                   type="password"
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  aria-label="Password"
+                  aria-label={t('password')}
                   value={password}
                   disabled={authenticating}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="At least 12 characters"
+                  placeholder={t('at_least_12_characters')}
                   className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>
@@ -231,20 +238,20 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
               >
                 {authenticating
                   ? mode === 'login'
-                    ? 'Signing in…'
-                    : 'Creating account…'
+                    ? t('signing_in')
+                    : t('creating_account')
                   : mode === 'login'
-                    ? 'Sign in'
-                    : 'Create account'}
+                    ? t('sign_in')
+                    : t('create_account')}
               </Button>
 
               {server.configured ? (
                 <p className="mt-4 text-center text-xs leading-4 text-ink-3">
-                  Alpha access uses direct email and password authentication.
+                  {t('alpha_access_uses_direct_email_and_password_authentication')}
                 </p>
               ) : (
                 <div className="mt-5 border-t border-line-soft pt-5 text-center text-sm leading-5 text-ink-3">
-                  This build does not have a server address configured.
+                  {t('this_build_does_not_have_a_server_address_configured')}
                 </div>
               )}
             </form>

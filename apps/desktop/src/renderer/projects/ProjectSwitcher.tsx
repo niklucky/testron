@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -7,6 +8,7 @@ import { Button, Icon } from '../design';
 const CREATE_PROJECT = '__create_project__';
 
 export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
+  const { t } = useTranslation();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [projectCountAtSubmit, setProjectCountAtSubmit] = useState<number>();
@@ -54,11 +56,11 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
     <>
       <div className="relative flex items-center gap-2">
         <span className="ui-mono grid h-6 w-6 place-items-center rounded-[6px] bg-accent text-base font-bold text-accent-ink">
-          T
+          {t('t')}
         </span>
         <div className="relative">
           <select
-            aria-label="Project"
+            aria-label={t('project')}
             value={selected?.id ?? ''}
             onChange={(event) => {
               if (event.target.value === CREATE_PROJECT) {
@@ -79,7 +81,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
                 {project.name}
               </option>
             ))}
-            <option value={CREATE_PROJECT}>+ Create project</option>
+            <option value={CREATE_PROJECT}>{t('create_project')}</option>
           </select>
           <Icon
             name="caret"
@@ -104,29 +106,29 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
               className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
             >
               <span className="ui-mono text-xs tracking-[0.12em] text-accent uppercase">
-                New project
+                {t('new_project')}
               </span>
               <h2
                 id="create-project-title"
                 className="mt-2 text-2xl font-semibold tracking-[-0.02em]"
               >
-                Create another project
+                {t('create_another_project')}
               </h2>
               <p className="mt-2 text-base leading-5 text-ink-2">
-                It will be created on your Testron server and selected here immediately.
+                {t('it_will_be_created_on_your_testron_server_and_selected_here_imme')}
               </p>
               <form className="mt-6" onSubmit={submit}>
                 <label className="block">
-                  <span className="text-sm font-medium text-ink-2">Project name</span>
+                  <span className="text-sm font-medium text-ink-2">{t('project_name')}</span>
                   <input
                     autoFocus
                     required
                     maxLength={100}
-                    aria-label="Project name"
+                    aria-label={t('project_name')}
                     value={name}
                     disabled={submitting}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="Marketing website"
+                    placeholder={t('marketing_website')}
                     className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                   />
                 </label>
@@ -141,7 +143,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
                 )}
                 <div className="mt-6 flex justify-end gap-2">
                   <Button disabled={submitting} onClick={closeCreate}>
-                    Cancel
+                    {t('cancel')}
                   </Button>
                   <Button
                     type="submit"
@@ -149,7 +151,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
                     icon="plus"
                     disabled={!name.trim() || submitting}
                   >
-                    {submitting ? 'Creating…' : 'Create project'}
+                    {submitting ? t('creating') : t('create_project_2')}
                   </Button>
                 </div>
               </form>

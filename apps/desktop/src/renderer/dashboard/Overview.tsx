@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { useMemo } from 'react';
 import type { ProjectActivity } from '@testron/protocol';
 
@@ -83,6 +84,7 @@ export const Overview = ({
   onOpenTest: (test: SuiteRecord['tests'][number]) => void;
   onLog: (message: string) => void;
 }) => {
+  const { t } = useTranslation();
   const { range, query, onlyAttention, sort } = state;
   const patch = (next: Partial<OverviewState>) => onState({ ...state, ...next });
   const liveActivity = useMemo(() => presentProjectActivity(recentActivity), [recentActivity]);
@@ -144,17 +146,19 @@ export const Overview = ({
       <div className="min-h-0 overflow-y-auto p-5">
         <Panel>
           <PanelHeader
-            title={dataStatus === 'loading' ? 'Loading project overview' : 'Overview unavailable'}
+            title={
+              dataStatus === 'loading' ? t('loading_project_overview') : t('overview_unavailable')
+            }
             subtitle={
               dataStatus === 'loading'
-                ? 'Fetching the selected project snapshot…'
-                : (errorMessage ?? 'The server workspace could not be loaded.')
+                ? t('fetching_the_selected_project_snapshot')
+                : (errorMessage ?? t('the_server_workspace_could_not_be_loaded'))
             }
           />
           <EmptyState>
             {dataStatus === 'loading'
-              ? 'Summary values will appear when the workspace finishes loading.'
-              : 'Check the server connection and refresh the workspace.'}
+              ? t('summary_values_will_appear_when_the_workspace_finishes_loading')
+              : t('check_the_server_connection_and_refresh_the_workspace')}
           </EmptyState>
         </Panel>
       </div>
@@ -191,16 +195,18 @@ export const Overview = ({
       <div className="w-full p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-[-0.02em]">Project overview</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('project_overview')}</h1>
             <p className="mt-1 text-base text-ink-3">
-              {suites.length} suites · {shownTotals.tests} tests · last run{' '}
-              {lastRunMinutesAgo === null ? 'never' : `${age(lastRunMinutesAgo)} ago`}
+              {suites.length} {t('suites')} {shownTotals.tests} {t('tests_last_run')}{' '}
+              {lastRunMinutesAgo === null
+                ? t('never')
+                : t('ago_value', { value: age(lastRunMinutesAgo) })}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <SegmentedControl
               variant="solid"
-              label="Chart range"
+              label={t('chart_range')}
               items={ranges}
               value={String(range)}
               onChange={(value) => patch({ range: Number(value) })}
@@ -209,7 +215,7 @@ export const Overview = ({
               icon="play"
               onClick={() => onLog(`Queued a full run of ${shownTotals.tests} tests`)}
             >
-              Run all
+              {t('run_all')}
             </Button>
           </div>
         </div>
@@ -217,42 +223,50 @@ export const Overview = ({
         <section className="mt-4 grid grid-cols-6 gap-3 max-[1150px]:grid-cols-4 max-[820px]:grid-cols-2">
           <StatCard
             icon="test"
-            label="Total tests"
+            label={t('total_tests')}
             value={shownTotals.tests}
             delta={dataStatus === 'local' ? <Trend value={12} digits={0} /> : undefined}
             foot={
               dataStatus === 'local'
-                ? `in ${suites.length} suites · 12 added this month`
-                : `in ${suites.length} suites`
+                ? t('suites_summary_added', { count: suites.length, added: 12 })
+                : t('suites_summary', { count: suites.length })
             }
           />
           <StatCard
             icon="check"
-            label="Pass rate"
+            label={t('pass_rate')}
             value={passRate === null ? '—' : `${passRate.toFixed(1)}%`}
             delta={dataStatus === 'local' ? <Trend value={2.1} unit="pts" /> : undefined}
-            foot={`${shownTotals.passed} passed · ${shownTotals.skipped} without result · ${shownTotals.failed} failed`}
+            foot={t('passed_without_result_failed', {
+              value1: shownTotals.passed,
+              value2: shownTotals.skipped,
+              value3: shownTotals.failed,
+            })}
           />
           <StatCard
             icon="play"
-            label="Test runs · 30d"
+            label={t('test_runs_30d')}
             value={runs.toLocaleString()}
             delta={dataStatus === 'local' ? <Trend value={18.2} unit="%" /> : undefined}
-            foot={dataStatus === 'local' ? 'avg 48s per test · −15% duration' : 'completed runs'}
+            foot={dataStatus === 'local' ? t('avg_48s_per_test_15_duration') : t('completed_runs')}
           />
           <StatCard
             icon="alert"
-            label="Needs attention"
+            label={t('needs_attention')}
             value={shownTotals.failed}
-            delta={dataStatus === 'local' ? <Badge tone="warning">3 flaky</Badge> : undefined}
-            foot={`failing in ${suites.filter((suite) => tally(suite).failed > 0).length} suites`}
+            delta={
+              dataStatus === 'local' ? <Badge tone="warning">{t('3_flaky')}</Badge> : undefined
+            }
+            foot={t('failing_in_suites', {
+              value1: suites.filter((suite) => tally(suite).failed > 0).length,
+            })}
           />
 
           <Panel className="col-span-2 flex flex-col p-4">
             <div className="flex items-center gap-2">
               <p className="flex items-center gap-2 text-sm text-ink-3">
                 <Icon name="steps" size={14} />
-                Test runs · last {range} days
+                {t('test_runs_last')} {range} {t('days')}
               </p>
               <Legend items={runLegend} className="ml-auto" />
             </div>
@@ -262,20 +276,20 @@ export const Overview = ({
 
         {dataStatus === 'live' && shownTotals.tests === 0 && runs === 0 && (
           <Panel className="mt-3">
-            <EmptyState>This project has no tests or runs yet.</EmptyState>
+            <EmptyState>{t('this_project_has_no_tests_or_runs_yet')}</EmptyState>
           </Panel>
         )}
 
         <section className="mt-3 grid grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3 max-[1240px]:grid-cols-1">
           <Panel className="flex min-h-0 flex-col">
             <PanelHeader
-              title="Test suites"
-              subtitle={`${rows.length} of ${suites.length} suites`}
+              title={t('test_suites')}
+              subtitle={t('of_suites', { value1: rows.length, value2: suites.length })}
               action={
                 <div className="flex items-center gap-2">
                   <SearchField
-                    label="Filter test suites"
-                    placeholder="Filter suites…"
+                    label={t('filter_test_suites')}
+                    placeholder={t('filter_suites')}
                     className="w-[200px]"
                     value={query}
                     onChange={(event) => patch({ query: event.target.value })}
@@ -287,19 +301,19 @@ export const Overview = ({
                     pressed={onlyAttention}
                     onClick={() => patch({ onlyAttention: !onlyAttention })}
                   >
-                    Needs attention
+                    {t('needs_attention')}
                   </Button>
                 </div>
               }
             />
 
             <div className={`grid ${columns} border-b border-line-soft px-4 py-2`}>
-              <SortHead label="Suite" sortKey="name" />
-              <SortHead label="Tests" sortKey="tests" />
-              <SortHead label="Pass rate" sortKey="passRate" />
-              <SortHead label="Last run" sortKey="lastRun" />
+              <SortHead label={t('suite')} sortKey="name" />
+              <SortHead label={t('tests')} sortKey="tests" />
+              <SortHead label={t('pass_rate')} sortKey="passRate" />
+              <SortHead label={t('last_run')} sortKey="lastRun" />
               <span className="text-2xs font-bold uppercase tracking-[0.09em] text-ink-3">
-                Owner
+                {t('owner')}
               </span>
               <span />
             </div>
@@ -320,21 +334,25 @@ export const Overview = ({
                         }
                         label={
                           counts.failed > 0
-                            ? `${counts.failed} failing`
+                            ? t('failing_count', { count: counts.failed })
                             : counts.skipped > 0
-                              ? 'Some tests skipped'
-                              : 'All passing'
+                              ? t('some_tests_skipped')
+                              : t('all_passing')
                         }
                       />
                       <button
                         type="button"
-                        aria-label={`Edit ${suite.name} test suite`}
+                        aria-label={t('edit_test_suite', { value1: suite.name })}
                         className="min-w-0 truncate rounded text-base font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         onClick={() => onEditSuite(suite)}
                       >
                         {suite.name}
                       </button>
-                      {counts.failed > 0 && <Badge tone="critical">{counts.failed} failing</Badge>}
+                      {counts.failed > 0 && (
+                        <Badge tone="critical">
+                          {counts.failed} {t('failing')}
+                        </Badge>
+                      )}
                     </span>
                     <span className="ui-mono text-base text-ink-2">{suite.tests.length}</span>
                     <span className="flex items-center gap-2">
@@ -349,13 +367,16 @@ export const Overview = ({
                     <span className="flex items-center gap-1.5 text-sm text-ink-3">
                       <Icon name="clock" size={12} />
                       {suite.lastRunMinutesAgo === null
-                        ? 'Never'
-                        : `${age(suite.lastRunMinutesAgo)} ago`}
+                        ? t('never_2')
+                        : t('ago_value', { value: age(suite.lastRunMinutesAgo) })}
                     </span>
                     <span className="truncate text-sm text-ink-3">{suite.owner}</span>
                     <button
                       type="button"
-                      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${suite.name} test suite`}
+                      aria-label={t('test_suite_2', {
+                        value1: expanded ? t('collapse') : t('expand'),
+                        value2: suite.name,
+                      })}
                       aria-expanded={expanded}
                       aria-controls={contentId}
                       className="grid h-6 w-6 place-items-center justify-self-end rounded text-ink-3 transition-colors hover:bg-raised hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
@@ -372,9 +393,12 @@ export const Overview = ({
                   {expanded && (
                     <div id={contentId} className="border-t border-line-soft bg-plane/45 px-4 py-2">
                       {suite.tests.length === 0 ? (
-                        <EmptyState className="py-5">No tests in this suite yet.</EmptyState>
+                        <EmptyState className="py-5">{t('no_tests_in_this_suite_yet')}</EmptyState>
                       ) : (
-                        <ul className="space-y-0.5" aria-label={`${suite.name} tests`}>
+                        <ul
+                          className="space-y-0.5"
+                          aria-label={t('tests_4', { value1: suite.name })}
+                        >
                           {suite.tests.map((test) => {
                             const verdict = verdictTone[test.status];
                             return (
@@ -390,10 +414,10 @@ export const Overview = ({
                                       {test.name}
                                     </span>
                                   </span>
-                                  <span className="text-sm text-ink-3">{verdict.label}</span>
+                                  <span className="text-sm text-ink-3">{t(verdict.label)}</span>
                                   <span className="ui-mono text-right text-xs text-ink-3">
                                     {test.seconds === undefined
-                                      ? 'Never run'
+                                      ? t('never_run')
                                       : ms(test.seconds * 1000)}
                                   </span>
                                 </button>
@@ -408,21 +432,26 @@ export const Overview = ({
               );
             })}
 
-            {rows.length === 0 && <EmptyState>No suites match “{query}”.</EmptyState>}
+            {rows.length === 0 && (
+              <EmptyState>
+                {t('no_suites_match')}
+                {query}”.
+              </EmptyState>
+            )}
           </Panel>
 
           <Panel className="flex flex-col">
             <PanelHeader
-              title="Recent activity"
+              title={t('recent_activity')}
               subtitle={
                 dataStatus === 'local'
-                  ? '27 changes this week'
-                  : `${liveActivity.length} recent ${liveActivity.length === 1 ? 'event' : 'events'}`
+                  ? t('27_changes_this_week')
+                  : t('recent_events', { count: liveActivity.length })
               }
             />
             {dataStatus === 'live' ? (
               liveActivity.length === 0 ? (
-                <EmptyState>No recent project activity yet.</EmptyState>
+                <EmptyState>{t('no_recent_project_activity_yet')}</EmptyState>
               ) : (
                 <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
                   {liveActivity.map((item) => (
@@ -461,7 +490,7 @@ export const Overview = ({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base">{item.test}</span>
                         <span className="mt-0.5 block truncate text-xs text-ink-3">
-                          {tone.label} in {item.suite} · {item.author}
+                          {t(tone.label)} {t('in_2')} {item.suite} · {item.author}
                         </span>
                       </span>
                       <span className="ui-mono shrink-0 text-xs text-ink-3">

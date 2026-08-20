@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { createPortal } from 'react-dom';
 
 import type { ProjectInvitation } from '@testron/protocol';
@@ -11,8 +12,9 @@ export const PendingInvitationModal = ({
   invitation: ProjectInvitation;
   pending: boolean;
   error?: string;
-}) =>
-  createPortal(
+}) => {
+  const { t } = useTranslation();
+  return createPortal(
     <div className="fixed inset-0 z-[60] grid place-items-center bg-black/45 p-6 [-webkit-app-region:no-drag]">
       <section
         role="dialog"
@@ -24,11 +26,11 @@ export const PendingInvitationModal = ({
           <Icon name="members" size={22} />
         </div>
         <h2 id="pending-invitation-title" className="mt-4 text-2xl font-semibold">
-          Join {invitation.projectName}?
+          {t('join')} {invitation.projectName}?
         </h2>
         <p className="mt-2 text-base leading-6 text-ink-2">
-          {invitation.invitedBy.name ?? invitation.invitedBy.email} invited {invitation.email} to
-          collaborate on this project.
+          {invitation.invitedBy.name ?? invitation.invitedBy.email} {t('invited')}{' '}
+          {invitation.email} to collaborate on this project.
         </p>
         {error && (
           <div role="alert" className="mt-4 rounded-md bg-critical-wash p-3 text-sm text-critical">
@@ -46,7 +48,7 @@ export const PendingInvitationModal = ({
               })
             }
           >
-            {pending ? 'Working…' : 'Reject'}
+            {pending ? t('working') : t('reject')}
           </Button>
           <Button
             variant="primary"
@@ -59,10 +61,11 @@ export const PendingInvitationModal = ({
               })
             }
           >
-            Accept invitation
+            {t('accept_invitation')}
           </Button>
         </div>
       </section>
     </div>,
     document.body,
   );
+};

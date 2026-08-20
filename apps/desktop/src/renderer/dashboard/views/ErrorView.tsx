@@ -1,3 +1,4 @@
+import { useTranslation } from '@warpunit/slang-react';
 import { SectionLabel } from '../../design';
 import { failures } from '../data';
 import type { Failure } from '../types';
@@ -14,6 +15,7 @@ export const ErrorView = ({
   failure: Failure;
   onSelect: (id: string) => void;
 }) => {
+  const { t } = useTranslation();
   const similar = failures.filter(
     (candidate) => candidate.id !== failure.id && candidate.suite === failure.suite,
   );
@@ -22,7 +24,7 @@ export const ErrorView = ({
     <div className="space-y-4">
       <div>
         <h3 className="mb-2">
-          <SectionLabel>Stack</SectionLabel>
+          <SectionLabel>{t('stack')}</SectionLabel>
         </h3>
         <pre className="ui-mono overflow-x-auto rounded-lg border border-line bg-plane p-3 text-base leading-5 text-ink-2">
           {failure.message}
@@ -31,18 +33,21 @@ export const ErrorView = ({
 
       <div className="grid grid-cols-2 gap-3 max-[1100px]:grid-cols-1">
         <div className="rounded-lg border border-line bg-plane p-3">
-          <p className="text-sm text-ink-3">Locator under test</p>
+          <p className="text-sm text-ink-3">{t('locator_under_test')}</p>
           <p className="ui-mono mt-1.5 break-all text-base">{failure.locator}</p>
           <p className="mt-2 text-sm text-ink-3">
-            Resolved in {failure.occurrences} of the last 24 runs · owner {failure.owner}
+            {t('resolved_in')} {failure.occurrences} {t('of_the_last_24_runs_owner')}{' '}
+            {failure.owner}
           </p>
         </div>
 
         <div className="rounded-lg border border-line bg-plane p-3">
-          <p className="text-sm text-ink-3">Seen together with</p>
+          <p className="text-sm text-ink-3">{t('seen_together_with')}</p>
           <ul className="mt-1.5 space-y-1.5">
             {similar.length === 0 && (
-              <li className="text-base text-ink-3">Nothing else in {failure.suite} is failing.</li>
+              <li className="text-base text-ink-3">
+                {t('nothing_else_in')} {failure.suite} {t('is_failing')}
+              </li>
             )}
             {similar.map((candidate) => (
               <li key={candidate.id}>
