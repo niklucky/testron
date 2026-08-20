@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { PanelId, RecordPanelEvent, RecordPanelState } from '../../preload/record';
 import { Badge, IconButton } from '../design';
 import { clock } from './codegen';
 import { CodePanel } from './CodePanel';
 import { GlassPanel } from './GlassPanel';
+import { recordPanelShortcutIds, recordShortcuts } from './hotkeys';
 import { StepsPanel } from './StepsPanel';
 import type { RecordedStep } from './types';
 
@@ -40,18 +42,20 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
     if (state) document.documentElement.dataset.theme = state.theme;
   }, [state?.theme]);
 
-  // Shortcuts belong to the screen, but the keystroke lands wherever focus is.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      const key = event.key.toLowerCase();
-      if (['r', 'a', 'f', '1', '2'].includes(key)) send({ type: 'shortcut', key });
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // Panel views are separate documents, so they register the same shortcuts and forward them.
+  useHotkeys(
+    recordPanelShortcutIds.map((id) => ({
+      hotkey: recordShortcuts[id].hotkey,
+      callback: () => send({ type: 'shortcut', key: String(recordShortcuts[id].hotkey) }),
+      options: {
+        ignoreInputs: true,
+        meta: {
+          name: recordShortcuts[id].name,
+          description: recordShortcuts[id].description,
+        },
+      },
+    })),
+  );
 
   const resizing = state?.layout.resizing === panel;
   const share = state?.layout.panels[panel].width ?? 25;

@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
 
-import { Badge, Button, Icon, IconButton } from '../design';
+import { Badge, Button, Icon, IconButton, Kbd } from '../design';
 import { sourceText, type CodeLine } from '../record/codegen';
 import { CodePanel } from '../record/CodePanel';
 import { InlineSelect } from './InlineField';
+import { displayTestViewShortcut } from './hotkeys';
 import { prerequisiteLabels, type Prerequisite, type PrerequisiteKind } from './types';
 
 /** The shell every dialog on this screen shares. */
@@ -86,7 +87,16 @@ export const SourceSheet = ({
           <h2 className="text-md font-semibold">Auto test source</h2>
           <p className="mt-0.5 truncate text-sm text-ink-3">{file}</p>
         </div>
-        <IconButton icon="close" size="sm" label="Close" className="ml-auto" onClick={onClose} />
+        {layout === 'modal' && (
+          <Kbd className="ml-auto">{displayTestViewShortcut('closeSource')}</Kbd>
+        )}
+        <IconButton
+          icon="close"
+          size="sm"
+          label="Close"
+          className={layout === 'modal' ? '' : 'ml-auto'}
+          onClick={onClose}
+        />
       </header>
       <div className="ui-scroll min-h-0 flex-1 overflow-auto border-b border-line-soft bg-plane">
         {detached ? (

@@ -3,6 +3,7 @@ import { useEffect, useState, type RefObject } from 'react';
 import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
 import type { VerifyAssertion } from '../../preload/api';
 import { clock } from './codegen';
+import { displayRecordShortcut } from './hotkeys';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 /**
@@ -242,7 +243,7 @@ export const BrowserBar = ({
           onBlur={() => setDraft(url)}
           className="ui-mono min-w-0 flex-1 bg-transparent text-base text-ink outline-none"
         />
-        <Kbd className="shrink-0">⌘L</Kbd>
+        <Kbd className="shrink-0">{displayRecordShortcut('address')}</Kbd>
       </form>
 
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
@@ -253,11 +254,16 @@ export const BrowserBar = ({
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 
       {status === 'idle' || status === 'paused' ? (
-        <Button variant="primary" icon="record" onClick={onRecord} kbd="R">
+        <Button
+          variant="primary"
+          icon="record"
+          onClick={onRecord}
+          kbd={displayRecordShortcut('record')}
+        >
           {status === 'paused' ? 'Resume' : editingExisting ? 'Continue recording' : 'Record'}
         </Button>
       ) : (
-        <Button icon="pause" onClick={onPause} kbd="R">
+        <Button icon="pause" onClick={onPause} kbd={displayRecordShortcut('record')}>
           Pause
         </Button>
       )}
@@ -269,7 +275,7 @@ export const BrowserBar = ({
         pressed={mode === 'assert'}
         tone="good"
         disabled={!recording}
-        kbd="A"
+        kbd={displayRecordShortcut('assert')}
         onClick={() => onMode(mode === 'assert' ? 'act' : 'assert')}
       >
         Assert
@@ -297,10 +303,20 @@ export const BrowserBar = ({
 
       <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 
-      <Button icon="panelLeft" pressed={panels.steps} onClick={() => onPanel('steps')} kbd="1">
+      <Button
+        icon="panelLeft"
+        pressed={panels.steps}
+        onClick={() => onPanel('steps')}
+        kbd={displayRecordShortcut('stepsPanel')}
+      >
         Test steps
       </Button>
-      <Button icon="panelRight" pressed={panels.code} onClick={() => onPanel('code')} kbd="2">
+      <Button
+        icon="panelRight"
+        pressed={panels.code}
+        onClick={() => onPanel('code')}
+        kbd={displayRecordShortcut('codePanel')}
+      >
         Auto test
       </Button>
       {status === 'finished' && (

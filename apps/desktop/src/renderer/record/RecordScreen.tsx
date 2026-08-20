@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
@@ -14,6 +15,13 @@ import { replacePrimaryLocator } from './locator-edit';
 import { StepsPanel } from './StepsPanel';
 import { TargetPage, type PageState } from './TargetPage';
 import { BrowserBar, SessionBar } from './Toolbar';
+import {
+  createRecordHotkeyDefinitions,
+  displayRecordShortcut,
+  recordShortcutIdForKey,
+  runRecordShortcut,
+  type RecordHotkeyActions,
+} from './hotkeys';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
@@ -273,50 +281,47 @@ export const RecordScreen = () => {
   const togglePanel = (panel: PanelId) =>
     setPanels((current) => ({ ...current, [panel]: !current[panel] }));
 
-  /** The record shortcuts, wherever the keystroke landed — window or panel view. */
-  const shortcut = (key: string) => {
-    if (key === 'r') {
+  /** These actions also receive shortcuts forwarded from the native panel views. */
+  const recordHotkeyActions: RecordHotkeyActions = {
+    focusAddress: () => addressRef.current?.select(),
+    toggleRecording: () => {
       if (status === 'recording') pause();
       else record();
-    } else if (key === 'a' && status === 'recording') {
-      setCaptureMode(mode === 'assert' ? 'act' : 'assert');
-    } else if (key === '1') {
-      togglePanel('steps');
-    } else if (key === '2') {
-      togglePanel('code');
-    } else if (key === 'f') {
+    },
+    toggleAssert: () => {
+      if (status === 'recording') setCaptureMode(mode === 'assert' ? 'act' : 'assert');
+    },
+    toggleStepsPanel: () => togglePanel('steps'),
+    toggleCodePanel: () => togglePanel('code'),
+    toggleFocus: () => {
       setPanels((current) =>
         current.steps || current.code ? { steps: false, code: false } : { steps: true, code: true },
       );
-    }
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
-        event.preventDefault();
-        addressRef.current?.select();
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (typing) {
-        if (event.key === 'Escape') target.blur();
-        return;
-      }
-
-      if (event.key === 'Escape' && finishing) {
+    },
+    escape: (event) => {
+      if (finishing) {
         const resume = finishing === 'from-recording';
         setFinishing(undefined);
         if (resume) window.testron?.command({ type: 'resume-recording' });
-      } else shortcut(event.key.toLowerCase());
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [status, steps.length, finishing, mode, verifyAssertion]);
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      )
+        target.blur();
+    },
+  };
+
+  useHotkeys(
+    createRecordHotkeyDefinitions(recordHotkeyActions, {
+      enabled: !finishing && !configuringProfile && !editingTitle,
+      assertEnabled: status === 'recording',
+      escapeEnabled: !configuringProfile && !editingTitle,
+    }),
+  );
 
   const selected = steps.find((step) => step.id === selectedId);
   const websiteInset = {
@@ -452,7 +457,10 @@ export const RecordScreen = () => {
           copySource();
           break;
         case 'shortcut':
-          shortcut(event.key);
+          {
+            const id = recordShortcutIdForKey(event.key);
+            if (id) runRecordShortcut(id, recordHotkeyActions);
+          }
           break;
       }
     });
@@ -737,7 +745,7 @@ const FinishSheet = ({
         <Button variant="ghost" onClick={onCancel}>
           Keep recording
         </Button>
-        <Kbd className="ml-auto">Esc</Kbd>
+        <Kbd className="ml-auto">{displayRecordShortcut('escape')}</Kbd>
       </div>
     </section>
   </div>
