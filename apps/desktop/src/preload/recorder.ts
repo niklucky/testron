@@ -698,9 +698,28 @@ window.addEventListener(
 window.addEventListener(
   'keydown',
   (event) => {
+    const target = event.target;
+    const isEditable =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      (target instanceof HTMLElement && target.isContentEditable);
+    const normalizedKey = event.key.toLowerCase();
+    const shortcutKey =
+      (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && normalizedKey === 'l'
+        ? 'mod+l'
+        : !isEditable && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          ? ['r', 'a', '1', '2', 'f'].find((key) => key === normalizedKey)
+          : undefined;
+    if (!event.repeat && shortcutKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      sendControl({ kind: 'shortcut', key: shortcutKey });
+      return;
+    }
     if (captureMode === 'verify') return;
     if (!['Enter', 'Escape', 'Tab'].includes(event.key) || event.repeat) return;
-    const element = event.target;
+    const element = target;
     if (!(
       element instanceof HTMLInputElement ||
       element instanceof HTMLTextAreaElement ||

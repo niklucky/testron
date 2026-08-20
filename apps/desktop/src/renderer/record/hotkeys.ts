@@ -24,6 +24,11 @@ export const recordPanelShortcutIds = [
   'focus',
 ] as const satisfies RecordShortcutId[];
 
+const recordForwardedShortcutIds = [
+  'address',
+  ...recordPanelShortcutIds,
+] as const satisfies RecordShortcutId[];
+
 export const displayRecordShortcut = (id: RecordShortcutId): string =>
   formatForDisplay(recordShortcuts[id].hotkey);
 
@@ -73,7 +78,7 @@ export const createRecordHotkeyDefinitions = (
 
 export const recordShortcutIdForKey = (key: string): RecordShortcutId | undefined => {
   const normalized = key.toLowerCase();
-  return recordPanelShortcutIds.find(
+  return recordForwardedShortcutIds.find(
     (id) => String(recordShortcuts[id].hotkey).toLowerCase() === normalized,
   );
 };

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
-import type { PanelId, RecordPanelEvent, RecordPanelState } from '../../preload/record';
+import type {
+  PanelId,
+  RecordPanelEvent,
+  RecordPanelState,
+  RecordShortcutKey,
+} from '../../preload/record';
 import { Badge, IconButton } from '../design';
 import { clock } from './codegen';
 import { CodePanel } from './CodePanel';
@@ -46,7 +51,11 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
   useHotkeys(
     recordPanelShortcutIds.map((id) => ({
       hotkey: recordShortcuts[id].hotkey,
-      callback: () => send({ type: 'shortcut', key: String(recordShortcuts[id].hotkey) }),
+      callback: () =>
+        send({
+          type: 'shortcut',
+          key: recordShortcuts[id].hotkey.toLowerCase() as RecordShortcutKey,
+        }),
       options: {
         ignoreInputs: true,
         meta: {

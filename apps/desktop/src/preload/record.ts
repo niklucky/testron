@@ -90,6 +90,9 @@ export const recordPanelStateSchema = z.object({
 });
 export type RecordPanelState = z.infer<typeof recordPanelStateSchema>;
 
+export const recordShortcutKeySchema = z.enum(['mod+l', 'r', 'a', '1', '2', 'f']);
+export type RecordShortcutKey = z.infer<typeof recordShortcutKeySchema>;
+
 export const recordPanelEventSchema = z.discriminatedUnion('type', [
   /** A panel finished loading and has nothing to show yet. */
   z.object({ type: z.literal('ready'), panel: panelIdSchema }),
@@ -115,6 +118,6 @@ export const recordPanelEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('copy') }),
   /** A record shortcut typed while a panel had focus, forwarded to the screen. */
-  z.object({ type: z.literal('shortcut'), key: z.string().min(1).max(2) }),
+  z.object({ type: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
 export type RecordPanelEvent = z.infer<typeof recordPanelEventSchema>;
