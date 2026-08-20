@@ -389,6 +389,7 @@ const createWindow = async (): Promise<void> => {
     testSuites: allTestSuites(),
     latestTestRuns: remoteWorkspace?.latestTestRuns ?? {},
     recentRuns: remoteWorkspace?.recentRuns ?? [],
+    projectOverviews: remoteWorkspace?.projectOverviews ?? [],
     ...(selectedProjectId ? { selectedProjectId } : {}),
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
     ...(selectedTestSuiteId ? { selectedTestSuiteId } : {}),
@@ -396,7 +397,10 @@ const createWindow = async (): Promise<void> => {
     ...(selectedTestId ? { selectedTestId } : {}),
     sync: store.getSyncSummary(),
     runsInFlight:
-      remoteWorkspace?.activeRuns.filter((run) => run.projectId === selectedProjectId).length ?? 0,
+      remoteWorkspace?.projectOverviews?.find((summary) => summary.projectId === selectedProjectId)
+        ?.activeRunCount ??
+      remoteWorkspace?.activeRuns.filter((run) => run.projectId === selectedProjectId).length ??
+      0,
     server: serverState,
   });
   const reloadRemoteWorkspace = async (): Promise<void> => {
@@ -815,6 +819,12 @@ const createWindow = async (): Promise<void> => {
               sendSnapshot(session.snapshot());
             })
             .catch((error: unknown) => {
+              serverState = {
+                ...serverState,
+                status: 'error',
+                message:
+                  error instanceof Error ? error.message : 'The workspace could not be refreshed.',
+              };
               session.warn(
                 error instanceof Error ? error.message : 'The workspace could not be refreshed.',
               );
@@ -1037,6 +1047,23 @@ const createWindow = async (): Promise<void> => {
                 tests: remoteWorkspace?.tests ?? [],
                 latestTestRuns: remoteWorkspace?.latestTestRuns ?? {},
                 recentRuns: remoteWorkspace?.recentRuns ?? [],
+                projectOverviews: [
+                  ...(remoteWorkspace?.projectOverviews?.filter(
+                    (summary) => summary.projectId !== project.id,
+                  ) ?? []),
+                  {
+                    projectId: project.id,
+                    suiteCount: 0,
+                    testCount: 0,
+                    passedCount: 0,
+                    failedCount: 0,
+                    noResultCount: 0,
+                    runCount30d: 0,
+                    activeRunCount: 0,
+                    lastRunAt: null,
+                    runDays: [],
+                  },
+                ],
                 activeRuns: remoteWorkspace?.activeRuns ?? [],
               };
               selectedProjectId = project.id;
@@ -1120,20 +1147,14 @@ const createWindow = async (): Promise<void> => {
               name: command.name,
             }),
           )
-          .then((testSuite) => {
+          .then(async (testSuite) => {
             if (
               authenticationAttempt !== loginAttempt ||
               serverState.authentication !== 'signedIn' ||
               !remoteWorkspace
             )
               return;
-            remoteWorkspace = {
-              ...remoteWorkspace,
-              testSuites: [
-                ...remoteWorkspace.testSuites.filter((entry) => entry.id !== testSuite.id),
-                { ...testSuite, testCount: 0, failedCount: 0, totalLatestDurationMs: 0 },
-              ],
-            };
+            await reloadRemoteWorkspace();
             selectedTestSuiteId = testSuite.id;
             sendSnapshot(session.snapshot());
           })
@@ -1156,14 +1177,9 @@ const createWindow = async (): Promise<void> => {
               name: command.name,
             }),
           )
-          .then((testSuite) => {
+          .then(async () => {
             if (!remoteWorkspace) return;
-            remoteWorkspace = {
-              ...remoteWorkspace,
-              testSuites: remoteWorkspace.testSuites.map((entry) =>
-                entry.id === testSuite.id ? { ...entry, ...testSuite } : entry,
-              ),
-            };
+            await reloadRemoteWorkspace();
             sendSnapshot(session.snapshot());
           })
           .catch((error: unknown) => {
@@ -1184,12 +1200,9 @@ const createWindow = async (): Promise<void> => {
               baseRevision: command.baseRevision,
             }),
           )
-          .then((testSuite) => {
+          .then(async () => {
             if (!remoteWorkspace) return;
-            remoteWorkspace = {
-              ...remoteWorkspace,
-              testSuites: remoteWorkspace.testSuites.filter((entry) => entry.id !== testSuite.id),
-            };
+            await reloadRemoteWorkspace();
             sendSnapshot(session.snapshot());
           })
           .catch((error: unknown) => {
@@ -1398,10 +1411,11 @@ const createWindow = async (): Promise<void> => {
         serverState = { ...serverState, status: 'syncing', message: 'Creating test…' };
         void serverClient
           .createTest(request)
-          .then((snapshot) => {
+          .then(async (snapshot) => {
             if (authenticationAttempt !== loginAttempt || serverState.authentication !== 'signedIn')
               return;
             replaceRemoteTest(snapshot);
+            await reloadRemoteWorkspace();
             selectedProjectId = snapshot.test.projectId;
             selectedEnvironmentId = snapshot.currentRevision.content.environmentId;
             selectedTestSuiteId = snapshot.test.testSuiteId ?? undefined;
@@ -1595,6 +1609,7 @@ const createWindow = async (): Promise<void> => {
                   ],
                 };
               }
+              await reloadRemoteWorkspace();
               sendSnapshot(session.snapshot());
             } catch (error) {
               session.warn(
@@ -1636,6 +1651,7 @@ const createWindow = async (): Promise<void> => {
                           [finishedRun.testId]: {
                             status: finishedRun.status,
                             durationMs: finishedRun.durationMs,
+                            startedAt: finishedRun.startedAt,
                           },
                         }),
                   },
@@ -1649,6 +1665,7 @@ const createWindow = async (): Promise<void> => {
                           ),
                         ].slice(0, 200),
                 };
+              await reloadRemoteWorkspace();
             } catch (error) {
               session.warn(
                 error instanceof Error

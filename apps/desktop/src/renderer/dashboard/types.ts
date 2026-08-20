@@ -51,7 +51,7 @@ export type SuiteRecord = {
   name: string;
   owner: string;
   tests: TestRecord[];
-  lastRunMinutesAgo: number;
+  lastRunMinutesAgo: number | null;
   revision?: number;
   testCount?: number;
   failedCount?: number;

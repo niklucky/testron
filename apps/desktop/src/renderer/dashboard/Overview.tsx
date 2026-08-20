@@ -20,6 +20,7 @@ import {
 } from '../design';
 import { activity, days, passRateOf, tally } from './data';
 import { age } from './format';
+import type { LiveOverview } from './overview-data';
 import { activityTone, healthSplits, runLegend, runSeries } from './tone';
 import type { Sort, SortKey, SuiteRecord, Totals } from './types';
 
@@ -54,12 +55,18 @@ const columns =
 export const Overview = ({
   suites,
   totals,
+  live,
+  dataStatus = 'local',
+  errorMessage,
   state,
   onState,
   onLog,
 }: {
   suites: SuiteRecord[];
   totals: Totals;
+  live?: LiveOverview;
+  dataStatus?: 'local' | 'loading' | 'live' | 'error';
+  errorMessage?: string;
   state: OverviewState;
   onState: (state: OverviewState) => void;
   onLog: (message: string) => void;
@@ -67,9 +74,22 @@ export const Overview = ({
   const { range, query, onlyAttention, sort } = state;
   const patch = (next: Partial<OverviewState>) => onState({ ...state, ...next });
 
-  const passRate = (totals.passed / Math.max(1, totals.passed + totals.failed)) * 100;
-  const runs = days.reduce((sum, day) => sum + day.passed + day.skipped + day.failed, 0);
-  const chart: StackedDatum[] = days.slice(-range).map((day) => ({
+  const shownTotals = live?.totals ?? totals;
+  const passRate = live
+    ? live.passRate
+    : (shownTotals.passed / Math.max(1, shownTotals.passed + shownTotals.failed)) * 100;
+  const sourceDays = live?.days ?? days;
+  const runs =
+    live?.runs ?? sourceDays.reduce((sum, day) => sum + day.passed + day.skipped + day.failed, 0);
+  const lastRunMinutesAgo = live
+    ? live.lastRunMinutesAgo
+    : suites.length === 0
+      ? null
+      : (suites
+          .map((suite) => suite.lastRunMinutesAgo)
+          .filter((value) => value !== null)
+          .sort((a, b) => a - b)[0] ?? null);
+  const chart: StackedDatum[] = sourceDays.slice(-range).map((day) => ({
     key: day.key,
     label: `${day.weekday} ${day.dayOfMonth}`,
     tick: String(day.dayOfMonth),
@@ -97,10 +117,35 @@ export const Overview = ({
         case 'passRate':
           return (passRateOf(a) - passRateOf(b)) * factor;
         default:
-          return (a.lastRunMinutesAgo - b.lastRunMinutesAgo) * factor;
+          return (
+            ((a.lastRunMinutesAgo ?? Number.POSITIVE_INFINITY) -
+              (b.lastRunMinutesAgo ?? Number.POSITIVE_INFINITY)) *
+            factor
+          );
       }
     });
   }, [suites, query, onlyAttention, sort]);
+
+  if (dataStatus === 'loading' || dataStatus === 'error')
+    return (
+      <div className="min-h-0 overflow-y-auto p-5">
+        <Panel>
+          <PanelHeader
+            title={dataStatus === 'loading' ? 'Loading project overview' : 'Overview unavailable'}
+            subtitle={
+              dataStatus === 'loading'
+                ? 'Fetching the selected project snapshot…'
+                : (errorMessage ?? 'The server workspace could not be loaded.')
+            }
+          />
+          <EmptyState>
+            {dataStatus === 'loading'
+              ? 'Summary values will appear when the workspace finishes loading.'
+              : 'Check the server connection and refresh the workspace.'}
+          </EmptyState>
+        </Panel>
+      </div>
+    );
 
   const SortHead = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
     <button
@@ -135,8 +180,8 @@ export const Overview = ({
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">Project overview</h1>
             <p className="mt-1 text-base text-ink-3">
-              {suites.length} suites · {totals.tests} tests · last run{' '}
-              {age(Math.min(...suites.map((suite) => suite.lastRunMinutesAgo)))} ago
+              {suites.length} suites · {shownTotals.tests} tests · last run{' '}
+              {lastRunMinutesAgo === null ? 'never' : `${age(lastRunMinutesAgo)} ago`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -149,7 +194,7 @@ export const Overview = ({
             />
             <Button
               icon="play"
-              onClick={() => onLog('Queued a full run of 206 tests on Production')}
+              onClick={() => onLog(`Queued a full run of ${shownTotals.tests} tests`)}
             >
               Run all
             </Button>
@@ -160,29 +205,33 @@ export const Overview = ({
           <StatCard
             icon="test"
             label="Total tests"
-            value={totals.tests}
-            delta={<Trend value={12} digits={0} />}
-            foot={`in ${suites.length} suites · 12 added this month`}
+            value={shownTotals.tests}
+            delta={dataStatus === 'local' ? <Trend value={12} digits={0} /> : undefined}
+            foot={
+              dataStatus === 'local'
+                ? `in ${suites.length} suites · 12 added this month`
+                : `in ${suites.length} suites`
+            }
           />
           <StatCard
             icon="check"
             label="Pass rate"
-            value={`${passRate.toFixed(1)}%`}
-            delta={<Trend value={2.1} unit="pts" />}
-            foot={`${totals.passed} passed · ${totals.skipped} skipped · ${totals.failed} failed`}
+            value={passRate === null ? '—' : `${passRate.toFixed(1)}%`}
+            delta={dataStatus === 'local' ? <Trend value={2.1} unit="pts" /> : undefined}
+            foot={`${shownTotals.passed} passed · ${shownTotals.skipped} without result · ${shownTotals.failed} failed`}
           />
           <StatCard
             icon="play"
             label="Test runs · 30d"
             value={runs.toLocaleString()}
-            delta={<Trend value={18.2} unit="%" />}
-            foot="avg 48s per test · −15% duration"
+            delta={dataStatus === 'local' ? <Trend value={18.2} unit="%" /> : undefined}
+            foot={dataStatus === 'local' ? 'avg 48s per test · −15% duration' : 'completed runs'}
           />
           <StatCard
             icon="alert"
             label="Needs attention"
-            value={totals.failed}
-            delta={<Badge tone="warning">3 flaky</Badge>}
+            value={shownTotals.failed}
+            delta={dataStatus === 'local' ? <Badge tone="warning">3 flaky</Badge> : undefined}
             foot={`failing in ${suites.filter((suite) => tally(suite).failed > 0).length} suites`}
           />
 
@@ -197,6 +246,12 @@ export const Overview = ({
             <StackedBars data={chart} series={runSeries} compact />
           </Panel>
         </section>
+
+        {dataStatus === 'live' && shownTotals.tests === 0 && runs === 0 && (
+          <Panel className="mt-3">
+            <EmptyState>This project has no tests or runs yet.</EmptyState>
+          </Panel>
+        )}
 
         <section className="mt-3 grid grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3 max-[1240px]:grid-cols-1">
           <Panel className="flex min-h-0 flex-col">
@@ -273,7 +328,9 @@ export const Overview = ({
                   </span>
                   <span className="flex items-center gap-1.5 text-sm text-ink-3">
                     <Icon name="clock" size={12} />
-                    {age(suite.lastRunMinutesAgo)} ago
+                    {suite.lastRunMinutesAgo === null
+                      ? 'Never'
+                      : `${age(suite.lastRunMinutesAgo)} ago`}
                   </span>
                   <span className="truncate text-sm text-ink-3">{suite.owner}</span>
                   <Icon name="chevron" size={14} className="justify-self-end text-ink-3" />
@@ -285,31 +342,40 @@ export const Overview = ({
           </Panel>
 
           <Panel className="flex flex-col">
-            <PanelHeader title="Recent activity" subtitle="27 changes this week" />
-            <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
-              {activity.map((item) => {
-                const tone = activityTone[item.kind];
-                return (
-                  <li key={item.id} className="flex gap-2.5 px-4 py-3">
-                    <span
-                      className="mt-px grid h-6 w-6 shrink-0 place-items-center rounded-md bg-raised"
-                      style={{ color: toneInk[tone.tone] }}
-                    >
-                      <Icon name={tone.icon} size={12} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base">{item.test}</span>
-                      <span className="mt-0.5 block truncate text-xs text-ink-3">
-                        {tone.label} in {item.suite} · {item.author}
+            <PanelHeader
+              title="Recent activity"
+              subtitle={
+                dataStatus === 'local' ? '27 changes this week' : 'Available in run history'
+              }
+            />
+            {dataStatus === 'live' ? (
+              <EmptyState>Open Runs to inspect the server-backed run history.</EmptyState>
+            ) : (
+              <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
+                {activity.map((item) => {
+                  const tone = activityTone[item.kind];
+                  return (
+                    <li key={item.id} className="flex gap-2.5 px-4 py-3">
+                      <span
+                        className="mt-px grid h-6 w-6 shrink-0 place-items-center rounded-md bg-raised"
+                        style={{ color: toneInk[tone.tone] }}
+                      >
+                        <Icon name={tone.icon} size={12} />
                       </span>
-                    </span>
-                    <span className="ui-mono shrink-0 text-xs text-ink-3">
-                      {age(item.minutesAgo)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-base">{item.test}</span>
+                        <span className="mt-0.5 block truncate text-xs text-ink-3">
+                          {tone.label} in {item.suite} · {item.author}
+                        </span>
+                      </span>
+                      <span className="ui-mono shrink-0 text-xs text-ink-3">
+                        {age(item.minutesAgo)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </Panel>
         </section>
       </div>
