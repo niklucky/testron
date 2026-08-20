@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Badge, Icon, IconButton, Kbd, PulseDot } from '../design';
 import { clock, sentence } from './codegen';
+import { displayRecordShortcut } from './hotkeys';
 import { stepStyle, type RecordedStep, type RecordStatus } from './types';
 
 /**
@@ -44,7 +45,7 @@ export const StepsPanel = ({
   <div className="pb-4">
     {steps.length === 0 && (
       <p className="px-4 py-10 text-center text-base leading-6 text-ink-3">
-        Press <Kbd>R</Kbd> and drive the page.
+        Press <Kbd>{displayRecordShortcut('record')}</Kbd> and drive the page.
         <br />
         Every click, keystroke and assertion lands here as a step.
       </p>

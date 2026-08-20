@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { AppSnapshot } from '../../preload/api';
 import { Button, PulseDot } from '../design';
@@ -13,6 +14,8 @@ import { loadExpandedSuiteIds, saveExpandedSuiteIds } from './suiteExpansion';
 import { NewTestForm } from './NewTestForm';
 import { TestSuiteForm } from './TestSuiteForm';
 import { evidenceTabs, Triage } from './Triage';
+import { JumpTo, type JumpToItem } from './JumpTo';
+import { createDashboardHotkeyDefinitions, displayShortcut } from './hotkeys';
 import { ProjectSwitcher } from '../projects/ProjectSwitcher';
 import { ProjectSettings } from '../projects/ProjectSettings';
 import { ProfileModal } from '../account/ProfileModal';
@@ -64,6 +67,7 @@ export const Dashboard = () => {
   const creatingFromTestId = useRef<string | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [jumpOpen, setJumpOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -202,67 +206,99 @@ export const Dashboard = () => {
     if (key === 'b') setLog(`Bug drafted · ${selected.signature} → tracker`);
   };
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      // While typing, the only shortcut is the one that gets you out.
-      if (typing) {
-        if (event.key === 'Escape') {
-          setQuery('');
-          setFilterOpen(false);
-          target.blur();
-        }
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === 'j' || event.key === 'ArrowDown') {
-        event.preventDefault();
-        setView('triage');
-        setCursor((current) => Math.min(current + 1, queue.length - 1));
-      } else if (key === 'k' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        setView('triage');
-        setCursor((current) => Math.max(current - 1, 0));
-      } else if (event.key === '[' || event.key === ']') {
-        event.preventDefault();
-        const index = evidenceTabs.findIndex((entry) => entry.id === tab);
-        const next =
-          (index + (event.key === ']' ? 1 : evidenceTabs.length - 1)) % evidenceTabs.length;
-        setTab(evidenceTabs[next].id);
-      } else if (event.key === '/') {
-        event.preventDefault();
-        setFilterOpen(true);
-        window.setTimeout(() => filterRef.current?.focus(), 0);
-      } else if (key === 'o') {
-        setView('overview');
-      } else if (key === 't') {
-        setView('triage');
-      } else if (key === 'h') {
-        setView('runs');
-      } else if (key === 'r' || key === 'q' || key === 'b') {
-        runAction(key);
-      } else if (view === 'triage' && tab === 'manual' && ['p', 'f', 'x'].includes(key)) {
-        const step = selected.steps[manualCursor];
-        if (!step) return;
-        const verdict: ManualVerdict = key === 'p' ? 'pass' : key === 'f' ? 'fail' : 'block';
-        setManualResults((current) => ({ ...current, [step.id]: verdict }));
-        setManualCursor((current) => Math.min(current + 1, selected.steps.length - 1));
-        setLog(`Manual step ${manualCursor + 1} marked ${verdict}`);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [queue.length, selected, tab, manualCursor, quarantined, view]);
-
   const openTest = (test: TestRecord) => {
     setLog(`Opening test · ${test.name}`);
     window.testron?.command({ type: 'select-test', testId: test.id });
     window.location.hash = '#/test';
   };
+
+  const recordManualVerdict = (verdict: ManualVerdict) => {
+    const step = selected.steps[manualCursor];
+    if (!step) return;
+    setManualResults((current) => ({ ...current, [step.id]: verdict }));
+    setManualCursor((current) => Math.min(current + 1, selected.steps.length - 1));
+    setLog(`Manual step ${manualCursor + 1} marked ${verdict}`);
+  };
+
+  const blockingModalOpen =
+    suiteForm !== undefined ||
+    newTestSuite !== undefined ||
+    settingsOpen ||
+    profileOpen ||
+    Boolean(library?.pendingInvitations?.[0]);
+
+  useHotkeys(
+    createDashboardHotkeyDefinitions(
+      {
+        toggleJump: () => setJumpOpen((open) => !open),
+        moveFailure: (direction) => {
+          setView('triage');
+          setCursor((current) =>
+            direction === 1 ? Math.min(current + 1, queue.length - 1) : Math.max(current - 1, 0),
+          );
+        },
+        moveEvidence: (direction) => {
+          const index = evidenceTabs.findIndex((entry) => entry.id === tab);
+          const next = (index + direction + evidenceTabs.length) % evidenceTabs.length;
+          setTab(evidenceTabs[next].id);
+        },
+        openFilter: () => {
+          setFilterOpen(true);
+          window.setTimeout(() => filterRef.current?.focus(), 0);
+        },
+        closeFilter: () => {
+          setQuery('');
+          setFilterOpen(false);
+          filterRef.current?.blur();
+        },
+        openView: setView,
+        runAction,
+        manualVerdict: recordManualVerdict,
+      },
+      {
+        navigationEnabled: !blockingModalOpen && !jumpOpen,
+        jumpEnabled: !blockingModalOpen,
+        filterOpen: !blockingModalOpen && !jumpOpen && filterOpen,
+        manualEnabled: !blockingModalOpen && !jumpOpen && view === 'triage' && tab === 'manual',
+      },
+    ),
+  );
+
+  const jumpItems: JumpToItem[] = [
+    ...(
+      [
+        ['overview', 'Overview'],
+        ['triage', 'Triage'],
+        ['runs', 'Run history'],
+        ['members', 'Members'],
+      ] as const
+    ).map(([destination, label]) => ({
+      id: `view-${destination}`,
+      label,
+      detail: 'View',
+      onSelect: () => setView(destination),
+    })),
+    ...suites.map((suite) => ({
+      id: `suite-${suite.id}`,
+      label: suite.name,
+      detail: 'Test suite',
+      keywords: suite.owner,
+      onSelect: () => {
+        setView('overview');
+        if (!expandedSuiteIds.includes(suite.id)) toggleSuite(suite.id);
+        setLog(`Jumped to test suite · ${suite.name}`);
+      },
+    })),
+    ...suites.flatMap((suite) =>
+      suite.tests.map((test) => ({
+        id: `test-${test.id}`,
+        label: test.name,
+        detail: suite.name,
+        keywords: `test ${suite.name}`,
+        onSelect: () => openTest(test),
+      })),
+    ),
+  ];
 
   const reorder = (suiteId: string, from: number, to: number) =>
     setMockSuites((current) =>
@@ -307,7 +343,7 @@ export const Dashboard = () => {
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 [-webkit-app-region:no-drag]">
-          <Button icon="search" kbd="⌘K" onClick={() => setLog('Jump to… · not wired up yet')}>
+          <Button icon="search" kbd={displayShortcut('jump')} onClick={() => setJumpOpen(true)}>
             Jump to…
           </Button>
         </div>
@@ -509,6 +545,12 @@ export const Dashboard = () => {
           error={library.server?.status === 'error' ? library.server.message : undefined}
         />
       )}
+      <JumpTo
+        open={jumpOpen}
+        items={jumpItems}
+        shortcut={displayShortcut('jump')}
+        onClose={() => setJumpOpen(false)}
+      />
     </main>
   );
 };

@@ -45,7 +45,12 @@ import {
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
-import { recordPanelEventSchema, type PanelId, type RecordLayout } from '../preload/record';
+import {
+  recordPanelEventSchema,
+  recordShortcutKeySchema,
+  type PanelId,
+  type RecordLayout,
+} from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
@@ -83,6 +88,7 @@ const recorderControlSchema = z.discriminatedUnion('kind', [
     assertion: verifyAssertionSchema,
   }),
   z.object({ kind: z.literal('repick-target'), target: targetObservationSchema }),
+  z.object({ kind: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
 
 let mainWindow: BrowserWindow | undefined;
@@ -692,7 +698,13 @@ const createWindow = async (): Promise<void> => {
       return;
     const control = recorderControlSchema.safeParse(payload);
     if (control.success) {
-      if (control.data.kind === 'set-assertion') {
+      if (control.data.kind === 'shortcut') {
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send(RECORD_CHANNELS.event, {
+            type: 'shortcut',
+            key: control.data.key,
+          });
+      } else if (control.data.kind === 'set-assertion') {
         verifyAssertion = control.data.assertion;
         applyContext();
       } else if (repickIndex !== undefined) {
@@ -1839,11 +1851,9 @@ const createWindow = async (): Promise<void> => {
   for (const [id, view] of panelViews) {
     void loadAppRenderer(view.webContents, PANEL_ROUTES[id]).catch(() => undefined);
   }
-  try {
-    await websiteView.webContents.loadURL('http://127.0.0.1:4174');
-  } catch (error) {
-    session.warn(error instanceof Error ? error.message : 'Could not load the fixture page.');
-  }
+  // WebContentsView starts on about:blank. Keep it there until a recorder
+  // screen explicitly navigates to the selected environment; the local
+  // fixture is test data, not an application startup page.
 };
 
 app.whenReady().then(async () => {

@@ -1,6 +1,7 @@
 import { Badge, Button, Kbd, Tabs, type SegmentedItem } from '../design';
 import { ErrorView } from './views/ErrorView';
 import { HistoryView } from './views/HistoryView';
+import { displayShortcut, triageShortcutIds } from './hotkeys';
 import { ManualView } from './views/ManualView';
 import { ShotView } from './views/ShotView';
 import { StepsView } from './views/StepsView';
@@ -69,8 +70,8 @@ export const Triage = ({
       <div className="mt-3 flex items-center gap-1">
         <Tabs label="Evidence" items={evidenceTabs} value={tab} onChange={onTab} />
         <span className="ml-1 flex items-center gap-1">
-          <Kbd>[</Kbd>
-          <Kbd>]</Kbd>
+          <Kbd>{displayShortcut('previousEvidence')}</Kbd>
+          <Kbd>{displayShortcut('nextEvidence')}</Kbd>
         </span>
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -80,11 +81,11 @@ export const Triage = ({
               variant="soft"
               size="md"
               icon={action.icon}
-              kbd={action.key}
+              kbd={displayShortcut(triageShortcutIds[action.key])}
               tone="warning"
               pressed={action.key === 'q' ? quarantined : undefined}
               aria-label={action.label}
-              title={`${action.label} · press ${action.key}`}
+              title={`${action.label} · press ${displayShortcut(triageShortcutIds[action.key])}`}
               onClick={() => onAction(action.key)}
             />
           ))}

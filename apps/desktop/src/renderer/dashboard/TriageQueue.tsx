@@ -11,6 +11,7 @@ import {
   StatusDot,
 } from '../design';
 import { age } from './format';
+import { displayShortcut } from './hotkeys';
 import { severityTone } from './tone';
 import type { Failure, Scope } from './types';
 
@@ -61,8 +62,8 @@ export const TriageQueue = ({
       <SectionLabel>Triage</SectionLabel>
       <span className="ui-mono text-xs text-ink-3">{queue.length}</span>
       <span className="ml-auto flex items-center gap-1">
-        <Kbd>j</Kbd>
-        <Kbd>k</Kbd>
+        <Kbd>{displayShortcut('nextFailure')}</Kbd>
+        <Kbd>{displayShortcut('previousFailure')}</Kbd>
         <IconButton
           icon="search"
           size="sm"
@@ -94,7 +95,7 @@ export const TriageQueue = ({
         className="mx-2 mb-1.5 shrink-0"
         ref={filterRef}
         value={query}
-        hint={<Kbd>esc</Kbd>}
+        hint={<Kbd>{displayShortcut('closeFilter')}</Kbd>}
         onChange={(event) => onQuery(event.target.value)}
       />
     )}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
@@ -10,6 +11,7 @@ import type { RecordedStep } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
 import { AssertionCard, DetailCard, RunCard, StepArrow, StepCard } from './columns';
 import { liveTestBoard } from './live';
+import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotkeys';
 import { SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
@@ -277,6 +279,24 @@ export const TestView = () => {
     setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
   };
 
+  const sourceModalOpen = sourceOpen && !wideSourceLayout;
+  useHotkeys(
+    createTestViewHotkeyDefinitions(
+      {
+        run,
+        toggleSource: () => setSourceOpen((open) => !open),
+        edit: () => (window.location.hash = '#/record'),
+        closeSource: () => setSourceOpen(false),
+      },
+      {
+        enabled: Boolean(selectedTestId) && !newTestOpen && !sourceModalOpen,
+        runEnabled: snapshot.steps.length > 0,
+        sourceEnabled: Boolean(selectedTestId) && !newTestOpen,
+        closeSource: sourceModalOpen && !newTestOpen,
+      },
+    ),
+  );
+
   const lastVerdict = runs[0]?.verdict;
 
   if (loaded && !selectedTestId) {
@@ -443,13 +463,23 @@ export const TestView = () => {
           icon={running ? 'pause' : 'play'}
           disabled={snapshot.steps.length === 0}
           onClick={run}
+          kbd={displayTestViewShortcut('run')}
         >
           {running ? 'Cancel run' : `Run on ${detail.environments[0] ?? 'Local'}`}
         </Button>
-        <Button icon="code" pressed={sourceOpen} onClick={() => setSourceOpen((open) => !open)}>
+        <Button
+          icon="code"
+          pressed={sourceOpen}
+          onClick={() => setSourceOpen((open) => !open)}
+          kbd={displayTestViewShortcut('source')}
+        >
           {sourceOpen && wideSourceLayout ? 'Hide source' : 'View source'}
         </Button>
-        <Button icon="pencil" onClick={() => (window.location.hash = '#/record')}>
+        <Button
+          icon="pencil"
+          onClick={() => (window.location.hash = '#/record')}
+          kbd={displayTestViewShortcut('edit')}
+        >
           Edit in recorder
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
