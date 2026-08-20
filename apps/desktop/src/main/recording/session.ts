@@ -11,6 +11,7 @@ import {
 } from '@testron/domain/steps/schema';
 
 export interface RecordingSnapshot {
+  title: string;
   recording: boolean;
   status: 'idle' | 'recording' | 'paused' | 'finished';
   currentUrl: string;
@@ -256,6 +257,7 @@ export class RecordingSession {
   snapshot(warning?: string): RecordingSnapshot {
     const steps = stepsSchema.parse(this.steps);
     return {
+      title: this.title,
       recording: this.status === 'recording',
       status: this.status,
       currentUrl: this.currentUrl,

@@ -15,6 +15,7 @@ export const SuiteTree = ({
   suites,
   activeTestId,
   onOpenTest,
+  onNewTest,
   onReorder,
   onEditSuite,
   onDeleteSuite,
@@ -23,6 +24,7 @@ export const SuiteTree = ({
   suites: SuiteRecord[];
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
+  onNewTest: (suite: SuiteRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
   onEditSuite: (suite: SuiteRecord) => void;
   onDeleteSuite: (suite: SuiteRecord) => void;
@@ -35,6 +37,7 @@ export const SuiteTree = ({
         suite={suite}
         activeTestId={activeTestId}
         onOpenTest={onOpenTest}
+        onNewTest={onNewTest}
         onReorder={onReorder}
         onEditSuite={onEditSuite}
         onDeleteSuite={onDeleteSuite}
@@ -48,6 +51,7 @@ const SuiteBranch = ({
   suite,
   activeTestId,
   onOpenTest,
+  onNewTest,
   onReorder,
   onEditSuite,
   onDeleteSuite,
@@ -56,6 +60,7 @@ const SuiteBranch = ({
   suite: SuiteRecord;
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
+  onNewTest: (suite: SuiteRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
   onEditSuite: (suite: SuiteRecord) => void;
   onDeleteSuite: (suite: SuiteRecord) => void;
@@ -118,7 +123,7 @@ const SuiteBranch = ({
           size="sm"
           label={`Add a test to ${suite.name}`}
           className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-          onClick={() => onLog(`New test in ${suite.name} — the recorder would open here`)}
+          onClick={() => onNewTest(suite)}
         />
         <div className="relative">
           <IconButton

@@ -157,7 +157,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({ type: z.literal('rename-test'), testId: entityIdSchema, title: testTitleSchema }),
-  z.object({ type: z.literal('prepare-new-test') }),
+  z.object({ type: z.literal('prepare-new-test'), title: testTitleSchema }),
   z.object({ type: z.literal('save-recording'), title: testTitleSchema, baseUrl: httpUrlSchema }),
   z.object({ type: z.literal('copy-source') }),
   z.object({ type: z.literal('export-source') }),

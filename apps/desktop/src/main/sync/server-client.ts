@@ -42,8 +42,8 @@ export class DesktopServerClient {
     return this.api.auth.login.mutate({ email, password });
   }
 
-  register(email: string, password: string) {
-    return this.api.auth.register.mutate({ email, password });
+  register(name: string, email: string, password: string) {
+    return this.api.auth.register.mutate({ name, email, password });
   }
 
   createProject(value: CreateProjectRequest) {

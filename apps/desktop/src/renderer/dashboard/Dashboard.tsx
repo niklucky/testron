@@ -10,6 +10,7 @@ import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
+import { NewTestForm } from './NewTestForm';
 import { TestSuiteForm } from './TestSuiteForm';
 import { evidenceTabs, Triage } from './Triage';
 import { ProjectSwitcher } from '../projects/ProjectSwitcher';
@@ -55,6 +56,7 @@ export const Dashboard = () => {
   const [log, setLog] = useState('Ready · 9 open failures across 6 suites');
   const [library, setLibrary] = useState<AppSnapshot['library']>();
   const [suiteForm, setSuiteForm] = useState<SuiteRecord | null>();
+  const [newTestSuite, setNewTestSuite] = useState<SuiteRecord | null>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -307,6 +309,7 @@ export const Dashboard = () => {
             setView('triage');
           }}
           onOpenTest={openTest}
+          onNewTest={(suite) => setNewTestSuite(suite ?? null)}
           onReorder={reorder}
           onNewSuite={() => setSuiteForm(null)}
           onEditSuite={(suite) => setSuiteForm(suite)}
@@ -321,6 +324,8 @@ export const Dashboard = () => {
           }}
           onSettings={() => setSettingsOpen(true)}
           onLog={setLog}
+          viewer={library?.viewer}
+          canSignOut={library?.server?.authentication === 'signedIn'}
         />
 
         {view === 'overview' ? (
@@ -407,6 +412,21 @@ export const Dashboard = () => {
               return;
             }
             setSuiteForm(undefined);
+          }}
+        />
+      )}
+      {newTestSuite !== undefined && (
+        <NewTestForm
+          suiteName={newTestSuite?.name}
+          onClose={() => setNewTestSuite(undefined)}
+          onStart={(title) => {
+            setLog(
+              newTestSuite
+                ? `New test · ${title} in ${newTestSuite.name}`
+                : `New test · ${title}`,
+            );
+            window.testron?.command({ type: 'prepare-new-test', title });
+            window.location.hash = '#/record';
           }}
         />
       )}

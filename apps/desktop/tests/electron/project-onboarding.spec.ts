@@ -77,9 +77,9 @@ test('an empty remote workspace onboards and the selector creates server project
   try {
     const appWindow = await electronApp.firstWindow();
     await appWindow.getByRole('button', { name: 'Create account' }).first().click();
+    await appWindow.getByLabel('Name', { exact: true }).fill('Nikita S.');
     await appWindow.getByLabel('Email address').fill('owner@example.test');
     await appWindow.getByLabel('Password', { exact: true }).fill('correct horse battery staple');
-    await appWindow.getByLabel('Confirm password').fill('correct horse battery staple');
     await appWindow.getByRole('button', { name: 'Create account' }).last().click();
 
     await expect(
@@ -101,6 +101,16 @@ test('an empty remote workspace onboards and the selector creates server project
     await expect(
       appWindow.getByRole('button', { name: 'Focus mode — hide the context rail' }),
     ).toHaveCount(0);
+
+    await appWindow.getByRole('button', { name: /owner@example\.test/ }).click();
+    const accountMenu = appWindow.getByRole('menu', { name: 'Account menu' });
+    await expect(accountMenu.getByRole('menuitem', { name: /Profile/ })).toBeDisabled();
+    await expect(accountMenu.getByRole('radio')).toHaveText(['Light', 'Dark', 'System']);
+    await expect(accountMenu.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await accountMenu.getByRole('radio', { name: 'System' }).click();
+    await expect
+      .poll(() => appWindow.evaluate(() => localStorage.getItem('testron-theme')))
+      .toBe('system');
 
     await selector.selectOption({ label: '+ Create project' });
     await expect(appWindow.getByRole('heading', { name: 'Create another project' })).toBeVisible();

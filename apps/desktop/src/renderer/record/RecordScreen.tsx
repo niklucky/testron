@@ -16,6 +16,7 @@ import { BrowserBar, SessionBar } from './Toolbar';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
+  title: 'Untitled test',
   recording: false,
   status: 'idle',
   currentUrl: '',

@@ -168,7 +168,7 @@ export const recordingContext = (snapshot: AppSnapshot) => {
   const project = library.projects.find((one) => one.id === library.selectedProjectId);
   const environment = library.environments.find((one) => one.id === library.selectedEnvironmentId);
   const test = library.tests.find((one) => one.id === library.selectedTestId);
-  const title = test?.title ?? 'Untitled test';
+  const title = test?.title ?? snapshot.title;
   const filename = `${
     title
       .trim()

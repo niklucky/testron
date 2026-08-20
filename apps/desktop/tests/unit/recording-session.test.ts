@@ -21,6 +21,7 @@ describe('RecordingSession edit mode', () => {
 
     session.start(true);
 
+    expect(session.snapshot().title).toBe('Existing test');
     expect(session.snapshot().status).toBe('recording');
     expect(session.snapshot().steps).toHaveLength(1);
     expect(session.snapshot().steps[0]).toMatchObject({ kind: 'click' });

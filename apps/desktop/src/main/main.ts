@@ -1121,7 +1121,7 @@ const createWindow = async (): Promise<void> => {
       case 'prepare-new-test':
         selectedTestId = undefined;
         replaySnapshot = { status: 'idle', steps: [] };
-        session.load('Untitled test', []);
+        session.load(command.title, []);
         break;
       case 'save-recording': {
         session.finish();
@@ -1357,7 +1357,7 @@ const createWindow = async (): Promise<void> => {
         const operation =
           command.type === 'login-server'
             ? serverClient.login(command.email, command.password)
-            : serverClient.register(command.email, command.password);
+            : serverClient.register(command.name, command.email, command.password);
         void operation
           .then(async (result) => {
             if (attempt !== loginAttempt) return;

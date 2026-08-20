@@ -38,7 +38,12 @@ const accountCredentialsFields = {
 } as const;
 
 export const authLoginInputSchema = z.object(accountCredentialsFields).strict();
-export const authRegisterInputSchema = z.object(accountCredentialsFields).strict();
+export const authRegisterInputSchema = z
+  .object({
+    ...accountCredentialsFields,
+    name: z.string().trim().min(1).max(100),
+  })
+  .strict();
 export const authSessionOutputSchema = z
   .object({
     accessToken: z.string().min(40),

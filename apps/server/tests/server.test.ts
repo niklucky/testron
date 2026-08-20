@@ -82,7 +82,7 @@ const client = (token?: string) =>
   });
 
 const signIn = async (email = 'owner@example.test', password = 'correct horse battery staple') => {
-  const session = await client().auth.register.mutate({ email, password });
+  const session = await client().auth.register.mutate({ name: 'Test Owner', email, password });
   return { token: session.accessToken, api: client(session.accessToken) };
 };
 
@@ -107,8 +107,10 @@ describe('PostgreSQL tRPC vertical slice', () => {
   it('registers and logs in without a browser device flow', async () => {
     const email = 'owner@example.test';
     const password = 'correct horse battery staple';
-    const registration = await client().auth.register.mutate({ email, password });
-    await expect(client().auth.register.mutate({ email, password })).rejects.toMatchObject({
+    const registration = await client().auth.register.mutate({ name: 'Nikita', email, password });
+    await expect(
+      client().auth.register.mutate({ name: 'Nikita', email, password }),
+    ).rejects.toMatchObject({
       data: { code: 'CONFLICT' },
     });
     await expect(
@@ -118,7 +120,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(login.accessToken).not.toBe(registration.accessToken);
     await expect(
       client(login.accessToken).workspace.get.query({ meta: requestMeta() }),
-    ).resolves.toMatchObject({ projects: [] });
+    ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
   });
 
   it('authenticates every protected procedure and hydrates the typed workspace', async () => {

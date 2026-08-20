@@ -27,6 +27,9 @@ describe('desktop application command schema', () => {
         title: 'x'.repeat(201),
       }).success,
     ).toBe(false);
+    expect(appCommandSchema.parse({ type: 'prepare-new-test', title: '  Checkout flow  ' })).toEqual(
+      { type: 'prepare-new-test', title: 'Checkout flow' },
+    );
   });
 
   it('validates the desktop login commands', () => {
@@ -44,10 +47,11 @@ describe('desktop application command schema', () => {
     expect(
       appCommandSchema.parse({
         type: 'register-server',
+        name: 'New User',
         email: 'new@example.test',
         password: 'another correct password',
       }),
-    ).toMatchObject({ type: 'register-server', email: 'new@example.test' });
+    ).toMatchObject({ type: 'register-server', name: 'New User', email: 'new@example.test' });
     expect(
       appCommandSchema.safeParse({
         type: 'login-server',

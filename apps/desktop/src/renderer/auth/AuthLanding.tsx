@@ -18,10 +18,9 @@ export const AuthenticationLoading = () => (
 export const AuthLanding = ({ server }: { server: ServerState }) => {
   const { theme, toggle } = useTheme();
   const [mode, setMode] = useState<AuthMode>('login');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmation, setConfirmation] = useState('');
-  const [localError, setLocalError] = useState<string>();
   const authenticating = server.authentication === 'authenticating';
 
   useEffect(() => {
@@ -31,32 +30,32 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
   const chooseMode = (next: AuthMode) => {
     setMode(next);
     setPassword('');
-    setConfirmation('');
-    setLocalError(undefined);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setLocalError(undefined);
-    if (!server.configured || authenticating || !email.trim() || password.length < 12) return;
-    if (mode === 'register' && password !== confirmation) {
-      setLocalError('The passwords do not match.');
+    if (
+      !server.configured ||
+      authenticating ||
+      !email.trim() ||
+      password.length < 12 ||
+      (mode === 'register' && !name.trim())
+    )
       return;
-    }
-    window.testron?.command({
-      type: mode === 'login' ? 'login-server' : 'register-server',
-      email: email.trim(),
-      password,
-    });
+    window.testron?.command(
+      mode === 'login'
+        ? { type: 'login-server', email: email.trim(), password }
+        : { type: 'register-server', name: name.trim(), email: email.trim(), password },
+    );
   };
 
-  const error = localError ?? server.message;
+  const error = server.message;
   const disabled =
     !server.configured ||
     authenticating ||
     !email.trim() ||
     password.length < 12 ||
-    (mode === 'register' && confirmation.length < 12);
+    (mode === 'register' && !name.trim());
 
   return (
     <main className="ui-root flex h-screen w-screen flex-col overflow-hidden bg-plane font-sans text-ink antialiased">
@@ -160,10 +159,29 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                   : 'Create an account and enter your new workspace immediately.'}
               </p>
 
-              <label className="mt-6 block">
+              {mode === 'register' && (
+                <label className="mt-6 block">
+                  <span className="text-sm font-medium text-ink-2">Name</span>
+                  <input
+                    autoFocus
+                    required
+                    maxLength={100}
+                    type="text"
+                    autoComplete="name"
+                    aria-label="Name"
+                    value={name}
+                    disabled={authenticating}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Your name"
+                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                  />
+                </label>
+              )}
+
+              <label className={`${mode === 'register' ? 'mt-4' : 'mt-6'} block`}>
                 <span className="text-sm font-medium text-ink-2">Email address</span>
                 <input
-                  autoFocus
+                  autoFocus={mode === 'login'}
                   required
                   type="email"
                   autoComplete="email"
@@ -192,24 +210,6 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                   className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>
-
-              {mode === 'register' && (
-                <label className="mt-4 block">
-                  <span className="text-sm font-medium text-ink-2">Confirm password</span>
-                  <input
-                    required
-                    minLength={12}
-                    maxLength={200}
-                    type="password"
-                    autoComplete="new-password"
-                    aria-label="Confirm password"
-                    value={confirmation}
-                    disabled={authenticating}
-                    onChange={(event) => setConfirmation(event.target.value)}
-                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none focus:border-accent"
-                  />
-                </label>
-              )}
 
               {error && (
                 <div

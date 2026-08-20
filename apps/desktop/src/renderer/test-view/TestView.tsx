@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
 import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../design';
+import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
@@ -14,6 +15,7 @@ import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
+  title: 'Untitled test',
   recording: false,
   status: 'idle',
   currentUrl: '',
@@ -46,6 +48,7 @@ export const TestView = () => {
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [newTestOpen, setNewTestOpen] = useState(false);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -264,26 +267,34 @@ export const TestView = () => {
 
   if (loaded && !selectedTestId) {
     return (
-      <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
-        <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
-          <Icon name="test" size={28} className="mx-auto text-ink-3" />
-          <h1 className="mt-3 text-lg font-semibold">No test selected</h1>
-          <p className="mt-1 text-base text-ink-3">
-            Record and save a test before opening its board.
-          </p>
-          <Button
-            variant="primary"
-            icon="record"
-            className="mt-5"
-            onClick={() => {
-              window.testron?.command({ type: 'prepare-new-test' });
+      <>
+        <main className="ui-root grid h-screen w-screen place-items-center bg-plane font-sans text-ink antialiased">
+          <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
+            <Icon name="test" size={28} className="mx-auto text-ink-3" />
+            <h1 className="mt-3 text-lg font-semibold">No test selected</h1>
+            <p className="mt-1 text-base text-ink-3">
+              Record and save a test before opening its board.
+            </p>
+            <Button
+              variant="primary"
+              icon="record"
+              className="mt-5"
+              onClick={() => setNewTestOpen(true)}
+            >
+              Record a test
+            </Button>
+          </section>
+        </main>
+        {newTestOpen && (
+          <NewTestForm
+            onClose={() => setNewTestOpen(false)}
+            onStart={(title) => {
+              window.testron?.command({ type: 'prepare-new-test', title });
               window.location.hash = '#/record';
             }}
-          >
-            Record a test
-          </Button>
-        </section>
-      </main>
+          />
+        )}
+      </>
     );
   }
 

@@ -38,7 +38,7 @@ export class AuthenticationService {
   constructor(private readonly db: Database) {}
 
   async provisionUser(emailValue: string, passwordValue: string): Promise<AuthenticatedUser> {
-    const { email, password } = authRegisterInputSchema.parse({
+    const { email, password } = authLoginInputSchema.parse({
       email: emailValue,
       password: passwordValue,
     });
@@ -67,7 +67,7 @@ export class AuthenticationService {
     const input = authRegisterInputSchema.parse(value);
     const [user] = await this.db
       .insert(users)
-      .values({ email: input.email, ...passwordRecord(input.password) })
+      .values({ email: input.email, name: input.name, ...passwordRecord(input.password) })
       .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id });
     if (!user)

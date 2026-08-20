@@ -4,6 +4,7 @@ import type { Step } from '@testron/domain/steps/schema';
 import type { AppCommand, AppSnapshot, VerifyAssertion } from '../../preload/api';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
+  title: 'Untitled test',
   recording: false,
   status: 'idle',
   currentUrl: '',
