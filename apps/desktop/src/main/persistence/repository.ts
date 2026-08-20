@@ -4,12 +4,19 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { redactStepSecrets, stepSchema, type Step } from '@testron/domain/steps/schema';
-import { testSnapshotSchema, type RevisionStep, type TestSnapshot } from '@testron/protocol';
+import {
+  testSnapshotSchema,
+  type RevisionStep,
+  type TestSnapshot,
+  type TestSuiteSummary,
+} from '@testron/protocol';
 import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
 export interface ProjectRecord {
   id: string;
   name: string;
+  url?: string | null;
+  revision?: number;
 }
 
 export interface EnvironmentRecord {
@@ -19,6 +26,7 @@ export interface EnvironmentRecord {
   baseUrl: string;
   testIdAttribute: string;
   authRevision: number;
+  revision?: number;
 }
 
 export interface ProfileRecord {
@@ -45,16 +53,19 @@ export interface TestRecord {
 }
 
 export interface LibrarySnapshot {
+  viewer?: { id: string; email: string; name: string | null };
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];
   profileVariables: Array<Omit<ProfileVariableRecord, 'value'>>;
   tests: TestRecord[];
+  testSuites: TestSuiteSummary[];
   selectedProjectId?: string;
   selectedEnvironmentId?: string;
   selectedProfileId?: string;
   selectedTestId?: string;
   sync?: { pending: number; conflicts: number };
+  runsInFlight?: number;
   server?: {
     configured: boolean;
     authentication: 'signedOut' | 'authenticating' | 'signedIn';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LibrarySnapshot } from '../../src/main/persistence/repository';
-import { projectSurface } from '../../src/renderer/projects/access';
+import { projectSurface, viewerLabel } from '../../src/renderer/projects/access';
 
 const library = (
   server: NonNullable<LibrarySnapshot['server']>,
@@ -11,11 +11,19 @@ const library = (
   environments: [],
   profiles: [],
   profileVariables: [],
+  testSuites: [],
   tests: [],
   server,
 });
 
 describe('project workspace boundary', () => {
+  it('prefers the viewer name and falls back to email', () => {
+    expect(viewerLabel({ id: 'user', email: 'owner@example.test', name: 'Nikita' })).toBe('Nikita');
+    expect(viewerLabel({ id: 'user', email: 'owner@example.test', name: null })).toBe(
+      'owner@example.test',
+    );
+  });
+
   it('keeps explicit local development mode in the product', () => {
     expect(
       projectSurface(

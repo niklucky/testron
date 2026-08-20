@@ -34,7 +34,18 @@ const step = (url = 'https://example.test/') => ({
 });
 
 const fakeServer = () => {
-  const workspace: WorkspaceSnapshot = { projects: [], environments: [], tests: [] };
+  const workspace: WorkspaceSnapshot = {
+    viewer: {
+      id: '00000000-0000-4000-8000-000000000001',
+      email: 'owner@example.test',
+      name: null,
+    },
+    projects: [],
+    environments: [],
+    testSuites: [],
+    tests: [],
+    activeRuns: [],
+  };
   const client: Pick<
     DesktopServerClient,
     'createProject' | 'createEnvironment' | 'createTest' | 'getWorkspace' | 'saveTestRevision'
@@ -45,6 +56,7 @@ const fakeServer = () => {
         id: randomUUID(),
         ownerId: randomUUID(),
         name: request.name,
+        url: null,
         revision: 1,
         createdAt: now,
         updatedAt: now,
@@ -77,6 +89,7 @@ const fakeServer = () => {
         test: {
           id: testId,
           projectId: request.projectId,
+          testSuiteId: request.testSuiteId ?? null,
           currentRevision: { id: revisionId, number: 1 },
           createdAt: now,
           createdBy: randomUUID(),

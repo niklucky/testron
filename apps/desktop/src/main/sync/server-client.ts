@@ -4,10 +4,18 @@ import type {
   CreateEnvironmentRequest,
   CreateProjectRequest,
   CreateTestRequest,
+  CreateTestSuiteRequest,
+  DeleteTestSuiteRequest,
+  FinishTestRunRequest,
   GetTestRequest,
   GetTestRevisionHistoryRequest,
   GetWorkspaceRequest,
+  ListTestSuitesRequest,
   SaveTestRevisionRequest,
+  StartTestRunRequest,
+  UpdateEnvironmentRequest,
+  UpdateProjectRequest,
+  UpdateTestSuiteRequest,
 } from '@testron/protocol';
 import type { AppRouter } from '@testron/server/router';
 
@@ -44,8 +52,32 @@ export class DesktopServerClient {
     return this.api.environment.create.mutate(value);
   }
 
+  updateProject(value: UpdateProjectRequest) {
+    return this.api.project.update.mutate(value);
+  }
+
+  updateEnvironment(value: UpdateEnvironmentRequest) {
+    return this.api.environment.update.mutate(value);
+  }
+
   createTest(value: CreateTestRequest) {
     return this.api.test.create.mutate(value);
+  }
+
+  createTestSuite(value: CreateTestSuiteRequest) {
+    return this.api.testSuite.create.mutate(value);
+  }
+
+  listTestSuites(value: ListTestSuitesRequest) {
+    return this.api.testSuite.list.query(value);
+  }
+
+  updateTestSuite(value: UpdateTestSuiteRequest) {
+    return this.api.testSuite.update.mutate(value);
+  }
+
+  deleteTestSuite(value: DeleteTestSuiteRequest) {
+    return this.api.testSuite.delete.mutate(value);
   }
 
   getWorkspace(value: GetWorkspaceRequest) {
@@ -62,5 +94,13 @@ export class DesktopServerClient {
 
   saveTestRevision(value: SaveTestRevisionRequest) {
     return this.api.test.saveRevision.mutate(value);
+  }
+
+  startTestRun(value: StartTestRunRequest) {
+    return this.api.run.start.mutate(value);
+  }
+
+  finishTestRun(value: FinishTestRunRequest) {
+    return this.api.run.finish.mutate(value);
   }
 }

@@ -47,10 +47,14 @@ export type TestRecord = {
 
 export type SuiteRecord = {
   id: string;
+  projectId?: string;
   name: string;
   owner: string;
   tests: TestRecord[];
   lastRunMinutesAgo: number;
+  revision?: number;
+  testCount?: number;
+  failedCount?: number;
 };
 
 export type DayRecord = {

@@ -59,6 +59,7 @@ const snapshot: AppSnapshot = {
         authRevision: 1,
       },
     ],
+    testSuites: [],
     tests: [
       {
         id: 'test',

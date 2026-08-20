@@ -3,7 +3,7 @@ import type { RefObject } from 'react';
 import { Avatar, Button, Icon, IconButton, NavItem, SectionLabel } from '../design';
 import { SuiteTree } from './SuiteTree';
 import { TriageQueue } from './TriageQueue';
-import type { Failure, Scope, SuiteRecord, TestRecord, Totals, View } from './types';
+import type { Failure, Scope, SuiteRecord, TestRecord, View } from './types';
 
 /**
  * The rail carries two halves of the same job: the project's *structure* on
@@ -15,7 +15,6 @@ export const Sidebar = ({
   view,
   onView,
   suites,
-  totals,
   openFailures,
   queue,
   scope,
@@ -31,12 +30,15 @@ export const Sidebar = ({
   onSelectFailure,
   onOpenTest,
   onReorder,
+  onNewSuite,
+  onEditSuite,
+  onDeleteSuite,
+  onSettings,
   onLog,
 }: {
   view: View;
   onView: (view: View) => void;
   suites: SuiteRecord[];
-  totals: Totals;
   openFailures: number;
   queue: Failure[];
   scope: Scope;
@@ -52,6 +54,10 @@ export const Sidebar = ({
   onSelectFailure: (index: number) => void;
   onOpenTest: (test: TestRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
+  onNewSuite: () => void;
+  onEditSuite: (suite: SuiteRecord) => void;
+  onDeleteSuite: (suite: SuiteRecord) => void;
+  onSettings: () => void;
   onLog: (message: string) => void;
 }) => (
   <aside className="flex min-h-0 flex-col border-r border-line">
@@ -88,13 +94,7 @@ export const Sidebar = ({
       >
         New test
       </Button>
-      <Button
-        variant="ghost"
-        size="lg"
-        block
-        icon="suite"
-        onClick={() => onLog('New test suite · name it, then record the first test')}
-      >
+      <Button variant="ghost" size="lg" block icon="suite" onClick={onNewSuite}>
         New test suite
       </Button>
     </nav>
@@ -103,14 +103,15 @@ export const Sidebar = ({
       <div className="flex h-9 shrink-0 items-center gap-2 px-3">
         <SectionLabel>Test suites</SectionLabel>
         <span className="ui-mono text-xs text-ink-3">
-          {suites.length} · {totals.tests}
+          {suites.length} ·{' '}
+          {suites.reduce((sum, suite) => sum + (suite.testCount ?? suite.tests.length), 0)}
         </span>
         <IconButton
           icon="plus"
           size="sm"
           label="Add a test suite"
           className="ml-auto"
-          onClick={() => onLog('New test suite · name it, then record the first test')}
+          onClick={onNewSuite}
         />
       </div>
       <SuiteTree
@@ -124,6 +125,8 @@ export const Sidebar = ({
         }
         onOpenTest={onOpenTest}
         onReorder={onReorder}
+        onEditSuite={onEditSuite}
+        onDeleteSuite={onDeleteSuite}
         onLog={onLog}
       />
     </section>
@@ -145,13 +148,7 @@ export const Sidebar = ({
     />
 
     <div className="shrink-0 border-t border-line p-2">
-      <Button
-        variant="ghost"
-        size="lg"
-        block
-        icon="settings"
-        onClick={() => onLog('Settings · environments, browsers, retries, integrations')}
-      >
+      <Button variant="ghost" size="lg" block icon="settings" onClick={onSettings}>
         Settings
       </Button>
       <button

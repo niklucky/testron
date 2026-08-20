@@ -16,12 +16,16 @@ export const SuiteTree = ({
   activeTestId,
   onOpenTest,
   onReorder,
+  onEditSuite,
+  onDeleteSuite,
   onLog,
 }: {
   suites: SuiteRecord[];
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
+  onEditSuite: (suite: SuiteRecord) => void;
+  onDeleteSuite: (suite: SuiteRecord) => void;
   onLog: (message: string) => void;
 }) => (
   <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-1.5 pb-2">
@@ -32,6 +36,8 @@ export const SuiteTree = ({
         activeTestId={activeTestId}
         onOpenTest={onOpenTest}
         onReorder={onReorder}
+        onEditSuite={onEditSuite}
+        onDeleteSuite={onDeleteSuite}
         onLog={onLog}
       />
     ))}
@@ -43,22 +49,29 @@ const SuiteBranch = ({
   activeTestId,
   onOpenTest,
   onReorder,
+  onEditSuite,
+  onDeleteSuite,
   onLog,
 }: {
   suite: SuiteRecord;
   activeTestId?: string;
   onOpenTest: (test: TestRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
+  onEditSuite: (suite: SuiteRecord) => void;
+  onDeleteSuite: (suite: SuiteRecord) => void;
   onLog: (message: string) => void;
 }) => {
   const [open, setOpen] = useState(suite.name === 'Checkout');
   const [showAll, setShowAll] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   // A ref, not state: the drop handler must read the index the drag started
   // with, without depending on a re-render having happened in between.
   const dragIndex = useRef<number | null>(null);
   const counts = tally(suite);
+  const testCount = suite.testCount ?? suite.tests.length;
+  const failedCount = suite.failedCount ?? counts.failed;
   const visible = open ? suite.tests.slice(0, showAll ? undefined : 5) : [];
-  const hidden = suite.tests.length - 5;
+  const hidden = Math.max(0, testCount - 5);
 
   return (
     <li>
@@ -81,11 +94,11 @@ const SuiteBranch = ({
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="truncate text-base font-medium">{suite.name}</span>
-              <Badge mono>{suite.tests.length}</Badge>
-              {counts.failed > 0 && (
+              <Badge mono>{testCount}</Badge>
+              {failedCount > 0 && (
                 <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-critical">
                   <Icon name="alert" size={11} />
-                  {counts.failed}
+                  {failedCount}
                 </span>
               )}
             </span>
@@ -104,14 +117,47 @@ const SuiteBranch = ({
           className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
           onClick={() => onLog(`New test in ${suite.name} — the recorder would open here`)}
         />
-        <IconButton
-          icon="dots"
-          size="sm"
-          label={`More actions for ${suite.name}`}
-          title="Rename · duplicate · move · delete"
-          className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-          onClick={() => onLog(`${suite.name} · rename, duplicate, move, delete`)}
-        />
+        <div className="relative">
+          <IconButton
+            icon="dots"
+            size="sm"
+            label={`More actions for ${suite.name}`}
+            className={`focus-visible:opacity-100 group-hover:opacity-100 ${
+              actionsOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-expanded={actionsOpen}
+            onClick={() => setActionsOpen((current) => !current)}
+          />
+          {actionsOpen && (
+            <div
+              role="menu"
+              className="absolute top-7 right-0 z-20 w-32 rounded-md border border-line bg-surface p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full rounded px-2 py-1.5 text-left text-sm text-ink-2 hover:bg-raised hover:text-ink"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onEditSuite(suite);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full rounded px-2 py-1.5 text-left text-sm text-critical hover:bg-critical-wash"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onDeleteSuite(suite);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {open && (

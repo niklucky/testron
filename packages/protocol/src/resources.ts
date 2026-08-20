@@ -13,14 +13,24 @@ import { stepSchemaVersionSchema } from './version';
 
 export const projectNameSchema = z.string().trim().min(1).max(100);
 export const environmentNameSchema = z.string().trim().min(1).max(100);
+export const testSuiteNameSchema = z.string().trim().min(1).max(100);
 export const testTitleSchema = z.string().trim().min(1).max(200);
 export const testIdAttributeSchema = z.string().trim().min(1).max(100);
+export const workspaceViewerSchema = z
+  .object({
+    id: entityIdSchema,
+    email: z.email(),
+    name: z.string().trim().min(1).max(100).nullable(),
+  })
+  .strict();
+export const testRunStatusSchema = z.enum(['running', 'passed', 'failed', 'cancelled', 'timedOut']);
 
 export const projectSchema = z
   .object({
     id: entityIdSchema,
     ownerId: entityIdSchema,
     name: projectNameSchema,
+    url: httpUrlSchema.nullable(),
     revision: revisionNumberSchema,
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -41,6 +51,23 @@ export const environmentSchema = z
     deletion: deletionStateSchema,
   })
   .strict();
+
+export const testSuiteSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    name: testSuiteNameSchema,
+    revision: revisionNumberSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+    deletion: deletionStateSchema,
+  })
+  .strict();
+
+export const testSuiteSummarySchema = testSuiteSchema.extend({
+  testCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+});
 
 export const revisionStepSchema = z
   .object({
@@ -88,6 +115,7 @@ export const testSchema = z
   .object({
     id: entityIdSchema,
     projectId: entityIdSchema,
+    testSuiteId: entityIdSchema.nullable(),
     currentRevision: revisionPointerSchema,
     createdAt: timestampSchema,
     createdBy: entityIdSchema,
@@ -142,20 +170,43 @@ export const testSnapshotSchema = z
       });
   });
 
+export const testRunSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    testId: entityIdSchema,
+    testRevision: revisionPointerSchema,
+    environmentId: entityIdSchema,
+    status: testRunStatusSchema,
+    source: z.literal('desktop-local'),
+    startedAt: timestampSchema,
+    finishedAt: timestampSchema.nullable(),
+    durationMs: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
 /** The bounded project/environment/test read used to hydrate an empty desktop cache. */
 export const workspaceSnapshotSchema = z
   .object({
+    viewer: workspaceViewerSchema,
     projects: z.array(projectSchema),
     environments: z.array(environmentSchema),
+    testSuites: z.array(testSuiteSummarySchema),
     tests: z.array(testSnapshotSchema),
+    activeRuns: z.array(testRunSchema),
   })
   .strict();
 
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
+export type TestSuite = z.infer<typeof testSuiteSchema>;
+export type TestSuiteSummary = z.infer<typeof testSuiteSummarySchema>;
 export type RevisionStep = z.infer<typeof revisionStepSchema>;
 export type TestRevisionContent = z.infer<typeof testRevisionContentSchema>;
 export type Test = z.infer<typeof testSchema>;
 export type TestRevision = z.infer<typeof testRevisionSchema>;
 export type TestSnapshot = z.infer<typeof testSnapshotSchema>;
+export type TestRunStatus = z.infer<typeof testRunStatusSchema>;
+export type TestRun = z.infer<typeof testRunSchema>;
+export type WorkspaceViewer = z.infer<typeof workspaceViewerSchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;

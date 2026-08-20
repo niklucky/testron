@@ -7,10 +7,18 @@ import {
   createEnvironmentProcedure,
   createProjectProcedure,
   createTestProcedure,
+  createTestSuiteProcedure,
+  deleteTestSuiteProcedure,
   getTestProcedure,
   getTestRevisionHistoryProcedure,
   getWorkspaceProcedure,
+  listTestSuitesProcedure,
+  finishTestRunProcedure,
   saveTestRevisionProcedure,
+  startTestRunProcedure,
+  updateEnvironmentProcedure,
+  updateProjectProcedure,
+  updateTestSuiteProcedure,
 } from '@testron/protocol';
 import {
   AuthenticationError,
@@ -86,12 +94,40 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(createProjectProcedure.input)
         .output(createProjectProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.createProject(ctx.user, input))),
+      update: authenticatedProcedure
+        .input(updateProjectProcedure.input)
+        .output(updateProjectProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.updateProject(ctx.user, input))),
     }),
     environment: t.router({
       create: authenticatedProcedure
         .input(createEnvironmentProcedure.input)
         .output(createEnvironmentProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.createEnvironment(ctx.user, input))),
+      update: authenticatedProcedure
+        .input(updateEnvironmentProcedure.input)
+        .output(updateEnvironmentProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.updateEnvironment(ctx.user, input))),
+    }),
+    testSuite: t.router({
+      create: authenticatedProcedure
+        .input(createTestSuiteProcedure.input)
+        .output(createTestSuiteProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.createTestSuite(ctx.user, input))),
+      list: authenticatedProcedure
+        .input(listTestSuitesProcedure.input)
+        .output(listTestSuitesProcedure.output)
+        .query(({ ctx, input }) =>
+          call(() => repository.listTestSuites(ctx.user, input.projectId)),
+        ),
+      update: authenticatedProcedure
+        .input(updateTestSuiteProcedure.input)
+        .output(updateTestSuiteProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.updateTestSuite(ctx.user, input))),
+      delete: authenticatedProcedure
+        .input(deleteTestSuiteProcedure.input)
+        .output(deleteTestSuiteProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.deleteTestSuite(ctx.user, input))),
     }),
     workspace: t.router({
       get: authenticatedProcedure
@@ -116,6 +152,16 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(saveTestRevisionProcedure.input)
         .output(saveTestRevisionProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.saveTestRevision(ctx.user, input))),
+    }),
+    run: t.router({
+      start: authenticatedProcedure
+        .input(startTestRunProcedure.input)
+        .output(startTestRunProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.startTestRun(ctx.user, input))),
+      finish: authenticatedProcedure
+        .input(finishTestRunProcedure.input)
+        .output(finishTestRunProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.finishTestRun(ctx.user, input))),
     }),
   });
 

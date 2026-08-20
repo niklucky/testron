@@ -6,6 +6,7 @@ import {
   mutationMetadataSchema,
   requestMetadataSchema,
   responseMetadataSchema,
+  revisionNumberSchema,
   revisionPointerSchema,
 } from './common';
 import { errorResponseSchema, revisionConflictResponseSchema } from './errors';
@@ -15,9 +16,14 @@ import {
   projectSchema,
   projectNameSchema,
   testIdAttributeSchema,
+  testRunSchema,
+  testRunStatusSchema,
   testRevisionContentSchema,
   testRevisionSchema,
   testSnapshotSchema,
+  testSuiteNameSchema,
+  testSuiteSchema,
+  testSuiteSummarySchema,
   workspaceSnapshotSchema,
 } from './resources';
 
@@ -46,10 +52,60 @@ export const createEnvironmentSuccessSchema = z
   .object({ meta: responseMetadataSchema, ok: z.literal(true), environment: environmentSchema })
   .strict();
 
+export const updateProjectRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+    name: projectNameSchema,
+    url: httpUrlSchema.nullable(),
+  })
+  .strict();
+
+export const updateEnvironmentRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    environmentId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+    name: environmentNameSchema,
+    baseUrl: httpUrlSchema,
+  })
+  .strict();
+
+export const createTestSuiteRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    name: testSuiteNameSchema,
+  })
+  .strict();
+
+export const listTestSuitesRequestSchema = z
+  .object({ meta: requestMetadataSchema, projectId: entityIdSchema })
+  .strict();
+
+export const updateTestSuiteRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    testSuiteId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+    name: testSuiteNameSchema,
+  })
+  .strict();
+
+export const deleteTestSuiteRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    testSuiteId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+  })
+  .strict();
+
 export const createTestRequestSchema = z
   .object({
     meta: mutationMetadataSchema,
     projectId: entityIdSchema,
+    testSuiteId: entityIdSchema.nullable().optional(),
     content: testRevisionContentSchema,
   })
   .strict();
@@ -86,8 +142,42 @@ export const saveTestRevisionRequestSchema = z
   })
   .strict();
 
+export const startTestRunRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    testId: entityIdSchema,
+    environmentId: entityIdSchema,
+    source: z.literal('desktop-local'),
+  })
+  .strict();
+
+export const finishTestRunRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    runId: entityIdSchema,
+    status: testRunStatusSchema.exclude(['running']),
+    durationMs: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const testSnapshotSuccessSchema = z
   .object({ meta: responseMetadataSchema, ok: z.literal(true), snapshot: testSnapshotSchema })
+  .strict();
+
+export const testSuiteSuccessSchema = z
+  .object({ meta: responseMetadataSchema, ok: z.literal(true), testSuite: testSuiteSchema })
+  .strict();
+
+export const listTestSuitesSuccessSchema = z
+  .object({
+    meta: responseMetadataSchema,
+    ok: z.literal(true),
+    testSuites: z.array(testSuiteSummarySchema),
+  })
+  .strict();
+
+export const testRunSuccessSchema = z
+  .object({ meta: responseMetadataSchema, ok: z.literal(true), run: testRunSchema })
   .strict();
 
 export const testRevisionHistorySuccessSchema = z
@@ -105,6 +195,13 @@ export const createEnvironmentResultSchema = z.union([
   createEnvironmentSuccessSchema,
   errorResponseSchema,
 ]);
+export const createTestSuiteResultSchema = z.union([testSuiteSuccessSchema, errorResponseSchema]);
+export const listTestSuitesResultSchema = z.union([
+  listTestSuitesSuccessSchema,
+  errorResponseSchema,
+]);
+export const updateTestSuiteResultSchema = z.union([testSuiteSuccessSchema, errorResponseSchema]);
+export const deleteTestSuiteResultSchema = z.union([testSuiteSuccessSchema, errorResponseSchema]);
 export const createTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const getTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const getWorkspaceResultSchema = z.union([getWorkspaceSuccessSchema, errorResponseSchema]);
@@ -117,12 +214,22 @@ export const getTestRevisionHistoryResultSchema = z.union([
   testRevisionHistorySuccessSchema,
   errorResponseSchema,
 ]);
+export const startTestRunResultSchema = z.union([testRunSuccessSchema, errorResponseSchema]);
+export const finishTestRunResultSchema = z.union([testRunSuccessSchema, errorResponseSchema]);
 
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export type CreateEnvironmentRequest = z.infer<typeof createEnvironmentRequestSchema>;
+export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
+export type UpdateEnvironmentRequest = z.infer<typeof updateEnvironmentRequestSchema>;
+export type CreateTestSuiteRequest = z.infer<typeof createTestSuiteRequestSchema>;
+export type ListTestSuitesRequest = z.infer<typeof listTestSuitesRequestSchema>;
+export type UpdateTestSuiteRequest = z.infer<typeof updateTestSuiteRequestSchema>;
+export type DeleteTestSuiteRequest = z.infer<typeof deleteTestSuiteRequestSchema>;
 export type CreateTestRequest = z.infer<typeof createTestRequestSchema>;
 export type GetTestRequest = z.infer<typeof getTestRequestSchema>;
 export type GetWorkspaceRequest = z.infer<typeof getWorkspaceRequestSchema>;
 export type GetTestRevisionHistoryRequest = z.infer<typeof getTestRevisionHistoryRequestSchema>;
 export type SaveTestRevisionRequest = z.infer<typeof saveTestRevisionRequestSchema>;
+export type StartTestRunRequest = z.infer<typeof startTestRunRequestSchema>;
+export type FinishTestRunRequest = z.infer<typeof finishTestRunRequestSchema>;
 export type TestSnapshotSuccess = z.infer<typeof testSnapshotSuccessSchema>;

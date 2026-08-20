@@ -15,6 +15,34 @@
       "when": 1787103619707,
       "tag": "0001_huge_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787183694537,
+      "tag": "0002_cynical_iron_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787185346988,
+      "tag": "0003_tough_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787185946973,
+      "tag": "0004_brave_liz_osborn",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787187080010,
+      "tag": "0005_robust_proemial_gods",
+      "breakpoints": true
     }
   ]
 }

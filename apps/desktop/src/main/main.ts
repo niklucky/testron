@@ -16,7 +16,21 @@ import { z } from 'zod';
 
 import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
 import type { Step } from '@testron/domain/steps/schema';
-import { createProjectRequestSchema, type WorkspaceSnapshot } from '@testron/protocol';
+import {
+  createEnvironmentRequestSchema,
+  createProjectRequestSchema,
+  createTestSuiteRequestSchema,
+  deleteTestSuiteRequestSchema,
+  finishTestRunRequestSchema,
+  getWorkspaceRequestSchema,
+  startTestRunRequestSchema,
+  updateEnvironmentRequestSchema,
+  updateProjectRequestSchema,
+  updateTestSuiteRequestSchema,
+  type MutationMetadata,
+  type TestRun,
+  type WorkspaceSnapshot,
+} from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
 import { recordPanelEventSchema, type PanelId, type RecordLayout } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
@@ -81,6 +95,21 @@ const safeUrl = (value: string): string => {
     throw new Error('Only HTTP(S) URLs are supported.');
   return url.toString();
 };
+
+const mutationMeta = (idempotencyKey: string): MutationMetadata => ({
+  protocolVersion: 1,
+  requestId: randomUUID(),
+  idempotencyKey,
+  client: { kind: 'desktop', version: app.getVersion() },
+  supportedStepVersions: [1],
+});
+
+const requestMeta = (): Omit<MutationMetadata, 'idempotencyKey'> => ({
+  protocolVersion: 1,
+  requestId: randomUUID(),
+  client: { kind: 'desktop', version: app.getVersion() },
+  supportedStepVersions: [1],
+});
 
 const createWindow = async (): Promise<void> => {
   const store = repository;
@@ -196,17 +225,16 @@ const createWindow = async (): Promise<void> => {
 
   const remoteTest = (id: string | undefined) =>
     remoteWorkspace?.tests.find((snapshot) => snapshot.test.id === id);
-  const allProjects = () => [
-    ...store.listProjects(),
-    ...(remoteWorkspace?.projects ?? [])
-      .filter(
-        (remote) =>
-          !store
-            .listProjects()
-            .some((local) => store.getServerId('project', local.id) === remote.id),
-      )
-      .map(({ id, name }) => ({ id, name })),
-  ];
+  const allProjects = () => {
+    if (serverState.configured)
+      return (remoteWorkspace?.projects ?? []).map(({ id, name, url, revision }) => ({
+        id,
+        name,
+        url,
+        revision,
+      }));
+    return store.listProjects();
+  };
   const allEnvironments = () => [
     ...store.listEnvironments(),
     ...(remoteWorkspace?.environments ?? [])
@@ -236,6 +264,7 @@ const createWindow = async (): Promise<void> => {
         updatedAt: snapshot.currentRevision.createdAt,
       })),
   ];
+  const allTestSuites = () => remoteWorkspace?.testSuites ?? [];
   const stepsFor = (testId: string): Step[] =>
     store.getTest(testId)
       ? store.loadSteps(testId)
@@ -321,6 +350,7 @@ const createWindow = async (): Promise<void> => {
   };
 
   const librarySnapshot = () => ({
+    ...(remoteWorkspace?.viewer ? { viewer: remoteWorkspace.viewer } : {}),
     projects: allProjects(),
     environments: allEnvironments(),
     profiles: store.listProfiles(),
@@ -328,11 +358,14 @@ const createWindow = async (): Promise<void> => {
       .listProfileVariables()
       .map(({ profileId, name, sensitive }) => ({ profileId, name, sensitive })),
     tests: allTests(),
+    testSuites: allTestSuites(),
     ...(selectedProjectId ? { selectedProjectId } : {}),
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
     ...(selectedProfileId ? { selectedProfileId } : {}),
     ...(selectedTestId ? { selectedTestId } : {}),
     sync: store.getSyncSummary(),
+    runsInFlight:
+      remoteWorkspace?.activeRuns.filter((run) => run.projectId === selectedProjectId).length ?? 0,
     server: serverState,
   });
   const runner = new LocalReplayRunner();
@@ -595,6 +628,22 @@ const createWindow = async (): Promise<void> => {
       case 'request-snapshot':
         sendSnapshot(session.snapshot());
         break;
+      case 'refresh-workspace':
+        if (serverClient && serverState.authentication === 'signedIn')
+          void serverClient
+            .getWorkspace(getWorkspaceRequestSchema.parse({ meta: requestMeta() }))
+            .then((workspace) => {
+              remoteWorkspace = workspace;
+              reconcileLibrarySelection();
+              sendSnapshot(session.snapshot());
+            })
+            .catch((error: unknown) => {
+              session.warn(
+                error instanceof Error ? error.message : 'The workspace could not be refreshed.',
+              );
+              sendSnapshot(session.snapshot());
+            });
+        break;
       case 'navigate':
         try {
           void websiteView?.webContents.loadURL(safeUrl(command.url));
@@ -644,12 +693,15 @@ const createWindow = async (): Promise<void> => {
               )
                 return;
               remoteWorkspace = {
+                viewer: remoteWorkspace!.viewer,
                 projects: [
                   ...(remoteWorkspace?.projects.filter((entry) => entry.id !== project.id) ?? []),
                   project,
                 ],
                 environments: remoteWorkspace?.environments ?? [],
+                testSuites: remoteWorkspace?.testSuites ?? [],
                 tests: remoteWorkspace?.tests ?? [],
+                activeRuns: remoteWorkspace?.activeRuns ?? [],
               };
               selectedProjectId = project.id;
               selectedEnvironmentId = undefined;
@@ -691,7 +743,187 @@ const createWindow = async (): Promise<void> => {
         session.load('recorded test', []);
         break;
       }
+      case 'update-project': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .updateProject(
+            updateProjectRequestSchema.parse({
+              meta: mutationMeta(`project-update-${command.projectId}-${command.baseRevision}`),
+              projectId: command.projectId,
+              baseRevision: command.baseRevision,
+              name: command.name,
+              url: command.url,
+            }),
+          )
+          .then((project) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              projects: remoteWorkspace.projects.map((entry) =>
+                entry.id === project.id ? project : entry,
+              ),
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Project settings failed.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'create-test-suite': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        const authenticationAttempt = loginAttempt;
+        void serverClient
+          .createTestSuite(
+            createTestSuiteRequestSchema.parse({
+              meta: mutationMeta(`test-suite-create-${randomUUID()}`),
+              projectId: command.projectId,
+              name: command.name,
+            }),
+          )
+          .then((testSuite) => {
+            if (
+              authenticationAttempt !== loginAttempt ||
+              serverState.authentication !== 'signedIn' ||
+              !remoteWorkspace
+            )
+              return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              testSuites: [
+                ...remoteWorkspace.testSuites.filter((entry) => entry.id !== testSuite.id),
+                { ...testSuite, testCount: 0, failedCount: 0 },
+              ],
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Test suite creation failed.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'update-test-suite': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .updateTestSuite(
+            updateTestSuiteRequestSchema.parse({
+              meta: mutationMeta(
+                `test-suite-update-${command.testSuiteId}-${command.baseRevision}`,
+              ),
+              testSuiteId: command.testSuiteId,
+              baseRevision: command.baseRevision,
+              name: command.name,
+            }),
+          )
+          .then((testSuite) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              testSuites: remoteWorkspace.testSuites.map((entry) =>
+                entry.id === testSuite.id ? { ...entry, ...testSuite } : entry,
+              ),
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Test suite update failed.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'delete-test-suite': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .deleteTestSuite(
+            deleteTestSuiteRequestSchema.parse({
+              meta: mutationMeta(
+                `test-suite-delete-${command.testSuiteId}-${command.baseRevision}`,
+              ),
+              testSuiteId: command.testSuiteId,
+              baseRevision: command.baseRevision,
+            }),
+          )
+          .then((testSuite) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              testSuites: remoteWorkspace.testSuites.filter((entry) => entry.id !== testSuite.id),
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Test suite deletion failed.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
       case 'create-environment': {
+        if (serverClient && serverState.authentication === 'signedIn') {
+          serverState = {
+            configured: true,
+            authentication: 'signedIn',
+            workspace: serverState.workspace,
+            status: 'syncing',
+            message: 'Creating environment…',
+          };
+          sendSnapshot(session.snapshot());
+          const authenticationAttempt = loginAttempt;
+          void serverClient
+            .createEnvironment(
+              createEnvironmentRequestSchema.parse({
+                meta: mutationMeta(`environment-create-${randomUUID()}`),
+                projectId: command.projectId,
+                name: command.name,
+                baseUrl: command.baseUrl,
+                testIdAttribute: command.testIdAttribute,
+              }),
+            )
+            .then((environment) => {
+              if (
+                authenticationAttempt !== loginAttempt ||
+                serverState.authentication !== 'signedIn' ||
+                !remoteWorkspace
+              )
+                return;
+              remoteWorkspace = {
+                ...remoteWorkspace,
+                environments: [
+                  ...remoteWorkspace.environments.filter((entry) => entry.id !== environment.id),
+                  environment,
+                ],
+              };
+              selectedProjectId = environment.projectId;
+              selectedEnvironmentId = environment.id;
+              selectedProfileId = undefined;
+              serverState = {
+                configured: true,
+                authentication: 'signedIn',
+                workspace: 'loaded',
+                status: 'synced',
+              };
+              applyContext();
+              sendSnapshot(session.snapshot());
+            })
+            .catch((error: unknown) => {
+              if (
+                authenticationAttempt !== loginAttempt ||
+                serverState.authentication !== 'signedIn'
+              )
+                return;
+              session.warn(error instanceof Error ? error.message : 'Environment creation failed.');
+              serverState = {
+                configured: true,
+                authentication: 'signedIn',
+                workspace: serverState.workspace,
+                status: 'error',
+                message: error instanceof Error ? error.message : String(error),
+              };
+              sendSnapshot(session.snapshot());
+            });
+          break;
+        }
         const baseUrl = safeUrl(command.baseUrl);
         if (!ensureLocalProject(command.projectId)) break;
         const environment = store.createEnvironment(
@@ -704,6 +936,37 @@ const createWindow = async (): Promise<void> => {
         selectedEnvironmentId = environment.id;
         selectedProfileId = undefined;
         applyContext();
+        void synchronize();
+        break;
+      }
+      case 'update-environment': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .updateEnvironment(
+            updateEnvironmentRequestSchema.parse({
+              meta: mutationMeta(
+                `environment-update-${command.environmentId}-${command.baseRevision}`,
+              ),
+              environmentId: command.environmentId,
+              baseRevision: command.baseRevision,
+              name: command.name,
+              baseUrl: command.baseUrl,
+            }),
+          )
+          .then((environment) => {
+            if (!remoteWorkspace) return;
+            remoteWorkspace = {
+              ...remoteWorkspace,
+              environments: remoteWorkspace.environments.map((entry) =>
+                entry.id === environment.id ? environment : entry,
+              ),
+            };
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Environment settings failed.');
+            sendSnapshot(session.snapshot());
+          });
         break;
       }
       case 'create-profile': {
@@ -867,26 +1130,92 @@ const createWindow = async (): Promise<void> => {
             .filter((variable) => variable.profileId === selectedProfileId)
             .map((variable) => [variable.name, variable.value]),
         );
-        void runner
-          .run({
-            steps,
-            environmentVariables: { ...profileVariables, ...command.environmentVariables },
-            timeoutMs: command.timeoutMs,
-            artifactsDirectory,
-            ...(command.reuseAuthState && existsSync(authStatePath) ? { authStatePath } : {}),
-            ...(command.reuseAuthState ? { saveAuthStatePath: authStatePath } : {}),
-            onProgress: (progress) => {
-              replaySnapshot = progress;
-              rememberReplay(runTestId, progress);
+        void (async () => {
+          let serverRun: TestRun | undefined;
+          if (serverClient && serverState.authentication === 'signedIn') {
+            try {
+              const serverTestId = store.getServerId('test', runTestId) ?? runTestId;
+              const serverEnvironmentId =
+                store.getServerId('environment', environment.id) ?? environment.id;
+              serverRun = await serverClient.startTestRun(
+                startTestRunRequestSchema.parse({
+                  meta: mutationMeta(`run-start-${randomUUID()}`),
+                  testId: serverTestId,
+                  environmentId: serverEnvironmentId,
+                  source: 'desktop-local',
+                }),
+              );
+              if (remoteWorkspace) {
+                remoteWorkspace = {
+                  ...remoteWorkspace,
+                  activeRuns: [
+                    ...remoteWorkspace.activeRuns.filter((run) => run.id !== serverRun?.id),
+                    serverRun,
+                  ],
+                };
+              }
               sendSnapshot(session.snapshot());
-            },
-          })
-          .then((result) => {
+            } catch (error) {
+              session.warn(
+                error instanceof Error
+                  ? `The server could not start this run: ${error.message}`
+                  : 'The server could not start this run.',
+              );
+              sendSnapshot(session.snapshot());
+              return;
+            }
+          }
+
+          const finishServerRun = async (result: ReplaySnapshot): Promise<void> => {
+            if (
+              !serverRun ||
+              !serverClient ||
+              result.status === 'idle' ||
+              result.status === 'running'
+            )
+              return;
+            try {
+              await serverClient.finishTestRun(
+                finishTestRunRequestSchema.parse({
+                  meta: mutationMeta(`run-finish-${serverRun.id}`),
+                  runId: serverRun.id,
+                  status: result.status,
+                  durationMs: result.durationMs ?? 0,
+                }),
+              );
+              if (remoteWorkspace)
+                remoteWorkspace = {
+                  ...remoteWorkspace,
+                  activeRuns: remoteWorkspace.activeRuns.filter((run) => run.id !== serverRun?.id),
+                };
+            } catch (error) {
+              session.warn(
+                error instanceof Error
+                  ? `The server could not finish this run: ${error.message}`
+                  : 'The server could not finish this run.',
+              );
+            }
+          };
+
+          try {
+            const result = await runner.run({
+              steps,
+              environmentVariables: { ...profileVariables, ...command.environmentVariables },
+              timeoutMs: command.timeoutMs,
+              artifactsDirectory,
+              ...(command.reuseAuthState && existsSync(authStatePath) ? { authStatePath } : {}),
+              ...(command.reuseAuthState ? { saveAuthStatePath: authStatePath } : {}),
+              onProgress: (progress) => {
+                replaySnapshot = progress;
+                rememberReplay(runTestId, progress);
+                sendSnapshot(session.snapshot());
+              },
+            });
             replaySnapshot = result;
             rememberReplay(runTestId, result);
+            await finishServerRun(result);
             sendSnapshot(session.snapshot());
-          })
-          .catch((error: unknown) => {
+          } catch (error) {
             replaySnapshot = {
               status: 'failed',
               steps: replaySnapshot.steps,
@@ -895,8 +1224,10 @@ const createWindow = async (): Promise<void> => {
               error: error instanceof Error ? error.message : String(error),
             } as ReplaySnapshot;
             rememberReplay(runTestId, replaySnapshot);
+            await finishServerRun(replaySnapshot);
             sendSnapshot(session.snapshot());
-          });
+          }
+        })();
         break;
       }
       case 'cancel-run':
@@ -954,22 +1285,30 @@ const createWindow = async (): Promise<void> => {
             if (attempt !== loginAttempt) return;
             await tokenStore!.save(result.accessToken);
             if (attempt !== loginAttempt) return;
+            const workspace = await serverClient!.getWorkspace(
+              getWorkspaceRequestSchema.parse({ meta: requestMeta() }),
+            );
+            if (attempt !== loginAttempt) return;
+            remoteWorkspace = workspace;
+            reconcileLibrarySelection();
             serverState = {
               configured: true,
               authentication: 'signedIn',
-              workspace: 'loading',
+              workspace: 'loaded',
               status: 'idle',
             };
-            await synchronize(true);
+            sendSnapshot(session.snapshot());
           })
-          .catch((error: unknown) => {
+          .catch(async (error: unknown) => {
             if (attempt !== loginAttempt) return;
-            const applicationError = typeof error === 'object' && error !== null && 'data' in error;
+            remoteWorkspace = undefined;
+            await tokenStore!.clear();
+            if (attempt !== loginAttempt) return;
             serverState = {
               configured: true,
               authentication: 'signedOut',
               workspace: 'loading',
-              status: applicationError ? 'error' : 'offline',
+              status: 'error',
               message: error instanceof Error ? error.message : String(error),
             };
             sendSnapshot(session.snapshot());
@@ -993,7 +1332,6 @@ const createWindow = async (): Promise<void> => {
     }
     if (
       [
-        'create-environment',
         'create-test',
         'rename-test',
         'save-recording',
@@ -1091,20 +1429,27 @@ app.whenReady().then(async () => {
       status: 'idle',
     };
     if (token) {
-      const hydrated = await syncCoordinator.hydrate();
-      if (hydrated.workspace) remoteWorkspace = hydrated.workspace;
-      const flushed = hydrated.status === 'synced' ? await syncCoordinator.flush() : hydrated;
-      const refreshed = flushed.status === 'synced' ? await syncCoordinator.hydrate() : flushed;
-      if (refreshed.workspace) remoteWorkspace = refreshed.workspace;
-      const result = refreshed;
-      serverState = {
-        ...serverState,
-        ...(result.authenticationRequired ? { authentication: 'signedOut' as const } : {}),
-        workspace: result.workspace ? 'loaded' : 'unavailable',
-        status: result.status,
-        ...(result.message ? { message: result.message } : {}),
-      };
-      if (result.authenticationRequired) await tokenStore.clear();
+      try {
+        remoteWorkspace = await serverClient.getWorkspace(
+          getWorkspaceRequestSchema.parse({ meta: requestMeta() }),
+        );
+        serverState = {
+          configured: true,
+          authentication: 'signedIn',
+          workspace: 'loaded',
+          status: 'idle',
+        };
+      } catch (error) {
+        remoteWorkspace = undefined;
+        await tokenStore.clear();
+        serverState = {
+          configured: true,
+          authentication: 'signedOut',
+          workspace: 'loading',
+          status: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
     }
   }
   await createWindow();

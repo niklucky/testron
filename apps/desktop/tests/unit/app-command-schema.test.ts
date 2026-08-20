@@ -56,4 +56,50 @@ describe('desktop application command schema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('validates server-backed project settings commands', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'update-project',
+        projectId: id,
+        baseRevision: 1,
+        name: '  Checkout  ',
+        url: 'https://checkout.example.test/',
+      }),
+    ).toMatchObject({ name: 'Checkout', baseRevision: 1 });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'update-environment',
+        environmentId: id,
+        baseRevision: 1,
+        name: 'Staging',
+        baseUrl: 'ftp://example.test/',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates server-backed test suite mutations', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'create-test-suite',
+        projectId: id,
+        name: '  Checkout  ',
+      }),
+    ).toEqual({ type: 'create-test-suite', projectId: id, name: 'Checkout' });
+    expect(
+      appCommandSchema.parse({
+        type: 'update-test-suite',
+        testSuiteId: id,
+        baseRevision: 2,
+        name: 'Checkout critical path',
+      }),
+    ).toMatchObject({ baseRevision: 2, name: 'Checkout critical path' });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'delete-test-suite',
+        testSuiteId: id,
+        baseRevision: 0,
+      }).success,
+    ).toBe(false);
+  });
 });

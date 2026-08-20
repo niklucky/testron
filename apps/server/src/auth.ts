@@ -22,6 +22,7 @@ const passwordRecord = (password: string) => {
 export interface AuthenticatedUser {
   id: string;
   email: string;
+  name: string | null;
 }
 
 export class AuthenticationError extends Error {
@@ -42,7 +43,7 @@ export class AuthenticationService {
       password: passwordValue,
     });
     const [existing] = await this.db
-      .select({ id: users.id, email: users.email })
+      .select({ id: users.id, email: users.email, name: users.name })
       .from(users)
       .where(eq(users.email, email))
       .limit(1);
@@ -51,10 +52,10 @@ export class AuthenticationService {
       .insert(users)
       .values({ email, ...passwordRecord(password) })
       .onConflictDoNothing({ target: users.email })
-      .returning({ id: users.id, email: users.email });
+      .returning({ id: users.id, email: users.email, name: users.name });
     if (created) return created;
     const [concurrent] = await this.db
-      .select({ id: users.id, email: users.email })
+      .select({ id: users.id, email: users.email, name: users.name })
       .from(users)
       .where(eq(users.email, email))
       .limit(1);
@@ -88,7 +89,7 @@ export class AuthenticationService {
   async authenticate(authorization: string | undefined): Promise<AuthenticatedUser | undefined> {
     if (!authorization?.startsWith('Bearer ')) return undefined;
     const [user] = await this.db
-      .select({ id: users.id, email: users.email })
+      .select({ id: users.id, email: users.email, name: users.name })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
       .where(

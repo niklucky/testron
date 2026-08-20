@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AppSnapshot } from '../../preload/api';
-import { Avatar, Badge, Button, IconButton, PulseDot, useTheme } from '../design';
+import { Button, PulseDot } from '../design';
 import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
 import { age } from './format';
@@ -10,8 +10,10 @@ import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
+import { TestSuiteForm } from './TestSuiteForm';
 import { evidenceTabs, Triage } from './Triage';
 import { ProjectSwitcher } from '../projects/ProjectSwitcher';
+import { ProjectSettings } from '../projects/ProjectSettings';
 import type {
   EvidenceTab,
   Failure,
@@ -35,16 +37,15 @@ import type {
  * draws comes from ../design.
  */
 export const Dashboard = () => {
-  const { theme, toggle } = useTheme();
   const [view, setView] = useState<View>('overview');
-  const [suites, setSuites] = useState<SuiteRecord[]>(buildSuites);
+  const [mockSuites, setMockSuites] = useState<SuiteRecord[]>(buildSuites);
   const [scope, setScope] = useState<Scope>('all');
   const [query, setQuery] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [tab, setTab] = useState<EvidenceTab>('steps');
-  const [compact, setCompact] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
+  const compact = false;
+  const focusMode = false;
   const [quarantined, setQuarantined] = useState<string[]>([]);
   const [manualResults, setManualResults] = useState<Record<string, ManualVerdict>>({});
   const [manualCursor, setManualCursor] = useState(0);
@@ -53,14 +54,65 @@ export const Dashboard = () => {
   const [runsState, setRunsState] = useState<RunsState>(initialRunsState);
   const [log, setLog] = useState('Ready · 9 open failures across 6 suites');
   const [library, setLibrary] = useState<AppSnapshot['library']>();
+  const [suiteForm, setSuiteForm] = useState<SuiteRecord | null>();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
     const unsubscribe = window.testron?.onSnapshot((snapshot) => setLibrary(snapshot.library));
     window.testron?.command({ type: 'request-snapshot' });
-    return unsubscribe;
+    const refresh = window.setInterval(
+      () => window.testron?.command({ type: 'refresh-workspace' }),
+      5_000,
+    );
+    return () => {
+      window.clearInterval(refresh);
+      unsubscribe?.();
+    };
   }, []);
+
+  const suites = useMemo(() => {
+    if (!library?.server?.configured) return mockSuites;
+    const owner = library.viewer?.name ?? library.viewer?.email ?? 'Workspace owner';
+    const templates = buildSuites();
+    return library.testSuites
+      .filter((testSuite) => testSuite.projectId === library.selectedProjectId)
+      .map((testSuite, suiteIndex): SuiteRecord => {
+        const template =
+          templates.find((candidate) => candidate.name === testSuite.name) ??
+          templates[suiteIndex % templates.length]!;
+        const tests = Array.from({ length: testSuite.testCount }, (_, testIndex) => {
+          const sample = template.tests[testIndex % template.tests.length];
+          return {
+            id: `${testSuite.id}-mock-${testIndex}`,
+            name: sample?.name ?? `Mocked test ${testIndex + 1}`,
+            status:
+              testIndex < testSuite.failedCount
+                ? ('failed' as const)
+                : sample?.status === 'skipped'
+                  ? ('skipped' as const)
+                  : ('passed' as const),
+            minutesAgo: sample?.minutesAgo ?? 1,
+            seconds: sample?.seconds ?? 0,
+            ...(testIndex < testSuite.failedCount && sample?.failureId
+              ? { failureId: sample.failureId }
+              : {}),
+          };
+        });
+        return {
+          id: testSuite.id,
+          projectId: testSuite.projectId,
+          name: testSuite.name,
+          owner,
+          tests,
+          lastRunMinutesAgo: template.lastRunMinutesAgo,
+          revision: testSuite.revision,
+          testCount: testSuite.testCount,
+          failedCount: testSuite.failedCount,
+        };
+      });
+  }, [library, mockSuites]);
 
   const queue = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -172,7 +224,7 @@ export const Dashboard = () => {
   };
 
   const reorder = (suiteId: string, from: number, to: number) =>
-    setSuites((current) =>
+    setMockSuites((current) =>
       current.map((suite) => {
         if (suite.id !== suiteId) return suite;
         const tests = [...suite.tests];
@@ -197,11 +249,6 @@ export const Dashboard = () => {
 
   return (
     <main className="ui-root flex h-screen w-screen flex-col overflow-hidden bg-plane font-sans text-ink antialiased">
-      {/* Run progress for the whole window — the one thing worth a full-width rule. */}
-      <div className="h-[2px] w-full bg-line-soft">
-        <div className="h-full w-[62%] bg-accent opacity-70" />
-      </div>
-
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-3 [-webkit-app-region:drag]">
         {/* Room for the macOS traffic lights. */}
         <div className="w-[74px] shrink-0" />
@@ -212,65 +259,16 @@ export const Dashboard = () => {
 
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
           <PulseDot label="Runs in flight" />
-          <span className="text-base text-ink-2">3 runs in flight</span>
-          <span className="ui-mono text-sm text-ink-3">· 22/35 tests</span>
+          <span className="text-base text-ink-2">
+            {library?.runsInFlight ?? 0} {(library?.runsInFlight ?? 0) === 1 ? 'run' : 'runs'} in
+            flight
+          </span>
         </div>
 
         <div className="ml-auto flex items-center gap-1.5 [-webkit-app-region:no-drag]">
-          {library?.server?.configured && library.server.authentication === 'signedIn' && (
-            <>
-              <Badge
-                tone={
-                  library.server.status === 'conflicted'
-                    ? 'critical'
-                    : library.server.status === 'offline' || library.server.status === 'error'
-                      ? 'warning'
-                      : library.server.status === 'synced'
-                        ? 'good'
-                        : 'neutral'
-                }
-                icon={library.server.status === 'conflicted' ? 'alert' : 'check'}
-              >
-                {library.server.status === 'conflicted' ? 'Sync conflict' : library.server.status}
-              </Badge>
-              <Button icon="rerun" onClick={() => window.testron?.command({ type: 'sync-now' })}>
-                Sync
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  window.testron?.command({ type: 'logout-server' });
-                  window.location.hash = '#/';
-                }}
-              >
-                Sign out
-              </Button>
-            </>
-          )}
           <Button icon="search" kbd="⌘K" onClick={() => setLog('Jump to… · not wired up yet')}>
             Jump to…
           </Button>
-          <IconButton
-            icon={theme === 'dark' ? 'sun' : 'moon'}
-            label={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-            onClick={toggle}
-          />
-          <IconButton
-            icon="density"
-            label="Row density"
-            active={compact}
-            aria-pressed={compact}
-            onClick={() => setCompact((current) => !current)}
-          />
-          <IconButton
-            icon="focus"
-            label="Focus mode — hide the context rail"
-            active={focusMode}
-            aria-pressed={focusMode}
-            onClick={() => setFocusMode((current) => !current)}
-          />
-          <Avatar initials="NS" className="ml-1" />
         </div>
       </header>
 
@@ -285,7 +283,6 @@ export const Dashboard = () => {
           view={view}
           onView={setView}
           suites={suites}
-          totals={totals}
           openFailures={failures.length}
           queue={queue}
           scope={scope}
@@ -310,6 +307,18 @@ export const Dashboard = () => {
           }}
           onOpenTest={openTest}
           onReorder={reorder}
+          onNewSuite={() => setSuiteForm(null)}
+          onEditSuite={(suite) => setSuiteForm(suite)}
+          onDeleteSuite={(suite) => {
+            if (suite.revision === undefined) return;
+            window.testron?.command({
+              type: 'delete-test-suite',
+              testSuiteId: suite.id,
+              baseRevision: suite.revision,
+            });
+            setLog(`Deleting test suite · ${suite.name}`);
+          }}
+          onSettings={() => setSettingsOpen(true)}
           onLog={setLog}
         />
 
@@ -370,6 +379,39 @@ export const Dashboard = () => {
           </a>
         </span>
       </footer>
+
+      {suiteForm !== undefined && (
+        <TestSuiteForm
+          suite={suiteForm ?? undefined}
+          onClose={() => setSuiteForm(undefined)}
+          onSave={(name) => {
+            if (suiteForm) {
+              if (suiteForm.revision === undefined) return;
+              window.testron?.command({
+                type: 'update-test-suite',
+                testSuiteId: suiteForm.id,
+                baseRevision: suiteForm.revision,
+                name,
+              });
+              setLog(`Updating test suite · ${name}`);
+            } else if (library?.selectedProjectId) {
+              window.testron?.command({
+                type: 'create-test-suite',
+                projectId: library.selectedProjectId,
+                name,
+              });
+              setLog(`Creating test suite · ${name}`);
+            } else {
+              setLog('Select a project before creating a test suite.');
+              return;
+            }
+            setSuiteForm(undefined);
+          }}
+        />
+      )}
+      {settingsOpen && library && (
+        <ProjectSettings library={library} onClose={() => setSettingsOpen(false)} />
+      )}
     </main>
   );
 };
