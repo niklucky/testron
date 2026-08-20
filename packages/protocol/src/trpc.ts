@@ -11,6 +11,7 @@ import {
   createTestRequestSchema,
   createTestSuiteRequestSchema,
   deleteTestSuiteRequestSchema,
+  deleteTestRequestSchema,
   getTestRequestSchema,
   getTestRevisionHistoryRequestSchema,
   getWorkspaceRequestSchema,
@@ -132,6 +133,10 @@ export const deleteTestSuiteProcedure = {
 } as const;
 export const createTestProcedure = {
   input: createTestRequestSchema,
+  output: testSnapshotSchema,
+} as const;
+export const deleteTestProcedure = {
+  input: deleteTestRequestSchema,
   output: testSnapshotSchema,
 } as const;
 export const getWorkspaceProcedure = {

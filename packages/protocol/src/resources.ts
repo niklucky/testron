@@ -47,6 +47,33 @@ export const projectInvitationSchema = z
     respondedAt: timestampSchema.nullable(),
   })
   .strict();
+export const projectActivityActionSchema = z.enum([
+  'member.invited',
+  'member.invitationAccepted',
+  'test.created',
+  'test.updated',
+  'test.deleted',
+  'testSuite.created',
+  'testSuite.updated',
+  'testSuite.deleted',
+]);
+export const projectActivitySchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    actor: workspaceViewerSchema,
+    action: projectActivityActionSchema,
+    entity: z
+      .object({
+        type: z.enum(['invitation', 'test', 'testSuite']),
+        id: entityIdSchema,
+        /** The label at event time remains useful after a rename or deletion. */
+        label: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+    createdAt: timestampSchema,
+  })
+  .strict();
 export const testRunStatusSchema = z.enum(['running', 'passed', 'failed', 'cancelled', 'timedOut']);
 
 export const projectSchema = z
@@ -286,6 +313,7 @@ export const workspaceSnapshotSchema = z
       )
       .optional(),
     projectOverviews: z.array(projectOverviewSummarySchema),
+    recentActivity: z.array(projectActivitySchema).max(200),
     recentRuns: z.array(testRunSchema).optional(),
     activeRuns: z.array(testRunSchema),
   })
@@ -311,4 +339,6 @@ export type ProjectMemberStatus = z.infer<typeof projectMemberStatusSchema>;
 export type InvitationStatus = z.infer<typeof invitationStatusSchema>;
 export type ProjectMember = z.infer<typeof projectMemberSchema>;
 export type ProjectInvitation = z.infer<typeof projectInvitationSchema>;
+export type ProjectActivityAction = z.infer<typeof projectActivityActionSchema>;
+export type ProjectActivity = z.infer<typeof projectActivitySchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import type { ProjectActivity } from '@testron/protocol';
 
 import {
   Badge,
@@ -19,6 +20,7 @@ import {
   type StackedDatum,
 } from '../design';
 import { activity, days, passRateOf, tally } from './data';
+import { presentProjectActivity } from './activity';
 import { age, ms } from './format';
 import type { LiveOverview } from './overview-data';
 import { activityTone, healthSplits, runLegend, runSeries, verdictTone } from './tone';
@@ -58,6 +60,7 @@ export const Overview = ({
   live,
   dataStatus = 'local',
   errorMessage,
+  recentActivity = [],
   expandedSuiteIds,
   state,
   onState,
@@ -71,6 +74,7 @@ export const Overview = ({
   live?: LiveOverview;
   dataStatus?: 'local' | 'loading' | 'live' | 'error';
   errorMessage?: string;
+  recentActivity?: ProjectActivity[];
   expandedSuiteIds: string[];
   state: OverviewState;
   onState: (state: OverviewState) => void;
@@ -81,6 +85,7 @@ export const Overview = ({
 }) => {
   const { range, query, onlyAttention, sort } = state;
   const patch = (next: Partial<OverviewState>) => onState({ ...state, ...next });
+  const liveActivity = useMemo(() => presentProjectActivity(recentActivity), [recentActivity]);
 
   const shownTotals = live?.totals ?? totals;
   const passRate = live
@@ -410,11 +415,37 @@ export const Overview = ({
             <PanelHeader
               title="Recent activity"
               subtitle={
-                dataStatus === 'local' ? '27 changes this week' : 'Available in run history'
+                dataStatus === 'local'
+                  ? '27 changes this week'
+                  : `${liveActivity.length} recent ${liveActivity.length === 1 ? 'event' : 'events'}`
               }
             />
             {dataStatus === 'live' ? (
-              <EmptyState>Open Runs to inspect the server-backed run history.</EmptyState>
+              liveActivity.length === 0 ? (
+                <EmptyState>No recent project activity yet.</EmptyState>
+              ) : (
+                <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
+                  {liveActivity.map((item) => (
+                    <li key={item.id} className="flex gap-2.5 px-4 py-3">
+                      <span
+                        className="mt-px grid h-6 w-6 shrink-0 place-items-center rounded-md bg-raised"
+                        style={{ color: toneInk[item.tone] }}
+                      >
+                        <Icon name={item.icon} size={12} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-base">{item.title}</span>
+                        <span className="mt-0.5 block truncate text-xs text-ink-3">
+                          {item.detail}
+                        </span>
+                      </span>
+                      <span className="ui-mono shrink-0 text-xs text-ink-3">
+                        {age(item.minutesAgo)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )
             ) : (
               <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
                 {activity.map((item) => {

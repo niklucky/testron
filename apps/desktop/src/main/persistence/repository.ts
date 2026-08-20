@@ -13,6 +13,7 @@ import {
   type TestSuiteSummary,
   type TestRun,
   type ProjectOverviewSummary,
+  type ProjectActivity,
 } from '@testron/protocol';
 import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
@@ -86,6 +87,7 @@ export interface LibrarySnapshot {
   >;
   recentRuns?: TestRun[];
   projectOverviews?: ProjectOverviewSummary[];
+  recentActivity?: ProjectActivity[];
   selectedProjectId?: string;
   selectedEnvironmentId?: string;
   selectedTestSuiteId?: string;

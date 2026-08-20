@@ -153,6 +153,15 @@ derive live dashboard values from fixture data or the bounded recent-run list.
 When no server workspace is configured, the dashboard remains an intentional local demonstration
 mode and uses deterministic fixture values. Once a server is configured, the UI instead shows
 explicit loading, empty, or error states and never falls back to those fixtures.
+
+`recentActivity` is the newest-first audit feed for projects visible to the authenticated viewer.
+Invitation, test, and test-suite mutations append their event in the same idempotent transaction as
+the resource change, so a retried mutation cannot duplicate the feed entry. Events retain the
+entity label at the time of the action: a rename creates a new event with the new label, while older
+events keep the former label, and deletion events remain readable after the entity is unavailable.
+The overview preserves those audit rows but groups consecutive updates to the same test by the same
+actor when there is no gap longer than 15 minutes, presenting them as one authoring session instead
+of one dashboard row per autosaved step.
 memory;
 
 - read a canonical test snapshot;

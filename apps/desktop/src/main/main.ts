@@ -390,6 +390,7 @@ const createWindow = async (): Promise<void> => {
     latestTestRuns: remoteWorkspace?.latestTestRuns ?? {},
     recentRuns: remoteWorkspace?.recentRuns ?? [],
     projectOverviews: remoteWorkspace?.projectOverviews ?? [],
+    recentActivity: remoteWorkspace?.recentActivity ?? [],
     ...(selectedProjectId ? { selectedProjectId } : {}),
     ...(selectedEnvironmentId ? { selectedEnvironmentId } : {}),
     ...(selectedTestSuiteId ? { selectedTestSuiteId } : {}),
@@ -550,6 +551,7 @@ const createWindow = async (): Promise<void> => {
           );
           if (result.status === 'saved') {
             replaceRemoteTest(result.snapshot);
+            await reloadRemoteWorkspace();
             const state = { ...serverState };
             delete state.message;
             serverState = { ...state, status: 'synced' };
@@ -1064,6 +1066,7 @@ const createWindow = async (): Promise<void> => {
                     runDays: [],
                   },
                 ],
+                recentActivity: remoteWorkspace?.recentActivity ?? [],
                 activeRuns: remoteWorkspace?.activeRuns ?? [],
               };
               selectedProjectId = project.id;

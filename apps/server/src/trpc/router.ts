@@ -13,6 +13,7 @@ import {
   createTestProcedure,
   createTestSuiteProcedure,
   deleteTestSuiteProcedure,
+  deleteTestProcedure,
   getTestProcedure,
   getTestRevisionHistoryProcedure,
   getWorkspaceProcedure,
@@ -197,6 +198,10 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(createTestProcedure.input)
         .output(createTestProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.createTest(ctx.user, input))),
+      delete: authenticatedProcedure
+        .input(deleteTestProcedure.input)
+        .output(deleteTestProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.deleteTest(ctx.user, input))),
       get: authenticatedProcedure
         .input(getTestProcedure.input)
         .output(getTestProcedure.output)

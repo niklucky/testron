@@ -250,6 +250,25 @@ export const testRuns = pgTable(
   ],
 );
 
+export const projectActivity = pgTable(
+  'project_activity',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    action: text('action').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    entityLabel: text('entity_label').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('project_activity_project_created_idx').on(table.projectId, table.createdAt)],
+);
+
 export const idempotencyRecords = pgTable(
   'idempotency_records',
   {

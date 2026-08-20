@@ -450,6 +450,9 @@ export const Dashboard = () => {
             live={liveOverview}
             dataStatus={overviewDataStatus}
             errorMessage={library?.server?.message}
+            recentActivity={library?.recentActivity?.filter(
+              (item) => item.projectId === library.selectedProjectId,
+            )}
             expandedSuiteIds={overviewExpandedSuiteIds}
             state={overview}
             onState={setOverview}

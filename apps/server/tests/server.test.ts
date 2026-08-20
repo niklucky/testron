@@ -45,7 +45,7 @@ beforeEach(async () => {
   deliveredInvitationIds.length = 0;
   await assertIsolatedTestDatabase();
   await server.database.db.execute(sql`
-    truncate table idempotency_records, test_runs, test_revisions, tests, test_suites, environments,
+    truncate table idempotency_records, project_activity, test_runs, test_revisions, tests, test_suites, environments,
       projects, sessions, users restart identity cascade
   `);
 });
@@ -578,6 +578,114 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       activeRuns: [],
       projectOverviews: [{ projectId: snapshot.test.projectId, activeRunCount: 0 }],
+    });
+  });
+
+  it('records one authorized, newest-first activity event for each supported mutation', async () => {
+    const owner = await signIn();
+    const project = await owner.api.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Activity project',
+    });
+    const environment = await owner.api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const member = await signIn('activity-member@example.test', 'another correct horse password');
+    const invitation = await owner.api.invitation.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      email: 'activity-member@example.test',
+    });
+    await member.api.invitation.respond.mutate({
+      meta: mutationMeta(),
+      invitationId: invitation.id,
+      response: 'accepted',
+    });
+
+    const createSuiteKey = randomUUID();
+    const suiteRequest = {
+      meta: mutationMeta(createSuiteKey),
+      projectId: project.id,
+      name: 'Original suite',
+    };
+    const suite = await owner.api.testSuite.create.mutate(suiteRequest);
+    await owner.api.testSuite.create.mutate({
+      ...suiteRequest,
+      meta: { ...suiteRequest.meta, requestId: randomUUID() },
+    });
+    const updatedSuite = await owner.api.testSuite.update.mutate({
+      meta: mutationMeta(),
+      testSuiteId: suite.id,
+      baseRevision: suite.revision,
+      name: 'Renamed suite',
+    });
+    const snapshot = await owner.api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      testSuiteId: suite.id,
+      content: content(environment.id, 'Original test'),
+    });
+    const saved = await owner.api.test.saveRevision.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      baseRevision: snapshot.test.currentRevision,
+      content: content(environment.id, 'Renamed test'),
+    });
+    if (saved.status !== 'saved') throw new Error('Expected the test update to save.');
+    await owner.api.test.delete.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      baseRevision: saved.snapshot.test.currentRevision,
+    });
+    await owner.api.testSuite.delete.mutate({
+      meta: mutationMeta(),
+      testSuiteId: suite.id,
+      baseRevision: updatedSuite.revision,
+    });
+
+    const workspace = await owner.api.workspace.get.query({ meta: requestMeta() });
+    expect(workspace.recentActivity.map((activity) => activity.action).sort()).toEqual(
+      [
+        'member.invited',
+        'member.invitationAccepted',
+        'test.created',
+        'test.updated',
+        'test.deleted',
+        'testSuite.created',
+        'testSuite.updated',
+        'testSuite.deleted',
+      ].sort(),
+    );
+    expect(
+      workspace.recentActivity.every(
+        (activity, index, events) =>
+          index === 0 || Date.parse(events[index - 1]!.createdAt) >= Date.parse(activity.createdAt),
+      ),
+    ).toBe(true);
+    expect(
+      workspace.recentActivity.find((activity) => activity.action === 'test.deleted'),
+    ).toMatchObject({
+      entity: { label: 'Renamed test' },
+    });
+    expect(
+      workspace.recentActivity.find((activity) => activity.action === 'testSuite.deleted'),
+    ).toMatchObject({ entity: { label: 'Renamed suite' } });
+
+    await expect(member.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      recentActivity: expect.arrayContaining([
+        expect.objectContaining({ action: 'member.invitationAccepted' }),
+      ]),
+    });
+    const stranger = await signIn(
+      'activity-stranger@example.test',
+      'another correct horse password',
+    );
+    await expect(stranger.api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      recentActivity: [],
     });
   });
 

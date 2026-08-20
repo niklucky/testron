@@ -7,6 +7,7 @@ import {
   projectInvitationSchema,
   projectMemberSchema,
   profileSchema,
+  projectActivitySchema,
   projectOverviewSummarySchema,
   projectSchema,
   testSuiteSchema,
@@ -21,8 +22,10 @@ import {
   type CreateTestRequest,
   type CreateTestSuiteRequest,
   type DeleteTestSuiteRequest,
+  type DeleteTestRequest,
   type Environment,
   type ProjectInvitation,
+  type ProjectActivityAction,
   type ProjectMember,
   type GetTestRevisionHistoryRequest,
   type Project,
@@ -51,6 +54,7 @@ import type { Database } from './database.js';
 import {
   environments,
   idempotencyRecords,
+  projectActivity,
   projectInvitations,
   projectMembers,
   profileVariables,
@@ -239,6 +243,13 @@ export class CanonicalRepository {
         .values({ projectId: request.projectId, name: request.name, revision: 1 })
         .returning();
       if (!row) throw new Error('Could not create the test suite.');
+      await this.recordActivity(tx, user, {
+        projectId: row.projectId,
+        action: 'testSuite.created',
+        entityType: 'testSuite',
+        entityId: row.id,
+        entityLabel: row.name,
+      });
       return this.testSuite(row);
     });
   }
@@ -269,6 +280,13 @@ export class CanonicalRepository {
         )
         .returning();
       if (!row) throw new RepositoryError('CONFLICT', 'The test suite changed.');
+      await this.recordActivity(tx, user, {
+        projectId: row.projectId,
+        action: 'testSuite.updated',
+        entityType: 'testSuite',
+        entityId: row.id,
+        entityLabel: row.name,
+      });
       return this.testSuite(row);
     });
   }
@@ -294,6 +312,13 @@ export class CanonicalRepository {
         )
         .returning();
       if (!row) throw new RepositoryError('CONFLICT', 'The test suite changed.');
+      await this.recordActivity(tx, user, {
+        projectId: row.projectId,
+        action: 'testSuite.deleted',
+        entityType: 'testSuite',
+        entityId: row.id,
+        entityLabel: row.name,
+      });
       return this.testSuite(row);
     });
   }
@@ -329,6 +354,41 @@ export class CanonicalRepository {
         .update(tests)
         .set({ currentRevisionId: revision.id, currentRevisionNumber: 1 })
         .where(eq(tests.id, test.id));
+      await this.recordActivity(tx, user, {
+        projectId: test.projectId,
+        action: 'test.created',
+        entityType: 'test',
+        entityId: test.id,
+        entityLabel: test.title,
+      });
+      return this.snapshot(tx, test.id);
+    });
+  }
+
+  deleteTest(user: AuthenticatedUser, request: DeleteTestRequest): Promise<TestSnapshot> {
+    return this.idempotent(user, 'test.delete', request, async (tx) => {
+      const test = await this.authorizeTest(tx, user, request.testId);
+      const now = new Date().toISOString();
+      const [row] = await tx
+        .update(tests)
+        .set({ deletedAt: now, deletedBy: user.id })
+        .where(
+          and(
+            eq(tests.id, request.testId),
+            eq(tests.currentRevisionId, request.baseRevision.id),
+            eq(tests.currentRevisionNumber, request.baseRevision.number),
+            isNull(tests.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The test changed.');
+      await this.recordActivity(tx, user, {
+        projectId: row.projectId,
+        action: 'test.deleted',
+        entityType: 'test',
+        entityId: row.id,
+        entityLabel: row.title,
+      });
       return this.snapshot(tx, test.id);
     });
   }
@@ -449,6 +509,13 @@ export class CanonicalRepository {
         })
         .returning();
       if (!row) throw new Error('Could not create the invitation.');
+      await this.recordActivity(tx, user, {
+        projectId: row.projectId,
+        action: 'member.invited',
+        entityType: 'invitation',
+        entityId: row.id,
+        entityLabel: row.email,
+      });
       return this.invitation(tx, row);
     });
     try {
@@ -497,6 +564,14 @@ export class CanonicalRepository {
         )
         .returning();
       if (!updated) throw new RepositoryError('CONFLICT', 'The invitation changed.');
+      if (request.response === 'accepted')
+        await this.recordActivity(tx, user, {
+          projectId: updated.projectId,
+          action: 'member.invitationAccepted',
+          entityType: 'invitation',
+          entityId: updated.id,
+          entityLabel: updated.email,
+        });
       return this.invitation(tx, updated);
     });
   }
@@ -736,6 +811,33 @@ export class CanonicalRepository {
       const pendingInvitationValues = await Promise.all(
         pendingInvitationRows.map((invitation) => this.invitation(tx, invitation)),
       );
+      const activityRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select({
+                activity: projectActivity,
+                actor: { id: users.id, email: users.email, name: users.name },
+              })
+              .from(projectActivity)
+              .innerJoin(users, eq(users.id, projectActivity.actorId))
+              .where(inArray(projectActivity.projectId, projectIds))
+              .orderBy(desc(projectActivity.createdAt), desc(projectActivity.id))
+              .limit(200);
+      const recentActivity = activityRows.map(({ activity, actor }) =>
+        projectActivitySchema.parse({
+          id: activity.id,
+          projectId: activity.projectId,
+          actor,
+          action: activity.action,
+          entity: {
+            type: activity.entityType,
+            id: activity.entityId,
+            label: activity.entityLabel,
+          },
+          createdAt: instant(activity.createdAt),
+        }),
+      );
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
       thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
@@ -797,6 +899,7 @@ export class CanonicalRepository {
         tests: testValues,
         latestTestRuns,
         projectOverviews,
+        recentActivity,
         recentRuns: recentRunRows.map((row) => this.run(row)),
         activeRuns: runRows.map((row) => this.run(row)),
       });
@@ -885,6 +988,13 @@ export class CanonicalRepository {
           currentRevisionNumber: nextNumber,
         })
         .where(eq(tests.id, request.testId));
+      await this.recordActivity(tx, user, {
+        projectId: test.projectId,
+        action: 'test.updated',
+        entityType: 'test',
+        entityId: test.id,
+        entityLabel: request.content.title,
+      });
       return { status: 'saved', snapshot: await this.snapshot(tx, request.testId) };
     });
   }
@@ -941,6 +1051,20 @@ export class CanonicalRepository {
         );
       return outcome;
     });
+  }
+
+  private async recordActivity(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    activity: {
+      projectId: string;
+      action: ProjectActivityAction;
+      entityType: 'invitation' | 'test' | 'testSuite';
+      entityId: string;
+      entityLabel: string;
+    },
+  ): Promise<void> {
+    await tx.insert(projectActivity).values({ ...activity, actorId: user.id });
   }
 
   private async authorizeProject(

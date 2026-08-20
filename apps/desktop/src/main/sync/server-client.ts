@@ -8,6 +8,7 @@ import type {
   CreateTestRequest,
   CreateTestSuiteRequest,
   DeleteTestSuiteRequest,
+  DeleteTestRequest,
   FinishTestRunRequest,
   GetTestRequest,
   GetTestRevisionHistoryRequest,
@@ -107,6 +108,10 @@ export class DesktopServerClient {
 
   createTest(value: CreateTestRequest) {
     return this.api.test.create.mutate(value);
+  }
+
+  deleteTest(value: DeleteTestRequest) {
+    return this.api.test.delete.mutate(value);
   }
 
   createTestSuite(value: CreateTestSuiteRequest) {
