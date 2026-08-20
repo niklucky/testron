@@ -19,9 +19,9 @@ import {
   type StackedDatum,
 } from '../design';
 import { activity, days, passRateOf, tally } from './data';
-import { age } from './format';
+import { age, ms } from './format';
 import type { LiveOverview } from './overview-data';
-import { activityTone, healthSplits, runLegend, runSeries } from './tone';
+import { activityTone, healthSplits, runLegend, runSeries, verdictTone } from './tone';
 import type { Sort, SortKey, SuiteRecord, Totals } from './types';
 
 export type OverviewState = {
@@ -58,8 +58,12 @@ export const Overview = ({
   live,
   dataStatus = 'local',
   errorMessage,
+  expandedSuiteIds,
   state,
   onState,
+  onToggleSuite,
+  onEditSuite,
+  onOpenTest,
   onLog,
 }: {
   suites: SuiteRecord[];
@@ -67,8 +71,12 @@ export const Overview = ({
   live?: LiveOverview;
   dataStatus?: 'local' | 'loading' | 'live' | 'error';
   errorMessage?: string;
+  expandedSuiteIds: string[];
   state: OverviewState;
   onState: (state: OverviewState) => void;
+  onToggleSuite: (suiteId: string) => void;
+  onEditSuite: (suite: SuiteRecord) => void;
+  onOpenTest: (test: SuiteRecord['tests'][number]) => void;
   onLog: (message: string) => void;
 }) => {
   const { range, query, onlyAttention, sort } = state;
@@ -293,48 +301,105 @@ export const Overview = ({
 
             {rows.map((suite) => {
               const counts = tally(suite);
+              const expanded = expandedSuiteIds.includes(suite.id);
+              const contentId = `overview-suite-${suite.id}`;
               return (
-                <button
-                  key={suite.id}
-                  type="button"
-                  className={`grid w-full ${columns} border-b border-line-soft px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-raised`}
-                  onClick={() => onLog(`${suite.name} · ${suite.tests.length} tests`)}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <StatusDot
-                      tone={
-                        counts.failed > 0 ? 'critical' : counts.skipped > 0 ? 'neutral' : 'good'
-                      }
-                      label={
-                        counts.failed > 0
-                          ? `${counts.failed} failing`
-                          : counts.skipped > 0
-                            ? 'Some tests skipped'
-                            : 'All passing'
-                      }
-                    />
-                    <span className="truncate text-base font-medium">{suite.name}</span>
-                    {counts.failed > 0 && <Badge tone="critical">{counts.failed} failing</Badge>}
-                  </span>
-                  <span className="ui-mono text-base text-ink-2">{suite.tests.length}</span>
-                  <span className="flex items-center gap-2">
-                    <SplitBar
-                      segments={healthSplits(counts)}
-                      className="w-full max-w-[120px] flex-1"
-                    />
-                    <span className="ui-mono shrink-0 text-sm text-ink-2">
-                      {passRateOf(suite).toFixed(0)}%
+                <div key={suite.id} className="border-b border-line-soft last:border-b-0">
+                  <div
+                    className={`grid w-full ${columns} px-4 py-2.5 text-left transition-colors hover:bg-raised`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <StatusDot
+                        tone={
+                          counts.failed > 0 ? 'critical' : counts.skipped > 0 ? 'neutral' : 'good'
+                        }
+                        label={
+                          counts.failed > 0
+                            ? `${counts.failed} failing`
+                            : counts.skipped > 0
+                              ? 'Some tests skipped'
+                              : 'All passing'
+                        }
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Edit ${suite.name} test suite`}
+                        className="min-w-0 truncate rounded text-base font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        onClick={() => onEditSuite(suite)}
+                      >
+                        {suite.name}
+                      </button>
+                      {counts.failed > 0 && <Badge tone="critical">{counts.failed} failing</Badge>}
                     </span>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-sm text-ink-3">
-                    <Icon name="clock" size={12} />
-                    {suite.lastRunMinutesAgo === null
-                      ? 'Never'
-                      : `${age(suite.lastRunMinutesAgo)} ago`}
-                  </span>
-                  <span className="truncate text-sm text-ink-3">{suite.owner}</span>
-                  <Icon name="chevron" size={14} className="justify-self-end text-ink-3" />
-                </button>
+                    <span className="ui-mono text-base text-ink-2">{suite.tests.length}</span>
+                    <span className="flex items-center gap-2">
+                      <SplitBar
+                        segments={healthSplits(counts)}
+                        className="w-full max-w-[120px] flex-1"
+                      />
+                      <span className="ui-mono shrink-0 text-sm text-ink-2">
+                        {passRateOf(suite).toFixed(0)}%
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1.5 text-sm text-ink-3">
+                      <Icon name="clock" size={12} />
+                      {suite.lastRunMinutesAgo === null
+                        ? 'Never'
+                        : `${age(suite.lastRunMinutesAgo)} ago`}
+                    </span>
+                    <span className="truncate text-sm text-ink-3">{suite.owner}</span>
+                    <button
+                      type="button"
+                      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${suite.name} test suite`}
+                      aria-expanded={expanded}
+                      aria-controls={contentId}
+                      className="grid h-6 w-6 place-items-center justify-self-end rounded text-ink-3 transition-colors hover:bg-raised hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                      onClick={() => onToggleSuite(suite.id)}
+                    >
+                      <Icon
+                        name="chevron"
+                        size={14}
+                        className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+                      />
+                    </button>
+                  </div>
+
+                  {expanded && (
+                    <div id={contentId} className="border-t border-line-soft bg-plane/45 px-4 py-2">
+                      {suite.tests.length === 0 ? (
+                        <EmptyState className="py-5">No tests in this suite yet.</EmptyState>
+                      ) : (
+                        <ul className="space-y-0.5" aria-label={`${suite.name} tests`}>
+                          {suite.tests.map((test) => {
+                            const verdict = verdictTone[test.status];
+                            return (
+                              <li key={test.id}>
+                                <button
+                                  type="button"
+                                  className="grid w-full grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-accent"
+                                  onClick={() => onOpenTest(test)}
+                                >
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <StatusDot tone={verdict.tone} label={verdict.label} />
+                                    <span className="truncate text-sm font-medium text-ink-2">
+                                      {test.name}
+                                    </span>
+                                  </span>
+                                  <span className="text-sm text-ink-3">{verdict.label}</span>
+                                  <span className="ui-mono text-right text-xs text-ink-3">
+                                    {test.seconds === undefined
+                                      ? 'Never run'
+                                      : ms(test.seconds * 1000)}
+                                  </span>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
               );
             })}
 

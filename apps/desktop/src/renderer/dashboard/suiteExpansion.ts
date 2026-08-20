@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'testron-expanded-test-suites';
 
 type ExpansionStorage = Pick<Storage, 'getItem' | 'setItem'>;
+export type ExpansionSurface = 'sidebar' | 'overview';
 
 type StoredExpansion = {
   version: 1;
@@ -45,19 +46,24 @@ const validUniqueIds = (ids: unknown, validIds: ReadonlySet<string>) => {
   return [...new Set(ids.filter((id): id is string => typeof id === 'string' && validIds.has(id)))];
 };
 
+const projectKey = (projectId: string, surface: ExpansionSurface) =>
+  surface === 'sidebar' ? projectId : `${surface}:${projectId}`;
+
 export const loadExpandedSuiteIds = (
   storage: ExpansionStorage,
   projectId: string,
   validIds: ReadonlySet<string>,
   defaultIds: readonly string[] = [],
+  surface: ExpansionSurface = 'sidebar',
 ) => {
   const state = readState(storage);
-  if (!(projectId in state.projects)) return validUniqueIds(defaultIds, validIds);
+  const key = projectKey(projectId, surface);
+  if (!(key in state.projects)) return validUniqueIds(defaultIds, validIds);
 
-  const storedIds = state.projects[projectId];
+  const storedIds = state.projects[key];
   const expandedIds = validUniqueIds(storedIds, validIds);
   if (!Array.isArray(storedIds) || expandedIds.length !== storedIds.length) {
-    state.projects[projectId] = expandedIds;
+    state.projects[key] = expandedIds;
     writeState(storage, state);
   }
   return expandedIds;
@@ -67,8 +73,9 @@ export const saveExpandedSuiteIds = (
   storage: ExpansionStorage,
   projectId: string,
   expandedIds: readonly string[],
+  surface: ExpansionSurface = 'sidebar',
 ) => {
   const state = readState(storage);
-  state.projects[projectId] = [...new Set(expandedIds)];
+  state.projects[projectKey(projectId, surface)] = [...new Set(expandedIds)];
   writeState(storage, state);
 };

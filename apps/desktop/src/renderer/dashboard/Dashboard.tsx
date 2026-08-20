@@ -7,6 +7,7 @@ import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
 import { initialOverviewState, Overview, type OverviewState } from './Overview';
 import { mapProjectOverview } from './overview-data';
+import { openDashboardTest } from './navigation';
 import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
@@ -147,6 +148,7 @@ export const Dashboard = () => {
     [suites],
   );
   const [expandedSuiteIds, setExpandedSuiteIds] = useState<string[]>([]);
+  const [overviewExpandedSuiteIds, setOverviewExpandedSuiteIds] = useState<string[]>([]);
 
   useEffect(() => {
     setExpandedSuiteIds(
@@ -159,12 +161,34 @@ export const Dashboard = () => {
     );
   }, [defaultExpandedSuiteIds, expansionProjectId, suiteIds]);
 
+  useEffect(() => {
+    setOverviewExpandedSuiteIds(
+      loadExpandedSuiteIds(
+        window.localStorage,
+        expansionProjectId,
+        new Set(suiteIds),
+        [],
+        'overview',
+      ),
+    );
+  }, [expansionProjectId, suiteIds]);
+
   const toggleSuite = (suiteId: string) => {
     setExpandedSuiteIds((current) => {
       const next = current.includes(suiteId)
         ? current.filter((id) => id !== suiteId)
         : [...current, suiteId];
       saveExpandedSuiteIds(window.localStorage, expansionProjectId, next);
+      return next;
+    });
+  };
+
+  const toggleOverviewSuite = (suiteId: string) => {
+    setOverviewExpandedSuiteIds((current) => {
+      const next = current.includes(suiteId)
+        ? current.filter((id) => id !== suiteId)
+        : [...current, suiteId];
+      saveExpandedSuiteIds(window.localStorage, expansionProjectId, next, 'overview');
       return next;
     });
   };
@@ -209,8 +233,7 @@ export const Dashboard = () => {
 
   const openTest = (test: TestRecord) => {
     setLog(`Opening test · ${test.name}`);
-    window.testron?.command({ type: 'select-test', testId: test.id });
-    window.location.hash = '#/test';
+    openDashboardTest(test, window.testron, window.location);
   };
 
   const recordManualVerdict = (verdict: ManualVerdict) => {
@@ -427,8 +450,12 @@ export const Dashboard = () => {
             live={liveOverview}
             dataStatus={overviewDataStatus}
             errorMessage={library?.server?.message}
+            expandedSuiteIds={overviewExpandedSuiteIds}
             state={overview}
             onState={setOverview}
+            onToggleSuite={toggleOverviewSuite}
+            onEditSuite={(suite) => setSuiteForm(suite)}
+            onOpenTest={openTest}
             onLog={setLog}
           />
         ) : view === 'members' ? (

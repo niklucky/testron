@@ -36,6 +36,18 @@ describe('test-suite expansion persistence', () => {
     expect(loadExpandedSuiteIds(storage, 'project-b', new Set(['suite-b']))).toEqual(['suite-b']);
   });
 
+  it('keeps sidebar and overview expansion independent within a project', () => {
+    const storage = new MemoryStorage();
+    const validIds = new Set(['suite-a', 'suite-b']);
+    saveExpandedSuiteIds(storage, 'project-a', ['suite-a']);
+    saveExpandedSuiteIds(storage, 'project-a', ['suite-b'], 'overview');
+
+    expect(loadExpandedSuiteIds(storage, 'project-a', validIds)).toEqual(['suite-a']);
+    expect(loadExpandedSuiteIds(storage, 'project-a', validIds, [], 'overview')).toEqual([
+      'suite-b',
+    ]);
+  });
+
   it('removes deleted suites when expansion is restored', () => {
     const storage = new MemoryStorage();
     saveExpandedSuiteIds(storage, 'project-a', ['existing', 'deleted']);
