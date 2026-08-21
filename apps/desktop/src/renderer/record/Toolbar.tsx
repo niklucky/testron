@@ -143,8 +143,8 @@ export const SessionBar = ({
               ) : (
                 <span className="h-[7px] w-[7px] rounded-full bg-neutral" />
               )}
-              <span className="ui-mono text-sm text-ink-2">{clock(elapsed)}</span>
-              <span className="text-sm text-ink-3">
+              <span className="ui-mono text-ink-2">{clock(elapsed)}</span>
+              <span className="text-ink-3">
                 · {steps} {t('step')}
                 {steps === 1 ? '' : t('s')}
               </span>
@@ -221,7 +221,7 @@ const SessionMenu = ({
         aria-haspopup="menu"
         aria-expanded={useDomMenu ? open : undefined}
         disabled={options.length === 0}
-        className="desktop-window-controls flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-ink-2 hover:bg-raised"
+        className="desktop-window-controls flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-ink-2 hover:bg-raised"
         onClick={(event) => {
           if (useDomMenu) {
             setOpen((current) => !current);
@@ -252,7 +252,7 @@ const SessionMenu = ({
               type="button"
               role="option"
               aria-selected={option.id === value}
-              className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm hover:bg-raised ${
+              className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left hover:bg-raised ${
                 option.id === value ? 'text-accent' : 'text-ink-2'
               }`}
               onClick={() => {
@@ -350,7 +350,7 @@ export const BrowserBar = ({
           spellCheck={false}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => setDraft(url)}
-          className="ui-mono min-w-0 flex-1 bg-transparent text-base text-ink outline-none"
+          className="ui-mono min-w-0 flex-1 bg-transparent text-ink outline-none"
         />
         <Kbd className="shrink-0">{displayRecordShortcut('address')}</Kbd>
       </form>
@@ -398,7 +398,7 @@ export const BrowserBar = ({
           aria-label={t('assertion_type')}
           value={assertion}
           onChange={(event) => onAssertion(event.target.value as VerifyAssertion)}
-          className="h-8 max-w-40 rounded-md border border-line bg-plane px-2 text-sm text-ink outline-none focus:border-accent"
+          className="h-8 max-w-40 rounded-md border border-line bg-plane px-2 text-ink outline-none focus:border-accent"
         >
           <option value="visible">{t('visible')}</option>
           <option value="hidden">{t('hidden')}</option>

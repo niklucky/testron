@@ -16,7 +16,7 @@ export const StepsView = ({ failure }: { failure: Failure }) => {
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3 text-sm text-ink-3">
+      <div className="mb-3 flex items-center gap-3 text-ink-3">
         <span>
           {failure.steps.length} {t('steps')}
         </span>
@@ -46,7 +46,7 @@ export const StepsView = ({ failure }: { failure: Failure }) => {
             >
               <span className="flex flex-col items-center gap-1 pt-0.5">
                 <span
-                  className="ui-mono grid h-[19px] w-[19px] place-items-center rounded-full bg-raised text-xs"
+                  className="ui-mono grid h-[19px] w-[19px] place-items-center rounded-full bg-raised "
                   style={{ color: toneInk[tone.tone] }}
                   title={tone.label}
                 >
@@ -56,13 +56,13 @@ export const StepsView = ({ failure }: { failure: Failure }) => {
               </span>
 
               <span className="min-w-0">
-                <span className="ui-mono block truncate text-base">
+                <span className="ui-mono block truncate ">
                   {step.call}
                   <span className="text-ink-3"> · {step.target}</span>
                 </span>
-                <span className="mt-1 block text-sm text-ink-3">{step.manual}</span>
+                <span className="mt-1 block text-ink-3">{step.manual}</span>
                 {failed && (
-                  <span className="ui-mono mt-2 block whitespace-pre-wrap rounded-md border border-line bg-plane p-2 text-sm leading-[18px] text-ink-2">
+                  <span className="ui-mono mt-2 block whitespace-pre-wrap rounded-md border border-line bg-plane p-2 leading-[18px] text-ink-2">
                     {failure.message.split('\n').slice(0, 3).join('\n')}
                   </span>
                 )}
@@ -76,7 +76,7 @@ export const StepsView = ({ failure }: { failure: Failure }) => {
                   tone={failed ? 'critical' : 'accent'}
                   label={t('of', { value1: ms(step.ms), value2: ms(slowest) })}
                 />
-                <span className="ui-mono w-[46px] shrink-0 text-right text-sm text-ink-3">
+                <span className="ui-mono w-[46px] shrink-0 text-right text-ink-3">
                   {step.state === 'skipped' ? '—' : ms(step.ms)}
                 </span>
               </span>

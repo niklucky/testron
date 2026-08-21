@@ -57,13 +57,13 @@ export const NewTestForm = ({
           {heading}
         </h2>
         {suiteName && (
-          <p className="mt-1 text-sm text-ink-3">
+          <p className="mt-1 text-ink-3">
             {t('in')} {suiteName}
           </p>
         )}
 
         <form className="mt-6" onSubmit={submit}>
-          <label htmlFor={inputId} className="block text-sm font-medium text-ink-2">
+          <label htmlFor={inputId} className="block font-medium text-ink-2">
             {t('test_title')}
           </label>
           <input
@@ -73,7 +73,7 @@ export const NewTestForm = ({
             maxLength={200}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+            className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
           />
 
           <div className="mt-6 flex justify-end gap-2">

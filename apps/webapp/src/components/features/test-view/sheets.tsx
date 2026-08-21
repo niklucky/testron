@@ -39,7 +39,7 @@ const Sheet = ({
         <header className="flex shrink-0 items-start gap-3 border-b border-line-soft px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-md font-semibold">{title}</h2>
-            {subtitle && <p className="mt-0.5 truncate text-sm text-ink-3">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 truncate text-ink-3">{subtitle}</p>}
           </div>
           <IconButton
             icon="close"
@@ -96,7 +96,7 @@ export const SourceSheet = ({
       <header className="flex shrink-0 items-start gap-3 border-b border-line-soft px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-md font-semibold">{t('auto_test_source')}</h2>
-          <p className="mt-0.5 truncate text-sm text-ink-3">{file}</p>
+          <p className="mt-0.5 truncate text-ink-3">{file}</p>
         </div>
         {layout === 'modal' && (
           <Kbd className="ml-auto">{displayTestViewShortcut('closeSource')}</Kbd>
@@ -116,7 +116,7 @@ export const SourceSheet = ({
             value={source}
             spellCheck={false}
             onChange={(event) => onSource(event.target.value)}
-            className="ui-mono h-[420px] w-full resize-none bg-transparent p-3 text-base leading-[19px] text-ink outline-none"
+            className="ui-mono h-[420px] w-full resize-none bg-transparent p-3 leading-[19px] text-ink outline-none"
           />
         ) : (
           <CodePanel lines={lines} onSelectStep={() => undefined} />
@@ -129,7 +129,7 @@ export const SourceSheet = ({
             <Badge tone="warning" icon="alert">
               {t('detached')}
             </Badge>
-            <span className="text-sm text-ink-3">{t('board_edits_no_longer_reach_this_file')}</span>
+            <span className="text-ink-3">{t('board_edits_no_longer_reach_this_file')}</span>
             <Button
               className="ml-auto"
               icon="rerun"
@@ -146,9 +146,7 @@ export const SourceSheet = ({
             <Badge tone="good" icon="check">
               {t('in_sync')}
             </Badge>
-            <span className="text-sm text-ink-3">
-              {t('regenerated_from_the_board_on_every_edit')}
-            </span>
+            <span className="text-ink-3">{t('regenerated_from_the_board_on_every_edit')}</span>
             <Button
               className="ml-auto"
               icon="copy"
@@ -218,7 +216,7 @@ export const PrerequisiteSheet = ({
   const { t } = useTranslation();
   const [draft, setDraft] = useState(prerequisite);
   const field =
-    'mt-1.5 h-8 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent';
+    'mt-1.5 h-8 w-full rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent';
 
   return (
     <Sheet
@@ -228,7 +226,7 @@ export const PrerequisiteSheet = ({
     >
       <div className="space-y-3 px-4 py-4">
         <label className="block">
-          <span className="text-sm text-ink-3">{t('kind')}</span>
+          <span className="text-ink-3">{t('kind')}</span>
           <div className="mt-1.5">
             <InlineSelect
               label={t('prerequisite_kind')}
@@ -243,7 +241,7 @@ export const PrerequisiteSheet = ({
         </label>
 
         <label className="block">
-          <span className="text-sm text-ink-3">{t('title')}</span>
+          <span className="text-ink-3">{t('title')}</span>
           <input
             className={field}
             value={draft.title}
@@ -252,7 +250,7 @@ export const PrerequisiteSheet = ({
         </label>
 
         <label className="block">
-          <span className="text-sm text-ink-3">{t('how_it_is_satisfied')}</span>
+          <span className="text-ink-3">{t('how_it_is_satisfied')}</span>
           <input
             className={`${field} ui-mono`}
             value={draft.value}
@@ -261,10 +259,10 @@ export const PrerequisiteSheet = ({
         </label>
 
         <label className="block">
-          <span className="text-sm text-ink-3">{t('why_it_matters')}</span>
+          <span className="text-ink-3">{t('why_it_matters')}</span>
           <textarea
             rows={3}
-            className="mt-1.5 w-full resize-none rounded-md border border-line bg-plane p-2.5 text-base outline-none focus:border-accent"
+            className="mt-1.5 w-full resize-none rounded-md border border-line bg-plane p-2.5 outline-none focus:border-accent"
             value={draft.detail}
             onChange={(event) => setDraft({ ...draft, detail: event.target.value })}
           />
@@ -317,7 +315,7 @@ export const MoveSheet = ({
                 type="button"
                 disabled={here}
                 onClick={() => onMove(destination)}
-                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-base ${
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left ${
                   here ? 'text-ink-3' : 'hover:bg-raised'
                 }`}
               >
@@ -325,7 +323,7 @@ export const MoveSheet = ({
                 <span className="truncate">
                   {destination.project} <span className="text-ink-3">·</span> {destination.suite}
                 </span>
-                {here && <span className="ml-auto text-xs text-ink-3">{t('current')}</span>}
+                {here && <span className="ml-auto text-ink-3">{t('current')}</span>}
               </button>
             </li>
           );
@@ -348,7 +346,7 @@ export const DeleteSheet = ({
   const { t } = useTranslation();
   return (
     <Sheet title={t('move_to_trash')} onClose={onClose}>
-      <div className="px-4 py-4 text-base leading-6 text-ink-2">
+      <div className="px-4 py-4 leading-6 text-ink-2">
         <p>
           <span className="text-ink">{name}</span> stops running in every environment and leaves the
           suite. Its recorded steps, spec and run history are kept.

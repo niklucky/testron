@@ -26,7 +26,7 @@ export const CodePanel = ({
 
   let first = true;
   return (
-    <pre className="ui-mono min-w-0 py-2 text-base leading-[19px]">
+    <pre className="ui-mono min-w-0 py-2 leading-[19px]">
       {lines.map((line, index) => {
         const on = line.stepId !== undefined && line.stepId === selectedId;
         const anchor = on && first;
@@ -40,7 +40,7 @@ export const CodePanel = ({
               line.stepId ? 'cursor-default hover:bg-raised/60' : ''
             }`}
           >
-            <span className="w-5 shrink-0 select-none text-right text-xs leading-[19px] text-ink-3">
+            <span className="w-5 shrink-0 select-none text-right leading-[19px] text-ink-3">
               {index + 1}
             </span>
             <code className="min-w-0 whitespace-pre-wrap break-words text-ink-2">

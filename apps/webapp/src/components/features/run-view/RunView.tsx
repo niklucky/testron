@@ -82,18 +82,18 @@ export const RunView = () => {
             {board.detail.suite}
           </Button>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <a href="#/test" className="min-w-0 truncate px-1.5 text-md text-ink no-underline">
+          <a href="#/test" className="min-w-0 truncate px-1.5 text-ink no-underline">
             {board.detail.name}
           </a>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <span className="ui-mono px-1.5 text-md text-ink-2">{run.id}</span>
+          <span className="ui-mono px-1.5 text-ink-2">{run.id}</span>
           <Badge tone={verdict.tone} icon={run.verdict === 'passed' ? 'check' : 'alert'}>
             {t(verdict.label)}
           </Badge>
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-          <span className="text-sm text-ink-3">
+          <span className="text-ink-3">
             {run.trigger === 'ci'
               ? t('ci')
               : run.trigger === 'schedule'
@@ -135,7 +135,7 @@ export const RunView = () => {
           {t('quarantine')}
         </Button>
 
-        <span className="ml-auto flex items-center gap-2 text-sm text-ink-3">
+        <span className="ml-auto flex items-center gap-2 text-ink-3">
           <Badge>{run.environment}</Badge>
           <Badge>{run.browser}</Badge>
           <span className="ui-mono">
@@ -168,10 +168,10 @@ export const RunView = () => {
                   <h1 className="text-lg font-semibold">
                     {t('step_2')} {failing.index + 1} {t('timed_out_after')} {ms(failing.ms)}
                   </h1>
-                  <p className="ui-mono mt-1 truncate text-base text-ink-2">
+                  <p className="ui-mono mt-1 truncate text-ink-2">
                     {failingStep.locator || failingStep.label}
                   </p>
-                  <p className="mt-1.5 text-base text-ink-3">
+                  <p className="mt-1.5 text-ink-3">
                     {run.attempts.length > 1
                       ? t('attempt_1_failed_and_attempt_2_passed_on_the_same_commit_this_is')
                       : t('the_button_stayed_disabled_the_payment_intent_request_returned_5')}
@@ -190,7 +190,7 @@ export const RunView = () => {
               <Badge tone="good" icon="check">
                 {t('passed')}
               </Badge>
-              <p className="text-base text-ink-2">
+              <p className="text-ink-2">
                 {t('all')} {attempt.steps.length} {t('steps_passed_in')} {ms(attempt.ms)}.
               </p>
             </section>
@@ -254,7 +254,7 @@ export const RunView = () => {
         <Evidence run={run} failingLabel={failingStep?.label} onLog={setLog} />
       </div>
 
-      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
+      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-ink-3">
         <span className="ui-mono truncate text-ink-2">
           {t('runs_4')}
           {run.id}/

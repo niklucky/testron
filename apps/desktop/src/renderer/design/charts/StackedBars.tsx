@@ -45,11 +45,7 @@ export const StackedBars = ({
             className="absolute inset-x-0 flex items-center gap-2"
             style={{ top: `${(1 - tick / scale) * 100}%` }}
           >
-            <span
-              className={`ui-mono shrink-0 text-right text-xs text-ink-3 ${
-                compact ? 'w-5 text-2xs' : 'w-7'
-              }`}
-            >
+            <span className={`ui-mono shrink-0 text-right text-ink-3 ${compact ? 'w-5 ' : 'w-7'}`}>
               {tick}
             </span>
             <span className="h-px flex-1 bg-line-soft" />
@@ -70,12 +66,12 @@ export const StackedBars = ({
                 className="flex h-full flex-1 flex-col justify-end"
                 content={
                   <>
-                    <p className="text-sm font-semibold text-ink">{datum.label}</p>
-                    <p className="mb-1 text-xs text-ink-3">
+                    <p className="font-semibold text-ink">{datum.label}</p>
+                    <p className="mb-1 text-ink-3">
                       {total} {unit}
                     </p>
                     {series.map((entry) => (
-                      <p key={entry.id} className="flex items-center gap-1.5 text-xs">
+                      <p key={entry.id} className="flex items-center gap-1.5 ">
                         <span
                           className="h-[6px] w-[6px] rounded-full"
                           style={{ background: entry.color }}
@@ -114,7 +110,7 @@ export const StackedBars = ({
       {!compact && (
         <div className="mt-2 flex gap-[4px] pl-9">
           {data.map((datum) => (
-            <span key={datum.key} className="ui-mono flex-1 text-center text-2xs text-ink-3">
+            <span key={datum.key} className="ui-mono flex-1 text-center text-ink-3">
               {datum.tick ?? ''}
             </span>
           ))}

@@ -19,9 +19,9 @@ const base =
   'inline-flex shrink-0 items-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:pointer-events-none';
 
 const bySize = {
-  sm: 'h-7 px-2.5 text-sm',
-  md: 'h-8 px-3 text-base',
-  lg: 'h-9 px-3 text-md',
+  sm: 'h-7 px-2.5 ',
+  md: 'h-8 px-3 ',
+  lg: 'h-9 px-3 ',
 };
 
 const byVariant: Record<ButtonVariant, string> = {

@@ -121,7 +121,7 @@ export const Runs = ({
         {now.running > 0 && (
           <span className="flex items-center gap-1.5 rounded-md border border-line bg-plane px-2 py-1">
             <PulseDot label={t('runs_in_flight')} />
-            <span className="text-sm text-ink-2">
+            <span className="text-ink-2">
               {now.running} {t('in_flight')}
             </span>
           </span>
@@ -180,7 +180,7 @@ export const Runs = ({
       <Panel className="mb-4 p-4">
         <div className="mb-3 flex items-center gap-2">
           <h2 className="text-md font-semibold">{t('failures_by_suite')}</h2>
-          <span className="text-sm text-ink-3">
+          <span className="text-ink-3">
             {t('last')} {range} {t('days')}
           </span>
         </div>
@@ -193,7 +193,7 @@ export const Runs = ({
           }
           legendLabels={['none', '1', '2', '3–4', '5+']}
           meta={
-            <span className="text-xs text-ink-3">
+            <span className="text-ink-3">
               {range} {t('days')}
             </span>
           }
@@ -243,7 +243,7 @@ export const Runs = ({
         </div>
 
         <div
-          className={`grid ${columns} border-b border-line-soft px-4 py-2 text-2xs font-bold uppercase tracking-[0.09em] text-ink-3`}
+          className={`grid ${columns} border-b border-line-soft px-4 py-2 font-bold uppercase tracking-[0.09em] text-ink-3`}
         >
           <span />
           <span>{t('test')}</span>
@@ -257,7 +257,7 @@ export const Runs = ({
 
         {groups.map(([day, entries]) => (
           <div key={day}>
-            <p className="flex items-center gap-2 border-b border-line-soft bg-plane/40 px-4 py-1.5 text-xs text-ink-3">
+            <p className="flex items-center gap-2 border-b border-line-soft bg-plane/40 px-4 py-1.5 text-ink-3">
               <span className="font-semibold text-ink-2">{dayLabel(day)}</span>
               <span>
                 {entries.length} {t('runs_2')}{' '}
@@ -292,7 +292,7 @@ export const Runs = ({
                       news, and the eye should not have to travel for it. */}
                   <span className="flex min-w-0 items-center gap-2">
                     <Badge size="sm">{run.environment}</Badge>
-                    <span className="min-w-0 flex-1 truncate text-base">{run.test}</span>
+                    <span className="min-w-0 flex-1 truncate ">{run.test}</span>
                     {run.attempts > 1 && (
                       <Badge size="sm" tone="warning">
                         {run.attempts} {t('attempts')}
@@ -302,13 +302,13 @@ export const Runs = ({
                         column narrows; neither is allowed to run over the
                         other. */}
                     {run.signature && (
-                      <span className="ui-mono min-w-0 max-w-[45%] shrink truncate text-xs text-ink-3">
+                      <span className="ui-mono min-w-0 max-w-[45%] shrink truncate text-ink-3">
                         {run.signature}
                       </span>
                     )}
                   </span>
 
-                  <span className="flex min-w-0 items-center gap-1.5 text-sm text-ink-3">
+                  <span className="flex min-w-0 items-center gap-1.5 text-ink-3">
                     <Icon
                       name={
                         run.trigger === 'ci'
@@ -322,15 +322,15 @@ export const Runs = ({
                     <span className="truncate">{run.by}</span>
                   </span>
 
-                  <span className="ui-mono truncate text-xs text-ink-3">
+                  <span className="ui-mono truncate text-ink-3">
                     {run.branch} · {run.commit}
                   </span>
 
-                  <span className="ui-mono text-right text-sm text-ink-2">
+                  <span className="ui-mono text-right text-ink-2">
                     {run.verdict === 'running' ? '…' : `${run.seconds.toFixed(1)}s`}
                   </span>
 
-                  <span className="ui-mono text-right text-xs text-ink-3">
+                  <span className="ui-mono text-right text-ink-3">
                     {age(run.minutesAgo)} {t('ago')}
                   </span>
                 </div>

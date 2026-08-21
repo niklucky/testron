@@ -10,11 +10,11 @@ export const RecoveryScreen = () => {
             <Icon name="monitor" size={20} />
           </span>
           <div>
-            <p className="ui-mono text-xs tracking-[0.12em] text-accent uppercase">Local runtime</p>
+            <p className="ui-mono tracking-[0.12em] text-accent uppercase">Local runtime</p>
             <h1 className="mt-1 text-2xl font-semibold">The Testron web app is unavailable</h1>
           </div>
         </div>
-        <p className="mt-5 text-md leading-6 text-ink-2">
+        <p className="mt-5 leading-6 text-ink-2">
           Check your connection and retry. Recording, replay, and recovery remain bundled with this
           desktop app. The browser installer will also live in this local layer.
         </p>

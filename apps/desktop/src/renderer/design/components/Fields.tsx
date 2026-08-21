@@ -28,7 +28,7 @@ export const SearchField = forwardRef<
       ref={ref}
       aria-label={label}
       className={`min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-3 ${
-        size === 'sm' ? 'text-sm' : 'text-base'
+        size === 'sm' ? '' : ''
       } ${mono ? 'ui-mono' : ''}`}
       {...rest}
     />
@@ -45,10 +45,10 @@ export const TextArea = ({
   ...rest
 }: { label: string } & ComponentPropsWithoutRef<'textarea'>) => (
   <label className="block">
-    <span className="text-sm text-ink-3">{label}</span>
+    <span className="text-ink-3">{label}</span>
     <textarea
       aria-label={label}
-      className={`mt-1.5 w-full resize-none rounded-lg border border-line bg-plane p-2.5 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent ${className}`}
+      className={`mt-1.5 w-full resize-none rounded-lg border border-line bg-plane p-2.5 text-ink outline-none placeholder:text-ink-3 focus:border-accent ${className}`}
       {...rest}
     />
   </label>

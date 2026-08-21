@@ -7,7 +7,7 @@ import { Button, Icon } from '../../ui/design';
 import { passwordChangeError } from './validation';
 
 const fieldClass =
-  'mt-1.5 h-10 w-full rounded-md border border-line bg-plane px-3 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent';
+  'mt-1.5 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent';
 
 export const ProfileModal = ({
   library,
@@ -82,13 +82,11 @@ export const ProfileModal = ({
       >
         <div className="flex items-start gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.11em] text-accent">
-              {t('account')}
-            </p>
+            <p className="font-semibold uppercase tracking-[0.11em] text-accent">{t('account')}</p>
             <h2 id={titleId} className="mt-1 text-2xl font-semibold">
               {t('profile')}
             </h2>
-            <p className="mt-1 text-sm text-ink-3">{library.viewer?.email}</p>
+            <p className="mt-1 text-ink-3">{library.viewer?.email}</p>
           </div>
           <Button className="ml-auto" disabled={pending} onClick={onClose}>
             {t('close')}
@@ -98,7 +96,7 @@ export const ProfileModal = ({
         {message && (
           <div
             role={error ? 'alert' : 'status'}
-            className={`mt-5 flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm ${
+            className={`mt-5 flex items-start gap-2 rounded-md border px-3 py-2.5 ${
               error
                 ? 'border-critical/30 bg-critical-wash text-critical'
                 : 'border-good/30 bg-good-wash text-ink-2'
@@ -112,7 +110,7 @@ export const ProfileModal = ({
         <form className="mt-6" onSubmit={saveName}>
           <h3 className="text-md font-semibold">{t('personal_information')}</h3>
           <label className="mt-4 block">
-            <span className="text-sm font-medium text-ink-2">{t('name')}</span>
+            <span className="font-medium text-ink-2">{t('name')}</span>
             <input
               autoFocus
               required
@@ -136,7 +134,7 @@ export const ProfileModal = ({
 
         <form className="mt-6 border-t border-line pt-6" onSubmit={savePassword}>
           <h3 className="text-md font-semibold">{t('change_password')}</h3>
-          <p className="mt-1 text-sm text-ink-3">
+          <p className="mt-1 text-ink-3">
             {t('existing_signed_in_sessions_remain_active_after_this_change')}
           </p>
           <div className="mt-4 space-y-4">
@@ -146,7 +144,7 @@ export const ProfileModal = ({
               ['Confirm new password', confirmation, setConfirmation],
             ].map(([label, value, setter]) => (
               <label key={label as string} className="block">
-                <span className="text-sm font-medium text-ink-2">{label as string}</span>
+                <span className="font-medium text-ink-2">{label as string}</span>
                 <input
                   type="password"
                   required

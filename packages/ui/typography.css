@@ -1,0 +1,21 @@
+/* The product type scale is shared by the web and desktop renderers.
+   Body copy has one size; only semantic headings opt into the header scale. */
+@theme {
+  --text-md: 14px;
+  --text-md--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 19px;
+  --text-xl--line-height: 25px;
+  --text-2xl: 22px;
+  --text-2xl--line-height: 28px;
+  --text-3xl: 28px;
+  --text-3xl--line-height: 32px;
+}
+
+@layer base {
+  body {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+}

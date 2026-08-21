@@ -72,7 +72,7 @@ export const Waterfall = ({
         ) : (
           <h2 className="text-md font-semibold">{t('timeline')}</h2>
         )}
-        <span className="ml-auto flex items-center gap-3 text-sm text-ink-3">
+        <span className="ml-auto flex items-center gap-3 text-ink-3">
           <span>
             {attempt.steps.filter((result) => result.status === 'passed').length} {t('passed_3')}
           </span>
@@ -112,7 +112,7 @@ export const Waterfall = ({
                   result.status === 'failed' ? 'bg-critical-wash' : 'hover:bg-raised/50'
                 }`}
               >
-                <span className="ui-mono flex items-center gap-1 text-xs text-ink-3">
+                <span className="ui-mono flex items-center gap-1 text-ink-3">
                   {result.index + 1}
                 </span>
 
@@ -129,7 +129,7 @@ export const Waterfall = ({
                     />
                   )}
                   <span
-                    className={`truncate text-base ${
+                    className={`truncate ${
                       result.status === 'skipped' ? 'text-ink-3' : 'text-ink'
                     }`}
                   >
@@ -155,7 +155,7 @@ export const Waterfall = ({
                 <span className="flex items-center justify-end gap-2">
                   {delta !== undefined && Math.abs(delta) > 80 && (
                     <span
-                      className="ui-mono text-xs"
+                      className="ui-mono "
                       style={{ color: delta > 0 ? 'var(--ui-serious)' : 'var(--ui-good)' }}
                       title={t('against_the_last_green_run')}
                     >
@@ -163,7 +163,7 @@ export const Waterfall = ({
                       {ms(Math.abs(delta))}
                     </span>
                   )}
-                  <span className="ui-mono text-sm text-ink-2">
+                  <span className="ui-mono text-ink-2">
                     {result.status === 'skipped' ? '—' : ms(result.ms)}
                   </span>
                 </span>
@@ -171,17 +171,17 @@ export const Waterfall = ({
 
               {(open || result.status === 'failed') && (
                 <div className="space-y-2 border-t border-line-soft px-3 py-2.5 pl-[38px]">
-                  <p className="ui-mono truncate text-xs text-ink-3">
+                  <p className="ui-mono truncate text-ink-3">
                     <Icon name="arrowRight" size={11} className="mr-1 inline" />
                     {result.url}
                   </p>
 
                   {result.error && (
                     <>
-                      <pre className="ui-mono overflow-x-auto whitespace-pre-wrap rounded-md border border-line bg-plane p-2.5 text-sm leading-[18px] text-ink-2">
+                      <pre className="ui-mono overflow-x-auto whitespace-pre-wrap rounded-md border border-line bg-plane p-2.5 leading-[18px] text-ink-2">
                         {result.error}
                       </pre>
-                      <p className="flex items-center gap-2 text-sm text-ink-3">
+                      <p className="flex items-center gap-2 text-ink-3">
                         <Badge tone="critical" icon="alert" size="sm">
                           {t('stopped_the_run')}
                         </Badge>
@@ -191,7 +191,7 @@ export const Waterfall = ({
                   )}
 
                   {result.status === 'skipped' && (
-                    <p className="text-sm text-ink-3">{t('never_ran_the_step_before_it_failed')}</p>
+                    <p className="text-ink-3">{t('never_ran_the_step_before_it_failed')}</p>
                   )}
                 </div>
               )}

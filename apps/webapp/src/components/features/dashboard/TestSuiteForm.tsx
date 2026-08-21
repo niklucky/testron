@@ -59,7 +59,7 @@ export const TestSuiteForm = ({
         </h2>
 
         <form className="mt-6" onSubmit={submit}>
-          <label htmlFor={nameId} className="block text-sm font-medium text-ink-2">
+          <label htmlFor={nameId} className="block font-medium text-ink-2">
             {t('name')}
           </label>
           <input
@@ -69,7 +69,7 @@ export const TestSuiteForm = ({
             maxLength={100}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+            className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
           />
 
           <div className="mt-6 flex justify-end gap-2">

@@ -1,7 +1,6 @@
 /* Frozen UI studies — the shells behind #/experiments and the recorder.
-   These are kept working as-is; the design system in ../ owns the main app.
-   The reset, the base element rules and the Tailwind import now live in
-   src/renderer/app.css, so everything below is scoped to a legacy shell. */
+   Layout and color remain scoped to these legacy shells; typography inherits
+   the shared product body size, with explicit sizes only on headings. */
 
 .toolbar,
 .dashboard-shell,
@@ -57,7 +56,6 @@
 
 .brand small {
   color: #8f98aa;
-  font-size: 10px;
   margin-top: 1px;
 }
 
@@ -108,7 +106,6 @@
 .status {
   min-width: 86px;
   color: #98a1b2;
-  font-size: 12px;
 }
 
 .status.live {
@@ -136,7 +133,6 @@
 
 .entity label {
   color: #8f98aa;
-  font-size: 11px;
 }
 
 .entity select,
@@ -236,7 +232,6 @@
   gap: 7px;
   padding: 6px 8px;
   border-bottom: 1px solid #29303d;
-  font-size: 11px;
 }
 
 .run-config label {
@@ -258,7 +253,6 @@
 .artifacts {
   padding: 6px 10px;
   color: #98a1b2;
-  font-size: 11px;
 }
 
 .run-summary.passed {
@@ -305,7 +299,6 @@
 .recorder-app ol {
   margin: 0;
   padding: 6px 8px 8px 32px;
-  font-size: 12px;
   line-height: 29px;
 }
 
@@ -334,7 +327,6 @@
 .quality-warning {
   display: block;
   color: #e9b65a;
-  font-size: 10px;
   line-height: 14px;
 }
 
@@ -400,7 +392,6 @@
   border-radius: 5px;
   color: #ffd7a0;
   background: #5a3c18;
-  font-size: 11px;
 }
 
 @media (max-width: 1000px) {
@@ -581,7 +572,6 @@
   border-radius: 24px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 13px;
   font-weight: 500;
   transition: 0.18s ease;
 }
@@ -606,7 +596,6 @@
   color: var(--blue);
   background: color-mix(in srgb, var(--blue) 13%, transparent);
   text-align: center;
-  font-size: 10px;
 }
 
 .sidebar-section-title {
@@ -615,7 +604,6 @@
   justify-content: space-between;
   margin: 27px 10px 9px;
   color: var(--soft);
-  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -647,7 +635,6 @@
   color: var(--muted);
   background: transparent;
   text-align: left;
-  font-size: 12px;
   font-weight: 500;
 }
 
@@ -711,7 +698,6 @@
   border-radius: 50%;
   color: #314269;
   background: #bfd2f5;
-  font-size: 11px;
   font-weight: 700;
 }
 
@@ -734,14 +720,12 @@
 }
 
 .profile-card strong {
-  font-size: 11px;
   font-weight: 650;
 }
 
 .profile-card small {
   margin-top: 2px;
   color: var(--soft);
-  font-size: 9px;
 }
 
 .dashboard-main {
@@ -765,7 +749,6 @@
 .eyebrow {
   margin: 0 0 7px !important;
   color: var(--blue) !important;
-  font-size: 9px !important;
   font-weight: 750 !important;
   letter-spacing: 0.17em;
 }
@@ -780,7 +763,6 @@
 .topbar p {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 12px;
 }
 
 .top-actions {
@@ -857,7 +839,6 @@
   border: 0;
   color: var(--ink);
   background: transparent;
-  font-size: 11px;
 }
 
 .search-box input:focus {
@@ -919,7 +900,6 @@
   background: var(--primary-fill);
   box-shadow: 0 9px 20px var(--primary-shadow);
   text-decoration: none;
-  font-size: 11px;
   font-weight: 650;
 }
 
@@ -940,7 +920,6 @@
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 11px;
 }
 
 .metric-icon {
@@ -949,7 +928,6 @@
   width: 29px;
   height: 29px;
   border-radius: 9px;
-  font-size: 14px;
   font-weight: 600;
 }
 
@@ -976,7 +954,6 @@
 .metric-value {
   margin-top: 11px;
   color: var(--ink);
-  font-size: 25px;
   font-weight: 300;
   letter-spacing: -0.03em;
 }
@@ -986,7 +963,6 @@
   gap: 7px;
   align-items: center;
   margin-top: 7px;
-  font-size: 9px;
 }
 
 .metric-foot strong {
@@ -1041,7 +1017,6 @@
 .panel-header p {
   margin: 4px 0 0;
   color: var(--soft);
-  font-size: 9px;
 }
 
 .select-button {
@@ -1050,7 +1025,6 @@
   border: 1px solid var(--line);
   color: var(--muted);
   background: rgb(255 255 255 / 25%);
-  font-size: 9px;
 }
 
 .select-button span {
@@ -1065,7 +1039,6 @@
 }
 
 .chart-summary > strong {
-  font-size: 21px;
   font-weight: 350;
 }
 
@@ -1074,7 +1047,6 @@
   border-radius: 10px;
   color: #1fa574;
   background: rgb(44 181 130 / 10%);
-  font-size: 8px;
   font-weight: 700;
 }
 
@@ -1112,7 +1084,6 @@
   justify-content: space-between;
   padding: 0 1%;
   color: var(--soft);
-  font-size: 8px;
   transform: translateY(-5px);
 }
 
@@ -1160,14 +1131,12 @@
 }
 
 .donut strong {
-  font-size: 23px;
   font-weight: 300;
 }
 
 .donut span {
   margin-top: 1px;
   color: var(--soft);
-  font-size: 8px;
 }
 
 .donut-legend {
@@ -1190,12 +1159,10 @@
 
 .donut-legend span {
   color: var(--soft);
-  font-size: 8px;
 }
 
 .donut-legend strong {
   grid-column: 2;
-  font-size: 12px;
   font-weight: 500;
 }
 
@@ -1228,7 +1195,6 @@
   border-top: 1px solid var(--line);
   color: var(--blue);
   text-decoration: none;
-  font-size: 9px;
   font-weight: 600;
 }
 
@@ -1250,7 +1216,6 @@
   padding: 5px 3px;
   color: var(--blue);
   text-decoration: none;
-  font-size: 9px;
   font-weight: 600;
 }
 
@@ -1266,14 +1231,12 @@
   min-height: 52px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 9px;
 }
 
 .table-head {
   min-height: 29px;
   border: 0;
   color: var(--soft);
-  font-size: 7px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -1309,14 +1272,12 @@
 
 .test-name strong {
   color: var(--ink);
-  font-size: 9px;
   font-weight: 600;
 }
 
 .test-name small {
   margin-top: 3px;
   color: var(--soft);
-  font-size: 8px;
 }
 
 .run-icon {
@@ -1358,7 +1319,6 @@
   display: inline-block;
   padding: 4px 7px;
   border-radius: 8px;
-  font-size: 8px;
   font-style: normal;
   font-weight: 600;
 }
@@ -1402,7 +1362,6 @@
   height: 31px;
   border-radius: 10px;
   color: #455274;
-  font-size: 8px;
   font-weight: 700;
 }
 
@@ -1432,20 +1391,17 @@
 
 .change-copy strong {
   color: var(--ink);
-  font-size: 9px;
   font-weight: 600;
 }
 
 .change-copy small {
   margin-top: 4px;
   color: var(--soft);
-  font-size: 7px;
 }
 
 .change-tag {
   padding: 4px 6px;
   border-radius: 7px;
-  font-size: 7px;
   font-style: normal;
   font-weight: 650;
 }
@@ -1491,58 +1447,13 @@
   border-radius: 999px;
 }
 
-.main-nav a,
-.settings-link {
-  font-size: 17px;
-}
-
-.nav-count,
-.sidebar-section-title {
-  font-size: 13px;
-}
-
-.project-list button {
-  font-size: 16px;
-}
-
-.profile-card strong {
-  font-size: 16px;
-}
-
-.profile-card small {
-  font-size: 13px;
-}
-
-.eyebrow {
-  font-size: 13px !important;
-}
-
 .topbar h1 {
   font-size: clamp(30px, 2.5vw, 40px);
   font-weight: 700;
 }
 
-.topbar p {
-  font-size: 17px;
-}
-
-.search-box input,
-.primary-button,
-.select-button {
-  font-size: 16px;
-}
-
-.metric-heading {
-  font-size: 16px;
-}
-
 .metric-value {
-  font-size: 31px;
   font-weight: 600;
-}
-
-.metric-foot {
-  font-size: 16px;
 }
 
 .panel-header h2 {
@@ -1550,78 +1461,16 @@
   font-weight: 700;
 }
 
-.panel-header p {
-  font-size: 16px;
-}
-
 .chart-summary > strong {
-  font-size: 27px;
   font-weight: 600;
 }
 
-.trend-pill,
-.chart-labels,
-.donut-legend span {
-  font-size: 13px;
-}
-
 .donut strong {
-  font-size: 28px;
   font-weight: 700;
-}
-
-.donut span {
-  font-size: 13px;
-}
-
-.donut-legend strong {
-  font-size: 17px;
-}
-
-.panel-link,
-.text-button {
-  font-size: 16px;
 }
 
 .table-row {
   min-height: 62px;
-  font-size: 16px;
-}
-
-.table-head {
-  font-size: 12px;
-}
-
-.test-name strong {
-  font-size: 16px;
-}
-
-.test-name small {
-  font-size: 14px;
-}
-
-.status-pill {
-  font-size: 13px;
-}
-
-.change-copy strong {
-  font-size: 16px;
-}
-
-.change-copy small {
-  font-size: 14px;
-}
-
-.change-tag {
-  font-size: 12px;
-}
-
-.activity-note strong {
-  font-size: 14px;
-}
-
-.activity-note small {
-  font-size: 13px;
 }
 
 .activity-note strong,
@@ -1630,14 +1479,12 @@
 }
 
 .activity-note strong {
-  font-size: 14px;
   font-weight: 600;
 }
 
 .activity-note small {
   margin-top: 3px;
   color: var(--soft);
-  font-size: 13px;
 }
 
 .back-to-dashboard {
@@ -1647,7 +1494,6 @@
   z-index: 2;
   color: #98a1b2;
   text-decoration: none;
-  font-size: 11px;
 }
 
 .recorder-app {
@@ -1682,11 +1528,6 @@
 
   .sidebar {
     padding: 16px 8px 10px 8px;
-  }
-
-  .main-nav a:not(.active) span,
-  .main-nav a {
-    font-size: 0;
   }
 
   .main-nav a {
@@ -1802,7 +1643,6 @@
   height: 34px;
   border-radius: 50%;
   color: #24334c;
-  font-size: 11px;
   font-weight: 750;
   letter-spacing: -0.02em;
 }
@@ -1831,7 +1671,6 @@
 }
 
 .project-selector-copy strong {
-  font-size: 16px;
   font-weight: 650;
 }
 
@@ -1890,14 +1729,12 @@
   color: var(--ink);
   background: transparent;
   text-align: left;
-  font-size: 16px;
 }
 
 .project-menu .project-avatar {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  font-size: 11px;
 }
 
 .project-check {
@@ -1911,7 +1748,6 @@
   justify-content: space-between;
   margin: 19px 10px 8px;
   color: var(--soft);
-  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1943,7 +1779,6 @@
   color: var(--muted);
   background: transparent;
   text-align: left;
-  font-size: 16px;
   font-weight: 600;
 }
 
@@ -1967,7 +1802,6 @@
   border-radius: 999px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 16px;
 }
 
 .suite-tests a:hover {
@@ -1997,7 +1831,6 @@
   gap: 0;
   padding: 0;
   border-radius: 50%;
-  font-size: 0;
 }
 
 .sidebar-collapsed .project-control {
@@ -2054,7 +1887,6 @@
   gap: 0;
   padding: 0;
   border-radius: 50%;
-  font-size: 0;
 }
 
 .sidebar-collapsed .profile-card {
@@ -2070,16 +1902,6 @@
 .sidebar-collapsed .profile-copy,
 .sidebar-collapsed .profile-card > .ui-icon {
   display: none;
-}
-
-/* Typography floor: only compact labels and badges sit below the 16px base. */
-.dashboard-shell {
-  font-size: 16px;
-}
-
-.search-box kbd,
-.change-avatar {
-  font-size: 11px;
 }
 
 /* Dashboard chooser */
@@ -2108,7 +1930,6 @@
 }
 .gallery-content header span {
   color: #6f716c;
-  font-size: 10px;
   font-weight: 750;
   letter-spacing: 0.14em;
 }
@@ -2121,7 +1942,6 @@
 .gallery-content header p {
   margin: 0;
   color: #777872;
-  font-size: 15px;
 }
 .gallery-grid {
   display: grid;
@@ -2165,7 +1985,6 @@
   position: absolute;
   right: 21px;
   bottom: 17px;
-  font-size: 11px;
   font-weight: 700;
 }
 .gallery-glass {
@@ -2262,18 +2081,13 @@
   align-items: center;
   justify-content: space-between;
 }
-.gallery-card-copy strong {
-  font-size: 16px;
-}
 .gallery-card-copy span {
   color: #787970;
-  font-size: 11px;
 }
 .gallery-card-copy p {
   min-height: 34px;
   margin: 8px 0 0;
   color: #777872;
-  font-size: 12px;
   line-height: 1.45;
 }
 

@@ -39,7 +39,7 @@ export const HistoryView = ({ failure }: { failure: Failure }) => {
           }))}
         />
 
-        <p className="mt-2 text-sm text-ink-3">
+        <p className="mt-2 text-ink-3">
           {failed} {t('failures_in_24_runs_first_seen')} {age(failure.ageMinutes)} {t('ago_2')}{' '}
           {failure.kind === 'flaky'
             ? t('alternates_green_and_red_on_the_same_commit')
@@ -49,7 +49,7 @@ export const HistoryView = ({ failure }: { failure: Failure }) => {
 
       <div className="rounded-lg border border-line bg-plane p-3">
         <SectionLabel>{t('timeline')}</SectionLabel>
-        <ul className="mt-2 space-y-2 text-base">
+        <ul className="mt-2 space-y-2 ">
           {[
             [`${age(failure.ageMinutes)} ago`, `First failure on ${failure.env}`],
             ['2h ago', `${failure.owner} was assigned`],

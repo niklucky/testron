@@ -28,7 +28,7 @@ export const Badge = ({
 }) => (
   <span
     className={`inline-flex shrink-0 items-center gap-1 rounded-full font-semibold ${
-      size === 'sm' ? 'px-1.5 text-2xs' : 'px-1.5 py-px text-xs'
+      size === 'sm' ? 'px-1.5 ' : 'px-1.5 py-px '
     } ${uppercase ? 'uppercase tracking-wide' : ''} ${mono ? 'ui-mono' : ''} ${
       tone ? '' : 'bg-line-soft text-ink-3'
     } ${className}`}

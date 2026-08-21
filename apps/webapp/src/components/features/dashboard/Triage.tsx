@@ -64,7 +64,7 @@ export const Triage = ({
           </Badge>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl font-semibold tracking-[-0.01em]">{failure.test}</h1>
-            <p className="ui-mono mt-1 truncate text-base text-ink-3">
+            <p className="ui-mono mt-1 truncate text-ink-3">
               {failure.file} · {failure.runId} · {failure.browser} · {failure.env}
             </p>
           </div>

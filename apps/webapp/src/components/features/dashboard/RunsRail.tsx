@@ -38,10 +38,8 @@ export const RunsRail = ({
                 onClick={() => onFilter(entry.test)}
               >
                 <span className="flex items-baseline gap-2">
-                  <span className="min-w-0 flex-1 truncate text-base">{entry.test}</span>
-                  <span className="ui-mono shrink-0 text-xs text-ink-3">
-                    {entry.passRate.toFixed(0)}%
-                  </span>
+                  <span className="min-w-0 flex-1 truncate ">{entry.test}</span>
+                  <span className="ui-mono shrink-0 text-ink-3">{entry.passRate.toFixed(0)}%</span>
                 </span>
                 <Ribbon
                   className="mt-1"
@@ -52,7 +50,7 @@ export const RunsRail = ({
                     label: verdict,
                   }))}
                 />
-                <span className="mt-1 flex items-center gap-1.5 text-xs text-ink-3">
+                <span className="mt-1 flex items-center gap-1.5 text-ink-3">
                   {entry.suite} · {entry.runs} {t('runs_3')}
                   {entry.flaky > 0 && (
                     <Badge size="sm" tone="warning">
@@ -72,8 +70,8 @@ export const RunsRail = ({
           {slowest.map((entry) => (
             <li key={entry.test}>
               <p className="flex items-baseline gap-2">
-                <span className="min-w-0 flex-1 truncate text-base">{entry.test}</span>
-                <span className="ui-mono shrink-0 text-xs text-ink-3">
+                <span className="min-w-0 flex-1 truncate ">{entry.test}</span>
+                <span className="ui-mono shrink-0 text-ink-3">
                   {entry.slowest.toFixed(0)}
                   {t('s')}
                 </span>
@@ -100,16 +98,14 @@ export const RunsRail = ({
                 className="w-full text-left"
                 onClick={() => onFilter(entry.signature)}
               >
-                <span className="ui-mono block truncate text-sm text-ink-2">{entry.signature}</span>
-                <span className="flex items-center gap-1.5 text-xs text-ink-3">
+                <span className="ui-mono block truncate text-ink-2">{entry.signature}</span>
+                <span className="flex items-center gap-1.5 text-ink-3">
                   {entry.count} {t('runs_last')} {age(entry.lastSeen)} {t('ago')}
                 </span>
               </button>
             </li>
           ))}
-          {failures.length === 0 && (
-            <li className="text-sm text-ink-3">{t('nothing_failed_enjoy_it')}</li>
-          )}
+          {failures.length === 0 && <li className="text-ink-3">{t('nothing_failed_enjoy_it')}</li>}
         </ul>
       </section>
 
@@ -126,7 +122,7 @@ export const RunsRail = ({
             )}
             label={t('runs_per_day')}
           />
-          <span className="text-xs text-ink-3">{t('runs_per_day_2')}</span>
+          <span className="text-ink-3">{t('runs_per_day_2')}</span>
         </div>
       </section>
     </aside>

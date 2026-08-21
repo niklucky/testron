@@ -25,7 +25,7 @@ export const NavItem = ({
   <button
     type="button"
     aria-current={active ? 'page' : undefined}
-    className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-md transition-colors ${
+    className={`flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors ${
       active ? 'bg-accent-wash font-medium text-ink' : 'text-ink-2 hover:bg-raised hover:text-ink'
     }`}
     onClick={onClick}
@@ -34,7 +34,7 @@ export const NavItem = ({
     {label}
     {badge !== undefined && (
       <span
-        className="ui-mono ml-auto rounded-full px-1.5 text-xs font-semibold"
+        className="ui-mono ml-auto rounded-full px-1.5 font-semibold"
         style={toneStyle(badgeTone)}
       >
         {badge}

@@ -59,7 +59,7 @@ export const RunRail = ({
           <SectionLabel>
             {t('last_2')} {runs.length} {t('runs_3')}
           </SectionLabel>
-          <span className="ui-mono ml-auto text-xs text-ink-3">
+          <span className="ui-mono ml-auto text-ink-3">
             {Math.round((passed / runs.length) * 100)}
             {t('green')}
           </span>
@@ -76,7 +76,7 @@ export const RunRail = ({
 
         <div className="flex items-center gap-2">
           <Sparkline values={ordered.map((run) => run.ms / 1000)} label={t('duration_trend')} />
-          <span className="text-sm text-ink-3">{t('duration_trend_2')}</span>
+          <span className="text-ink-3">{t('duration_trend_2')}</span>
         </div>
       </div>
 
@@ -106,21 +106,21 @@ export const RunRail = ({
               >
                 <span className="flex items-center gap-2">
                   <StatusDot tone={verdict.tone} label={verdict.label} />
-                  <span className="text-base text-ink">{t(verdict.label)}</span>
+                  <span className="text-ink">{t(verdict.label)}</span>
                   {run.attempts.length > 1 && (
                     <Badge size="sm" tone="warning">
                       {run.attempts.length} {t('attempts')}
                     </Badge>
                   )}
-                  <span className="ui-mono ml-auto text-xs text-ink-3">{ms(run.ms)}</span>
+                  <span className="ui-mono ml-auto text-ink-3">{ms(run.ms)}</span>
                 </span>
-                <span className="mt-1 flex items-center gap-1.5 text-xs text-ink-3">
+                <span className="mt-1 flex items-center gap-1.5 text-ink-3">
                   <span>{run.environment}</span>·<span className="truncate">{run.by}</span>·
                   <span className="shrink-0">
                     {age(run.minutesAgo)} {t('ago')}
                   </span>
                 </span>
-                <span className="ui-mono mt-0.5 block truncate text-xs text-ink-3">
+                <span className="ui-mono mt-0.5 block truncate text-ink-3">
                   {run.branch} · {run.commit}
                 </span>
               </button>

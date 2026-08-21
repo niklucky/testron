@@ -24,7 +24,7 @@ export const PanelHeader = ({
   <div className="flex items-start justify-between gap-4 border-b border-line-soft px-4 py-3">
     <div>
       <h2 className="text-md font-semibold">{title}</h2>
-      {subtitle && <p className="mt-0.5 text-sm text-ink-3">{subtitle}</p>}
+      {subtitle && <p className="mt-0.5 text-ink-3">{subtitle}</p>}
     </div>
     {action}
   </div>
@@ -41,7 +41,7 @@ export const SectionLabel = ({
   children: ReactNode;
   className?: string;
 }) => (
-  <span className={`text-xs font-semibold uppercase tracking-[0.11em] text-ink-2 ${className}`}>
+  <span className={`font-semibold uppercase tracking-[0.11em] text-ink-2 ${className}`}>
     {children}
   </span>
 );
@@ -53,4 +53,4 @@ export const EmptyState = ({
 }: {
   children: ReactNode;
   className?: string;
-}) => <p className={`px-4 py-8 text-center text-base text-ink-3 ${className}`}>{children}</p>;
+}) => <p className={`px-4 py-8 text-center text-ink-3 ${className}`}>{children}</p>;

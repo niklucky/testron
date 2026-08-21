@@ -78,7 +78,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
       <div className="mx-auto max-w-[1040px]">
         <div>
           <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('members')}</h1>
-          <p className="mt-1 text-base text-ink-3">
+          <p className="mt-1 text-ink-3">
             {t('manage_access_to')} {project.name}.
           </p>
         </div>
@@ -102,10 +102,10 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                     setSubmittedEmail(undefined);
                 }}
                 placeholder={t('teammate_example_com')}
-                className="h-10 w-full rounded-md border border-line bg-plane px-3 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                className="h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
               />
               {email.trim() && (
-                <span className="mt-1.5 block text-sm text-ink-3">
+                <span className="mt-1.5 block text-ink-3">
                   {lookup
                     ? lookup.name
                       ? `Account: ${lookup.name}`
@@ -121,7 +121,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
           {library.server?.status === 'error' && library.server.message && (
             <div
               role="alert"
-              className="mx-4 mb-4 flex gap-2 rounded-md bg-critical-wash p-3 text-sm text-critical"
+              className="mx-4 mb-4 flex gap-2 rounded-md bg-critical-wash p-3 text-critical"
             >
               <Icon name="alert" size={14} />
               {library.server.message}
@@ -141,8 +141,8 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                 <div key={member.user.id} className="flex items-center gap-3 px-4 py-3">
                   <Avatar initials={initials(label)} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-medium">{label}</p>
-                    <p className="truncate text-sm text-ink-3">{member.user.email}</p>
+                    <p className="truncate font-medium">{label}</p>
+                    <p className="truncate text-ink-3">{member.user.email}</p>
                   </div>
                   <Badge>{member.role}</Badge>
                   <Badge tone={member.status === 'blocked' ? 'critical' : 'good'}>
@@ -175,9 +175,7 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
             subtitle={t('total_2', { value1: invitations.length })}
           />
           {invitations.length === 0 ? (
-            <div className="border-t border-line p-5 text-sm text-ink-3">
-              {t('no_invitations_yet')}
-            </div>
+            <div className="border-t border-line p-5 text-ink-3">{t('no_invitations_yet')}</div>
           ) : (
             <div className="divide-y divide-line border-t border-line">
               {invitations.map((invitation) => {
@@ -185,10 +183,10 @@ export const Members = ({ library }: { library: LibrarySnapshot }) => {
                 return (
                   <div key={invitation.id} className="flex items-center gap-3 px-4 py-3">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-base font-medium">
+                      <p className="truncate font-medium">
                         {invitation.inviteeName ?? invitation.email}
                       </p>
-                      <p className="truncate text-sm text-ink-3">
+                      <p className="truncate text-ink-3">
                         {invitation.email} {t('invited_by')}{' '}
                         {invitation.invitedBy.name ?? invitation.invitedBy.email}
                       </p>

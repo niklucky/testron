@@ -6,6 +6,8 @@ export type ThemePreference = Theme | 'system';
 const STORAGE_KEY = 'testron-theme';
 
 const stored = (): ThemePreference => {
+  const hostTheme = new URLSearchParams(window.location.search).get('theme');
+  if (hostTheme === 'dark' || hostTheme === 'light') return hostTheme;
   const value = localStorage.getItem(STORAGE_KEY);
   return value === 'light' || value === 'system' ? value : 'dark';
 };

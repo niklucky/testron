@@ -159,7 +159,7 @@ export const Sidebar = ({
       <section className="flex min-h-0 flex-[1.25] flex-col border-t border-line">
         <div className="flex h-9 shrink-0 items-center gap-2 px-3">
           <SectionLabel>{t('test_suites')}</SectionLabel>
-          <span className="ui-mono text-xs text-ink-3">
+          <span className="ui-mono text-ink-3">
             {suites.length} ·{' '}
             {ms(suites.reduce((sum, suite) => sum + (suite.totalLatestDurationMs ?? 0), 0))}
           </span>
@@ -222,7 +222,7 @@ export const Sidebar = ({
                 type="button"
                 role="menuitem"
                 disabled={!viewer}
-                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink-2 hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-ink-2 hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => {
                   setAccountMenuOpen(false);
                   onProfile();
@@ -232,9 +232,7 @@ export const Sidebar = ({
                 {t('profile')}
               </button>
               <div className="my-1 h-px bg-line" />
-              <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">
-                {t('change_theme')}
-              </div>
+              <div className="px-2.5 pt-1 pb-1.5 font-medium text-ink-3">{t('change_theme')}</div>
               <div
                 role="radiogroup"
                 aria-label={t('theme')}
@@ -266,9 +264,7 @@ export const Sidebar = ({
                 ))}
               </div>
               <div className="my-1 h-px bg-line" />
-              <div className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-ink-3">
-                {t('language')}
-              </div>
+              <div className="px-2.5 pt-1 pb-1.5 font-medium text-ink-3">{t('language')}</div>
               <div
                 role="radiogroup"
                 aria-label={t('language')}
@@ -286,7 +282,7 @@ export const Sidebar = ({
                       role="radio"
                       aria-label={t(name)}
                       aria-checked={locale === value}
-                      className={`grid h-9 w-full place-items-center rounded-md text-lg leading-none transition-colors ${
+                      className={`grid h-9 w-full place-items-center rounded-md leading-none transition-colors ${
                         locale === value
                           ? 'bg-raised text-ink shadow-sm'
                           : 'text-ink-3 hover:bg-surface hover:text-ink-2'
@@ -303,7 +299,7 @@ export const Sidebar = ({
                 type="button"
                 role="menuitem"
                 disabled={!canSignOut}
-                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink-2 hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-ink-2 hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 onClick={() => {
                   window.testron?.command({ type: 'logout-server' });
                   window.location.hash = '#/';
@@ -324,8 +320,8 @@ export const Sidebar = ({
           >
             <Avatar initials={initials} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-base font-medium">{label}</span>
-              <span className="block truncate text-xs text-ink-3">{detail}</span>
+              <span className="block truncate font-medium">{label}</span>
+              <span className="block truncate text-ink-3">{detail}</span>
             </span>
             <Icon name="dots" size={15} className="shrink-0 text-ink-3" />
           </button>

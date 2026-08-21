@@ -22,9 +22,9 @@ export const ContextRail = ({ failing }: { failing: number }) => {
           { label: 'Runs today', value: '38', sub: '6 in the last hour' },
         ].map((tile) => (
           <Panel key={tile.label} className="p-2.5">
-            <p className="text-sm text-ink-3">{t(tile.label)}</p>
-            <p className="mt-1 text-2xl font-semibold leading-none tabular-nums">{tile.value}</p>
-            <p className="mt-1.5 text-xs text-ink-3">{t(tile.sub)}</p>
+            <p className="text-ink-3">{t(tile.label)}</p>
+            <p className="mt-1 font-semibold leading-none tabular-nums">{tile.value}</p>
+            <p className="mt-1.5 text-ink-3">{t(tile.sub)}</p>
           </Panel>
         ))}
       </div>
@@ -53,15 +53,13 @@ export const ContextRail = ({ failing }: { failing: number }) => {
         <ul className="space-y-1.5">
           {owners.map((owner) => (
             <li key={owner.name} className="flex items-center gap-2">
-              <span className="w-[88px] shrink-0 truncate text-sm text-ink-2">{owner.name}</span>
+              <span className="w-[88px] shrink-0 truncate text-ink-2">{owner.name}</span>
               <Meter
                 className="flex-1"
                 value={owner.open / busiest}
                 label={t('open_3', { value1: owner.open })}
               />
-              <span className="ui-mono w-4 shrink-0 text-right text-sm text-ink-3">
-                {owner.open}
-              </span>
+              <span className="ui-mono w-4 shrink-0 text-right text-ink-3">{owner.open}</span>
             </li>
           ))}
         </ul>
@@ -72,7 +70,7 @@ export const ContextRail = ({ failing }: { failing: number }) => {
           <Icon name="keyboard" size={14} className="text-ink-2" />
           <SectionLabel>{t('hands_stay_home')}</SectionLabel>
         </h3>
-        <ul className="space-y-1.5 text-sm text-ink-3">
+        <ul className="space-y-1.5 text-ink-3">
           {dashboardShortcutGroups.map((group) => (
             <li key={group.description} className="flex items-center gap-2">
               <span className="w-[66px] shrink-0">

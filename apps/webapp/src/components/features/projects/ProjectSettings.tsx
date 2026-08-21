@@ -9,7 +9,7 @@ import { ProfileSheet } from '../profiles/ProfileSheet';
 type SettingsTab = 'general' | 'environments';
 
 const fieldClass =
-  'mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-3 text-base text-ink outline-none placeholder:text-ink-3 focus:border-accent';
+  'mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent';
 
 const Field = ({
   label,
@@ -25,7 +25,7 @@ const Field = ({
   placeholder?: string;
 }) => (
   <label className="block">
-    <span className="text-sm font-medium text-ink-2">{label}</span>
+    <span className="font-medium text-ink-2">{label}</span>
     <input
       type={type}
       value={value}
@@ -165,7 +165,7 @@ export const ProjectSettings = ({
       >
         <aside className="border-r border-line bg-plane/60 p-3">
           <div className="px-2 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.11em] text-ink-3">
+            <p className="font-semibold uppercase tracking-[0.11em] text-ink-3">
               {t('project_settings')}
             </p>
             <h2 id="project-settings-title" className="mt-1 truncate text-md font-semibold">
@@ -182,7 +182,7 @@ export const ProjectSettings = ({
               <button
                 key={id}
                 type="button"
-                className={`flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-base transition-colors ${
+                className={`flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left transition-colors ${
                   tab === id ? 'bg-accent-wash font-medium text-ink' : 'text-ink-2 hover:bg-raised'
                 }`}
                 onClick={() => setTab(id)}
@@ -212,16 +212,14 @@ export const ProjectSettings = ({
               <div className="max-w-[600px] space-y-6">
                 <Field label={t('project_name')} value={projectName} onChange={setProjectName} />
                 <div>
-                  <span className="text-sm font-medium text-ink-2">{t('icon')}</span>
+                  <span className="font-medium text-ink-2">{t('icon')}</span>
                   <div className="mt-1.5 flex items-center gap-3 rounded-lg border border-dashed border-line bg-plane p-4">
-                    <span className="ui-mono grid h-12 w-12 place-items-center rounded-xl bg-accent text-xl font-bold text-accent-ink">
+                    <span className="ui-mono grid h-12 w-12 place-items-center rounded-xl bg-accent font-bold text-accent-ink">
                       {projectName.trim().charAt(0).toUpperCase() || t('p')}
                     </span>
                     <div>
-                      <p className="text-base font-medium">{t('project_logo')}</p>
-                      <p className="text-sm text-ink-3">
-                        {t('upload_and_cropping_will_be_added_later')}
-                      </p>
+                      <p className="font-medium">{t('project_logo')}</p>
+                      <p className="text-ink-3">{t('upload_and_cropping_will_be_added_later')}</p>
                     </div>
                     <Button className="ml-auto" disabled>
                       {t('choose_image')}
@@ -250,7 +248,7 @@ export const ProjectSettings = ({
             <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
               <aside className="min-h-0 overflow-y-auto border-r border-line p-3">
                 <div className="flex items-center px-2 pb-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-3">
+                  <p className="font-semibold uppercase tracking-[0.1em] text-ink-3">
                     {t('environments')}
                   </p>
                   <IconButton
@@ -277,11 +275,11 @@ export const ProjectSettings = ({
                     }}
                   >
                     <span className="h-2 w-2 rounded-full bg-good" />
-                    <span className="truncate text-base font-medium">{environment.name}</span>
+                    <span className="truncate font-medium">{environment.name}</span>
                   </button>
                 ))}
                 {environments.length === 0 && (
-                  <p className="px-2 py-4 text-sm text-ink-3">{t('no_environments_yet')}</p>
+                  <p className="px-2 py-4 text-ink-3">{t('no_environments_yet')}</p>
                 )}
               </aside>
 
@@ -290,7 +288,7 @@ export const ProjectSettings = ({
                   <div className="max-w-[560px] space-y-5">
                     <div>
                       <h4 className="text-md font-semibold">{t('add_environment')}</h4>
-                      <p className="mt-1 text-sm text-ink-3">
+                      <p className="mt-1 text-ink-3">
                         {t('create_another_target_for_this_project')}
                       </p>
                     </div>
@@ -349,7 +347,7 @@ export const ProjectSettings = ({
                       <div className="flex items-center">
                         <div>
                           <h4 className="text-md font-semibold">{t('profiles')}</h4>
-                          <p className="text-sm text-ink-3">
+                          <p className="text-ink-3">
                             {t('authentication_variants_for_this_environment')}
                           </p>
                         </div>
@@ -371,10 +369,10 @@ export const ProjectSettings = ({
                               }`}
                             >
                               <Icon name="lock" size={14} className="text-ink-3" />
-                              <span className="min-w-0 flex-1 truncate text-base font-medium">
+                              <span className="min-w-0 flex-1 truncate font-medium">
                                 {profile.name}
                               </span>
-                              <span className="text-sm text-ink-3">{t('login_password')}</span>
+                              <span className="text-ink-3">{t('login_password')}</span>
                               <IconButton
                                 icon="pencil"
                                 size="sm"
@@ -387,7 +385,7 @@ export const ProjectSettings = ({
                       ) : (
                         <button
                           type="button"
-                          className="mt-3 w-full rounded-lg border border-dashed border-line p-5 text-sm text-ink-3 hover:bg-raised"
+                          className="mt-3 w-full rounded-lg border border-dashed border-line p-5 text-ink-3 hover:bg-raised"
                           onClick={() => setEditingProfileId('new')}
                         >
                           {t('add_the_first_profile')}
@@ -411,7 +409,7 @@ export const ProjectSettings = ({
                   </div>
                 </form>
               ) : (
-                <div className="grid place-items-center text-base text-ink-3">
+                <div className="grid place-items-center text-ink-3">
                   {t('select_an_environment')}
                 </div>
               )}

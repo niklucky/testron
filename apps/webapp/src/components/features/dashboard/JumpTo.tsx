@@ -100,7 +100,7 @@ export const JumpTo = ({
               setCursor(0);
             }}
             placeholder={t('search_views_test_suites_and_tests')}
-            className="min-w-0 flex-1 bg-transparent text-lg text-ink outline-none placeholder:text-ink-3"
+            className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-3"
           />
           <Kbd>{shortcut}</Kbd>
         </label>
@@ -123,21 +123,17 @@ export const JumpTo = ({
                       onClose();
                     }}
                   >
-                    <span className="min-w-0 flex-1 truncate text-md font-medium">
-                      {item.label}
-                    </span>
-                    <span className="shrink-0 text-sm text-ink-3">{item.detail}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
+                    <span className="shrink-0 text-ink-3">{item.detail}</span>
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="px-3 py-10 text-center text-sm text-ink-3">
-              {t('no_matching_destination')}
-            </p>
+            <p className="px-3 py-10 text-center text-ink-3">{t('no_matching_destination')}</p>
           )}
         </div>
-        <footer className="flex items-center gap-4 border-t border-line px-4 py-2 text-xs text-ink-3">
+        <footer className="flex items-center gap-4 border-t border-line px-4 py-2 text-ink-3">
           <span>{t('navigate')}</span>
           <span>{t('open')}</span>
           <span>{t('esc_close')}</span>

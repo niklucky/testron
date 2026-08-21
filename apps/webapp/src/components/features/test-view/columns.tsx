@@ -48,10 +48,10 @@ export const DetailCard = ({
           onDetail({ ...detail, name });
           onLog('Test renamed');
         }}
-        className="text-md font-semibold"
+        className="font-semibold"
       />
 
-      <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">{t('environments')}</p>
+      <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('environments')}</p>
       <div className="flex flex-wrap gap-1">
         {(metadataEditable ? allEnvironments : detail.environments).map((environment) => {
           const on = detail.environments.includes(environment);
@@ -81,7 +81,7 @@ export const DetailCard = ({
 
       {metadataEditable && (
         <>
-          <p className="mb-1.5 mt-3 text-xs uppercase tracking-wider text-ink-3">{t('tags')}</p>
+          <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('tags')}</p>
           <div className="flex flex-wrap items-center gap-1">
             {detail.tags.map((tag) => (
               <Chip
@@ -106,7 +106,7 @@ export const DetailCard = ({
         </>
       )}
 
-      <dl className="mt-3 space-y-1 border-t border-line-soft pt-2.5 text-xs text-ink-3">
+      <dl className="mt-3 space-y-1 border-t border-line-soft pt-2.5 text-ink-3">
         {[
           ['Created', `${detail.createdAt} · ${detail.createdBy}`],
           ['Updated', detail.updatedAt],
@@ -141,10 +141,8 @@ export const PrerequisiteCard = ({
           <Badge size="sm" className="mb-1">
             {prerequisiteLabels[prerequisite.kind]}
           </Badge>
-          <span className="block truncate text-base text-ink">{prerequisite.title}</span>
-          <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
-            {prerequisite.value}
-          </span>
+          <span className="block truncate text-ink">{prerequisite.title}</span>
+          <span className="ui-mono mt-1 block truncate text-ink-3">{prerequisite.value}</span>
         </span>
         <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
           <IconButton icon="pencil" size="sm" label={t('edit_prerequisite')} onClick={onEdit} />
@@ -201,9 +199,9 @@ export const StepCard = ({
       tone={failed ? 'var(--ui-critical)' : running ? 'var(--ui-accent)' : undefined}
     >
       <div className="flex items-start gap-2">
-        <span className="ui-mono w-4 shrink-0 pt-px text-xs text-ink-3">{index + 1}</span>
+        <span className="ui-mono w-4 shrink-0 pt-px text-ink-3">{index + 1}</span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 text-base text-ink">
+          <span className="flex items-center gap-1.5 text-ink">
             <Icon name={style.icon} size={13} className="shrink-0 text-ink-3" />
             <span className="truncate">{sentence(step)}</span>
           </span>
@@ -211,14 +209,14 @@ export const StepCard = ({
           {/* The two parts a person actually edits: what it types, and what it
               aims at. Everything else about a step is generated. */}
           {step.value !== undefined && !step.secret && (
-            <span className="mt-1 flex items-center gap-1 text-xs text-ink-3">
+            <span className="mt-1 flex items-center gap-1 text-ink-3">
               {t('value_2')}
               <InlineText
                 label={t('step_value_2', { value1: index + 1 })}
                 mono
                 value={step.value}
                 onChange={(value) => onStep({ ...step, value })}
-                className="text-xs text-ink-2"
+                className="text-ink-2"
               />
             </span>
           )}
@@ -229,7 +227,7 @@ export const StepCard = ({
                 mono
                 value={step.locator}
                 onChange={(locator) => onStep({ ...step, locator })}
-                className="mt-1 text-xs text-ink-3"
+                className="mt-1 text-ink-3"
               />
               {step.alternatives.length > 0 && (
                 <select
@@ -239,7 +237,7 @@ export const StepCard = ({
                     if (event.target.value) onStep({ ...step, locator: event.target.value });
                     event.target.value = '';
                   }}
-                  className="ui-mono mt-1 w-full rounded border border-line bg-plane px-1 py-1 text-xs text-ink-3 outline-none hover:border-accent"
+                  className="ui-mono mt-1 w-full rounded border border-line bg-plane px-1 py-1 text-ink-3 outline-none hover:border-accent"
                 >
                   <option value="">{t('use_a_recorded_alternative')}</option>
                   {step.alternatives.map((locator) => (
@@ -252,7 +250,7 @@ export const StepCard = ({
             </>
           )}
           {step.locator && !locatorEditable && (
-            <span className="ui-mono mt-1 block truncate text-xs text-ink-3">{step.locator}</span>
+            <span className="ui-mono mt-1 block truncate text-ink-3">{step.locator}</span>
           )}
           {step.secret && (
             <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
@@ -267,7 +265,7 @@ export const StepCard = ({
               {error && (
                 <pre
                   aria-label={t('step_error')}
-                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
+                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-critical"
                 >
                   {error}
                 </pre>
@@ -275,7 +273,7 @@ export const StepCard = ({
             </div>
           )}
           {passed && !failed && (
-            <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
+            <span className="mt-1.5 flex items-center gap-1 text-good">
               <Icon name="check" size={11} /> {t('passed_3')}
             </span>
           )}
@@ -367,14 +365,14 @@ export const AssertionCard = ({
                 label={t('assertion_subject')}
                 value={assertion.label}
                 onChange={(label) => onAssertion({ ...assertion, label })}
-                className="text-base"
+                className=""
               />
             ) : (
-              <span className="truncate text-base">{assertion.label}</span>
+              <span className="truncate ">{assertion.label}</span>
             )}
           </span>
 
-          <span className="mt-1 flex flex-wrap items-center gap-1 text-sm text-ink-3">
+          <span className="mt-1 flex flex-wrap items-center gap-1 text-ink-3">
             <InlineSelect
               label={t('assertion')}
               value={assertion.kind}
@@ -383,7 +381,7 @@ export const AssertionCard = ({
                 label: assertionLabels[id],
               }))}
               onChange={(kind) => onAssertion({ ...assertion, kind })}
-              className="text-sm"
+              className=""
             />
             {assertionNeedsValue(assertion.kind) && (
               <InlineText
@@ -395,7 +393,7 @@ export const AssertionCard = ({
                 mono
                 value={assertion.expected}
                 onChange={(expected) => onAssertion({ ...assertion, expected })}
-                className="text-sm text-ink-2"
+                className="text-ink-2"
               />
             )}
           </span>
@@ -406,13 +404,11 @@ export const AssertionCard = ({
               mono
               value={assertion.locator}
               onChange={(locator) => onAssertion({ ...assertion, locator })}
-              className="mt-1 text-xs text-ink-3"
+              className="mt-1 text-ink-3"
             />
           )}
           {assertion.locator && !locatorEditable && (
-            <span className="ui-mono mt-1 block truncate text-xs text-ink-3">
-              {assertion.locator}
-            </span>
+            <span className="ui-mono mt-1 block truncate text-ink-3">{assertion.locator}</span>
           )}
           {status === 'failed' && (
             <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
@@ -422,7 +418,7 @@ export const AssertionCard = ({
               {error && (
                 <pre
                   aria-label={t('assertion_error')}
-                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-xs text-critical"
+                  className="ui-mono mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap text-critical"
                 >
                   {error}
                 </pre>
@@ -430,7 +426,7 @@ export const AssertionCard = ({
             </div>
           )}
           {status === 'passed' && (
-            <span className="mt-1.5 flex items-center gap-1 text-xs text-good">
+            <span className="mt-1.5 flex items-center gap-1 text-good">
               <Icon name="check" size={11} /> {t('passed_3')}
             </span>
           )}
@@ -490,8 +486,8 @@ export const RunCard = ({
     <Card selected={selected} onClick={onClick} className="group">
       <div className="flex items-center gap-2">
         <StatusDot tone={verdict.tone} label={verdict.label} />
-        <span className="text-base text-ink">{t(verdict.label)}</span>
-        <span className="ui-mono ml-auto text-xs text-ink-3">
+        <span className="text-ink">{t(verdict.label)}</span>
+        <span className="ui-mono ml-auto text-ink-3">
           {run.verdict === 'running' ? '…' : `${run.seconds.toFixed(1)}s`}
         </span>
       </div>
@@ -511,12 +507,12 @@ export const RunCard = ({
 
       {run.error && run.verdict !== 'running' && (
         <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
-          <p className="text-xs font-medium text-critical">
+          <p className="font-medium text-critical">
             {run.failedStepId ? t('failed_step') : t('runner_error')}
           </p>
           <pre
             aria-label={t('run_error')}
-            className="ui-mono mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-xs text-ink-2"
+            className="ui-mono mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-ink-2"
           >
             {run.error}
           </pre>
@@ -526,7 +522,7 @@ export const RunCard = ({
       {reportAvailable && run.verdict !== 'running' && (
         <button
           type="button"
-          className="mt-1.5 flex items-center gap-1 text-xs text-ink-3 opacity-0 hover:text-accent group-hover:opacity-100"
+          className="mt-1.5 flex items-center gap-1 text-ink-3 opacity-0 hover:text-accent group-hover:opacity-100"
           onClick={(event) => {
             event.stopPropagation();
             onLog(`Report · ${run.id}`);

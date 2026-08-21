@@ -41,7 +41,7 @@ export const HeatMap = ({
       <div className="space-y-[3px]">
         {rows.map((row) => (
           <div key={row.id} className="flex items-center gap-2">
-            <span className="w-[88px] shrink-0 truncate text-xs text-ink-3">{t(row.label)}</span>
+            <span className="w-[88px] shrink-0 truncate text-ink-3">{t(row.label)}</span>
             <span className="flex flex-1 gap-[3px]">
               {row.values.map((value, index) => {
                 const step = bin(value);
@@ -59,7 +59,7 @@ export const HeatMap = ({
         ))}
       </div>
 
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-ink-3">
+      <div className="mt-2 flex items-center gap-1.5 text-ink-3">
         <span>{t('less')}</span>
         {[heatEmpty, ...ramp].map((background, index) => (
           <span

@@ -52,7 +52,7 @@ export const GlassPanel = ({
     >
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
         <h2 className="text-md font-semibold">{title}</h2>
-        {subtitle && <span className="ui-mono truncate text-xs text-ink-3">{subtitle}</span>}
+        {subtitle && <span className="ui-mono truncate text-ink-3">{subtitle}</span>}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {action}
           <IconButton

@@ -134,7 +134,7 @@ export const Chip = ({
   const { t } = useTranslation();
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-xs ${
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-px ${
         on ? 'border-accent bg-accent-wash text-accent' : 'border-line text-ink-3 hover:text-ink'
       }`}
     >

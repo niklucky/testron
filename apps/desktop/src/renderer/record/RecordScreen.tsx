@@ -723,7 +723,7 @@ export const RecordScreen = () => {
         )}
       </div>
 
-      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
+      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-ink-3">
         <span className="ui-mono truncate text-ink-2">{context.file}</span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
@@ -770,21 +770,21 @@ const FinishSheet = ({
         className="w-[420px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
       >
         <h2 className="text-lg font-semibold">{t('finish_recording')}</h2>
-        <p className="mt-1 text-base text-ink-3">
+        <p className="mt-1 text-ink-3">
           {steps} {t('steps_over')} {clock(elapsed)} {t('in_2')} {environment}. The spec is saved
           next to the suite and opens in the test view.
         </p>
 
         <label className="mt-4 block">
-          <span className="text-sm text-ink-3">{t('test_name')}</span>
+          <span className="text-ink-3">{t('test_name')}</span>
           <input
             value={name}
             onChange={(event) => onName(event.target.value)}
-            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
           />
         </label>
 
-        <p className="ui-mono mt-3 flex items-center gap-1.5 text-sm text-ink-3">
+        <p className="ui-mono mt-3 flex items-center gap-1.5 text-ink-3">
           <Icon name="test" size={13} />
           {file}
         </p>

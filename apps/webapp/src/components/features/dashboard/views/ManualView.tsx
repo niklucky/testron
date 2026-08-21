@@ -32,11 +32,11 @@ export const ManualView = ({
       <div className="mb-3 flex items-center gap-3">
         <div>
           <h3 className="text-md font-semibold">{t('manual_script')}</h3>
-          <p className="mt-0.5 text-sm text-ink-3">
+          <p className="mt-0.5 text-ink-3">
             {t('generated_from')} {failure.file} {t('hand_this_to_a_tester_no_playwright_required')}
           </p>
         </div>
-        <span className="ml-auto flex items-center gap-2 text-sm text-ink-3">
+        <span className="ml-auto flex items-center gap-2 text-ink-3">
           {done}/{failure.steps.length} {t('recorded')}
           <Meter className="w-24" value={done / failure.steps.length} />
         </span>
@@ -55,10 +55,10 @@ export const ManualView = ({
               onClick={() => onCursor(index)}
             >
               <div className="flex items-start gap-3">
-                <span className="ui-mono mt-px w-4 shrink-0 text-base text-ink-3">{index + 1}</span>
+                <span className="ui-mono mt-px w-4 shrink-0 text-ink-3">{index + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-md">{step.manual}</p>
-                  <p className="mt-1 text-sm text-ink-3">
+                  <p className="">{step.manual}</p>
+                  <p className="mt-1 text-ink-3">
                     {t('expected')} {step.expected}
                   </p>
                 </div>
@@ -71,7 +71,7 @@ export const ManualView = ({
                         key={option}
                         type="button"
                         aria-pressed={on}
-                        className="flex h-7 items-center gap-1 rounded-md border px-2 text-sm transition-colors"
+                        className="flex h-7 items-center gap-1 rounded-md border px-2 transition-colors"
                         style={{
                           color: on ? toneInk[tint.tone] : 'var(--ui-ink-3)',
                           borderColor: on ? toneInk[tint.tone] : 'var(--ui-line)',

@@ -22,7 +22,7 @@ export const Tooltip = ({
     {children}
     <span
       role="tooltip"
-      className={`pointer-events-none absolute bottom-full z-20 mb-1.5 hidden whitespace-nowrap rounded-md border border-line bg-plane px-2 py-1 text-xs text-ink-2 shadow-lg group-hover:block group-focus-within:block ${
+      className={`pointer-events-none absolute bottom-full z-20 mb-1.5 hidden whitespace-nowrap rounded-md border border-line bg-plane px-2 py-1 text-ink-2 shadow-lg group-hover:block group-focus-within:block ${
         align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'
       }`}
     >

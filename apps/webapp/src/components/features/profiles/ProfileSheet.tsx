@@ -57,25 +57,25 @@ export const ProfileSheet = ({
         className="w-full max-w-[560px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
       >
         <h2 className="text-lg font-semibold">{editing ? t('edit_profile') : t('new_profile')}</h2>
-        <p className="mt-1 text-base text-ink-3">
+        <p className="mt-1 text-ink-3">
           {t('credentials_for')} {environment}
           {t('recorded_tests_store_variable_names_never_these_values')}
         </p>
 
         <label className="mt-4 block">
-          <span className="text-sm text-ink-3">{t('profile_name')}</span>
+          <span className="text-ink-3">{t('profile_name')}</span>
           <input
             aria-label={t('profile_name')}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none focus:border-accent"
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
           />
         </label>
         <label className="mt-3 block">
-          <span className="text-sm text-ink-3">{t('authentication_type')}</span>
+          <span className="text-ink-3">{t('authentication_type')}</span>
           <select
             aria-label={t('authentication_type')}
-            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 text-base outline-none"
+            className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none"
           >
             <option value="credentials">{t('login_password')}</option>
             <option disabled>{t('oauth_coming_later')}</option>
@@ -86,11 +86,11 @@ export const ProfileSheet = ({
 
         <div className="mt-4">
           {editing && (
-            <p className="mb-3 text-sm text-ink-3">
+            <p className="mb-3 text-ink-3">
               {t('re_enter_variable_values_to_replace_the_saved_credentials')}
             </p>
           )}
-          <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-sm text-ink-3">
+          <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-ink-3">
             <span>{t('name')}</span>
             <span>{t('value')}</span>
             <span />
@@ -148,9 +148,7 @@ export const ProfileSheet = ({
           >
             {t('variable')}
           </Button>
-          {!unique && (
-            <p className="mt-2 text-sm text-critical">{t('variable_names_must_be_unique')}</p>
-          )}
+          {!unique && <p className="mt-2 text-critical">{t('variable_names_must_be_unique')}</p>}
         </div>
 
         <div className="mt-5 flex items-center gap-2">

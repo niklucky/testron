@@ -20,7 +20,11 @@ export interface TestronDesktopHost {
 const host: TestronDesktopHost = {
   platform: 'desktop',
   openLocal: (request) =>
-    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'open-local', ...request }),
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, {
+      type: 'open-local',
+      ...request,
+      theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+    }),
   showProduct: () => ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'show-product' }),
   login: (email, password) =>
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'login', email, password }),

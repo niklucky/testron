@@ -63,7 +63,7 @@ export const TriageQueue = ({
     <section className="flex min-h-0 flex-1 flex-col border-t border-line">
       <div className="flex h-9 shrink-0 items-center gap-2 px-3">
         <SectionLabel>{t('triage')}</SectionLabel>
-        <span className="ui-mono text-xs text-ink-3">{queue.length}</span>
+        <span className="ui-mono text-ink-3">{queue.length}</span>
         <span className="ml-auto flex items-center gap-1">
           <Kbd>{displayShortcut('nextFailure')}</Kbd>
           <Kbd>{displayShortcut('previousFailure')}</Kbd>
@@ -127,14 +127,14 @@ export const TriageQueue = ({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-2">
-                    <span className="ui-mono truncate text-base">{failure.signature}</span>
-                    <span className="ui-mono ml-auto shrink-0 text-xs text-ink-3">
+                    <span className="ui-mono truncate ">{failure.signature}</span>
+                    <span className="ui-mono ml-auto shrink-0 text-ink-3">
                       ×{failure.occurrences}
                     </span>
                   </span>
-                  <span className="mt-[3px] block truncate text-sm text-ink-2">{failure.test}</span>
+                  <span className="mt-[3px] block truncate text-ink-2">{failure.test}</span>
                   <span className="mt-1.5 flex items-center gap-2">
-                    <span className="truncate text-xs text-ink-3">
+                    <span className="truncate text-ink-3">
                       {failure.suite} · {failure.env} · {age(failure.ageMinutes)}
                     </span>
                     {failure.kind !== 'known' && (
@@ -164,7 +164,7 @@ export const TriageQueue = ({
           );
         })}
         {queue.length === 0 && (
-          <li className="px-3 py-6 text-center text-sm text-ink-3">
+          <li className="px-3 py-6 text-center text-ink-3">
             {t('nothing_matches')}
             {query}”.
           </li>

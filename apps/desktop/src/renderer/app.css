@@ -2,6 +2,7 @@
 
 @import './design/tokens.css';
 @import './design/base.css';
+@import '../../../../packages/ui/typography.css';
 
 .desktop-window-drag {
   -webkit-app-region: drag;
@@ -65,30 +66,4 @@
 
   --font-sans: var(--ui-font-sans);
   --font-mono: var(--ui-font-mono);
-}
-
-/* --------------------------------------------------------------------------
-   Type scale. A console is read at arm's length for hours: the body size is
-   13px and the steps are tight, so a row of metadata never shouts over the
-   thing it describes.
-   -------------------------------------------------------------------------- */
-@theme {
-  --text-2xs: 10px; /* uppercase micro-labels, legend keys */
-  --text-2xs--line-height: 14px;
-  --text-xs: 11px; /* timestamps, counts, kbd */
-  --text-xs--line-height: 16px;
-  --text-sm: 12px; /* secondary copy, table meta */
-  --text-sm--line-height: 17px;
-  --text-base: 13px; /* body — rows, labels, code */
-  --text-base--line-height: 19px;
-  --text-md: 14px; /* nav, panel titles, buttons */
-  --text-md--line-height: 20px;
-  --text-lg: 16px;
-  --text-lg--line-height: 22px;
-  --text-xl: 19px; /* detail-view heading */
-  --text-xl--line-height: 25px;
-  --text-2xl: 22px; /* page heading */
-  --text-2xl--line-height: 28px;
-  --text-3xl: 28px; /* stat numerals */
-  --text-3xl--line-height: 32px;
 }

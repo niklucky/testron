@@ -40,7 +40,7 @@ export const ShotView = ({
           value={view}
           onChange={(value) => onView(value as 'actual' | 'expected')}
         />
-        <p className="ui-mono text-sm text-ink-3">
+        <p className="ui-mono text-ink-3">
           {t('captured_at_step')} {failedAt + 1} · 1280×800
         </p>
       </div>
@@ -130,7 +130,7 @@ export const ShotView = ({
         </svg>
       </div>
 
-      <p className="mt-2 text-sm text-ink-3">
+      <p className="mt-2 text-ink-3">
         {view === 'actual'
           ? failure.message.split('\n')[0]
           : t('baseline_from_the_last_green_run_on_the_same_commit')}

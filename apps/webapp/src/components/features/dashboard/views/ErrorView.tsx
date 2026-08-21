@@ -26,26 +26,26 @@ export const ErrorView = ({
         <h3 className="mb-2">
           <SectionLabel>{t('stack')}</SectionLabel>
         </h3>
-        <pre className="ui-mono overflow-x-auto rounded-lg border border-line bg-plane p-3 text-base leading-5 text-ink-2">
+        <pre className="ui-mono overflow-x-auto rounded-lg border border-line bg-plane p-3 leading-5 text-ink-2">
           {failure.message}
         </pre>
       </div>
 
       <div className="grid grid-cols-2 gap-3 max-[1100px]:grid-cols-1">
         <div className="rounded-lg border border-line bg-plane p-3">
-          <p className="text-sm text-ink-3">{t('locator_under_test')}</p>
-          <p className="ui-mono mt-1.5 break-all text-base">{failure.locator}</p>
-          <p className="mt-2 text-sm text-ink-3">
+          <p className="text-ink-3">{t('locator_under_test')}</p>
+          <p className="ui-mono mt-1.5 break-all ">{failure.locator}</p>
+          <p className="mt-2 text-ink-3">
             {t('resolved_in')} {failure.occurrences} {t('of_the_last_24_runs_owner')}{' '}
             {failure.owner}
           </p>
         </div>
 
         <div className="rounded-lg border border-line bg-plane p-3">
-          <p className="text-sm text-ink-3">{t('seen_together_with')}</p>
+          <p className="text-ink-3">{t('seen_together_with')}</p>
           <ul className="mt-1.5 space-y-1.5">
             {similar.length === 0 && (
-              <li className="text-base text-ink-3">
+              <li className="text-ink-3">
                 {t('nothing_else_in')} {failure.suite} {t('is_failing')}
               </li>
             )}
@@ -53,7 +53,7 @@ export const ErrorView = ({
               <li key={candidate.id}>
                 <button
                   type="button"
-                  className="ui-mono w-full truncate text-left text-base text-accent hover:underline"
+                  className="ui-mono w-full truncate text-left text-accent hover:underline"
                   onClick={() => onSelect(candidate.id)}
                 >
                   {candidate.signature} ×{candidate.occurrences}

@@ -367,7 +367,7 @@ export const Dashboard = ({
 
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
           <PulseDot label={t('runs_in_flight')} />
-          <span className="text-base text-ink-2">
+          <span className="text-ink-2">
             {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}{' '}
             {(liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0) === 1
               ? t('run_2')
@@ -495,7 +495,7 @@ export const Dashboard = ({
         )}
       </div>
 
-      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
+      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-ink-3">
         <span className="ui-mono truncate text-ink-2">
           {view === 'overview'
             ? t('commerce_app_overview')

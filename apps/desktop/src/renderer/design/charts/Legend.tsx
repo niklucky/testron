@@ -18,7 +18,7 @@ export const Legend = ({
   return (
     <span className={`flex items-center gap-2.5 ${className}`}>
       {items.map((item) => (
-        <span key={item.id} className="flex items-center gap-1 text-xs text-ink-3">
+        <span key={item.id} className="flex items-center gap-1 text-ink-3">
           <span
             className={`h-[7px] w-[7px] shrink-0 ${shape === 'dot' ? 'rounded-full' : 'rounded-[2px]'}`}
             style={{ background: item.color }}

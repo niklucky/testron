@@ -44,7 +44,7 @@ export const SegmentedControl = <T extends string>({
             type="button"
             aria-pressed={on}
             className={`flex items-center gap-1.5 whitespace-nowrap font-medium transition-colors ${
-              pill ? 'h-6 rounded-full px-2.5 text-sm' : 'h-7 rounded px-3 text-sm'
+              pill ? 'h-6 rounded-full px-2.5 ' : 'h-7 rounded px-3 '
             } ${
               on
                 ? pill
@@ -93,7 +93,7 @@ export const Tabs = <T extends string>({
             type="button"
             role="tab"
             aria-selected={on}
-            className={`flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-base transition-colors ${
+            className={`flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 transition-colors ${
               on ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
             }`}
             onClick={() => onChange(item.id)}

@@ -300,7 +300,7 @@ export const TestView = () => {
           <section className="w-[420px] rounded-xl border border-line bg-surface p-6 text-center shadow-xl">
             <Icon name="test" size={28} className="mx-auto text-ink-3" />
             <h1 className="mt-3 text-lg font-semibold">{t('no_test_selected')}</h1>
-            <p className="mt-1 text-base text-ink-3">
+            <p className="mt-1 text-ink-3">
               {t('record_and_save_a_test_before_opening_its_board')}
             </p>
             <Button
@@ -349,7 +349,7 @@ export const TestView = () => {
             {detail.project}
           </Button>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
+          <label className="flex items-center rounded-md px-1.5 text-ink-2 hover:bg-raised">
             <select
               aria-label={t('test_suite')}
               value={selectedTest?.testSuiteId ?? snapshot.library.selectedTestSuiteId ?? ''}
@@ -374,7 +374,7 @@ export const TestView = () => {
             </select>
           </label>
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <span className="flex min-w-0 items-center gap-1.5 px-1.5 text-md">
+          <span className="flex min-w-0 items-center gap-1.5 px-1.5 ">
             <StatusDot
               tone={
                 !lastVerdict
@@ -478,7 +478,7 @@ export const TestView = () => {
         <Button icon="trash" disabled>
           {t('delete')}
         </Button>
-        <span className="ml-auto flex items-center gap-3 text-sm text-ink-3">
+        <span className="ml-auto flex items-center gap-3 text-ink-3">
           {running && <PulseDot tone="accent" label={t('running')} />}
           <span>
             {steps.length} {t('actions')} {assertions.length} {t('assertions')}
@@ -655,7 +655,7 @@ export const TestView = () => {
         )}
       </div>
 
-      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-sm text-ink-3">
+      <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-ink-3">
         <span className="ui-mono truncate text-ink-2">{detail.file}</span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">

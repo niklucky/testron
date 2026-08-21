@@ -35,7 +35,7 @@ export const Lane = ({
     <header className="flex h-8 shrink-0 items-center gap-2">
       <Icon name={icon} size={13} className="text-ink-3" />
       <SectionLabel>{title}</SectionLabel>
-      {count !== undefined && <span className="ui-mono text-xs text-ink-3">{count}</span>}
+      {count !== undefined && <span className="ui-mono text-ink-3">{count}</span>}
       {onAdd && (
         <IconButton
           icon="plus"
@@ -46,7 +46,7 @@ export const Lane = ({
         />
       )}
     </header>
-    {hint && <p className="mb-2 mt-0.5 text-sm leading-4 text-ink-3">{hint}</p>}
+    {hint && <p className="mb-2 mt-0.5 leading-4 text-ink-3">{hint}</p>}
     <div
       data-testid={contentTestId}
       className="ui-scroll min-h-0 flex-1 space-y-2 overflow-y-auto pb-4 pr-1"
@@ -123,11 +123,11 @@ export const Card = ({
 
 /** The row of quiet metadata at the bottom of a card. */
 export const Meta = ({ children }: { children: ReactNode }) => (
-  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-3">{children}</p>
+  <p className="mt-1.5 flex items-center gap-1.5 text-ink-3">{children}</p>
 );
 
 export const EmptyLane = ({ children }: { children: ReactNode }) => (
-  <p className="rounded-lg border border-dashed border-line px-3 py-6 text-center text-sm leading-5 text-ink-3">
+  <p className="rounded-lg border border-dashed border-line px-3 py-6 text-center leading-5 text-ink-3">
     {children}
   </p>
 );

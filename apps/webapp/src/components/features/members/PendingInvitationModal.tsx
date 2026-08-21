@@ -28,12 +28,12 @@ export const PendingInvitationModal = ({
         <h2 id="pending-invitation-title" className="mt-4 text-2xl font-semibold">
           {t('join')} {invitation.projectName}?
         </h2>
-        <p className="mt-2 text-base leading-6 text-ink-2">
+        <p className="mt-2 leading-6 text-ink-2">
           {invitation.invitedBy.name ?? invitation.invitedBy.email} {t('invited')}{' '}
           {invitation.email} to collaborate on this project.
         </p>
         {error && (
-          <div role="alert" className="mt-4 rounded-md bg-critical-wash p-3 text-sm text-critical">
+          <div role="alert" className="mt-4 rounded-md bg-critical-wash p-3 text-critical">
             {error}
           </div>
         )}

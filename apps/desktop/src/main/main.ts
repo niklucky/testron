@@ -88,6 +88,7 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
     projectId: z.string().uuid().optional(),
     environmentId: z.string().uuid().optional(),
     testId: z.string().uuid().optional(),
+    theme: z.enum(['dark', 'light']).optional(),
   }),
   z.object({ type: z.literal('show-product') }),
   z.object({ type: z.literal('login'), email: z.email(), password: z.string().min(12).max(200) }),
@@ -209,15 +210,25 @@ const createWindow = async (): Promise<void> => {
   layout();
   mainWindow.on('resize', layout);
 
-  const loadAppRenderer = async (contents: Electron.WebContents, route?: string): Promise<void> => {
+  const loadAppRenderer = async (
+    contents: Electron.WebContents,
+    route?: string,
+    theme?: 'dark' | 'light',
+  ): Promise<void> => {
+    const query = theme ? `?theme=${theme}` : '';
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
       await contents.loadURL(
-        route ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}#/${route}` : MAIN_WINDOW_VITE_DEV_SERVER_URL,
+        route
+          ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}${query}#/${route}`
+          : `${MAIN_WINDOW_VITE_DEV_SERVER_URL}${query}`,
       );
       return;
     }
     const file = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
-    await contents.loadFile(file, route ? { hash: `/${route}` } : {});
+    await contents.loadFile(file, {
+      ...(theme ? { query: { theme } } : {}),
+      ...(route ? { hash: `/${route}` } : {}),
+    });
   };
 
   const remoteTest = (id: string | undefined) =>
@@ -1967,7 +1978,7 @@ const createWindow = async (): Promise<void> => {
         }
         productVisible = false;
         layout();
-        await loadAppRenderer(mainWindow!.webContents, command.route);
+        await loadAppRenderer(mainWindow!.webContents, command.route, command.theme);
         applyContext();
         sendSnapshot(session.snapshot());
         layout();

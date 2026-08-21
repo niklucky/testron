@@ -112,10 +112,10 @@ const SuiteBranch = ({
           />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="truncate text-base font-medium">{suite.name}</span>
+              <span className="truncate font-medium">{suite.name}</span>
               <Badge mono>{testCount}</Badge>
               {failedCount > 0 && (
-                <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-critical">
+                <span className="ml-auto flex shrink-0 items-center gap-1 font-semibold text-critical">
                   <Icon name="alert" size={11} />
                   {failedCount}
                 </span>
@@ -123,9 +123,7 @@ const SuiteBranch = ({
             </span>
             <span className="mt-1.5 flex items-center gap-2">
               <SplitBar segments={healthSplits(counts)} className="flex-1" />
-              <span className="ui-mono shrink-0 text-xs text-ink-3">
-                {ms(totalLatestDurationMs)}
-              </span>
+              <span className="ui-mono shrink-0 text-ink-3">{ms(totalLatestDurationMs)}</span>
             </span>
           </span>
         </button>
@@ -155,7 +153,7 @@ const SuiteBranch = ({
               <button
                 type="button"
                 role="menuitem"
-                className="w-full rounded px-2 py-1.5 text-left text-sm text-ink-2 hover:bg-raised hover:text-ink"
+                className="w-full rounded px-2 py-1.5 text-left text-ink-2 hover:bg-raised hover:text-ink"
                 onClick={() => {
                   setActionsOpen(false);
                   onEditSuite(suite);
@@ -166,7 +164,7 @@ const SuiteBranch = ({
               <button
                 type="button"
                 role="menuitem"
-                className="w-full rounded px-2 py-1.5 text-left text-sm text-critical hover:bg-critical-wash"
+                className="w-full rounded px-2 py-1.5 text-left text-critical hover:bg-critical-wash"
                 onClick={() => {
                   setActionsOpen(false);
                   onDeleteSuite(suite);
@@ -214,8 +212,8 @@ const SuiteBranch = ({
                   tone={verdictTone[test.status].tone}
                   label={verdictTone[test.status].label}
                 />
-                <span className="truncate text-sm text-ink-2">{test.name}</span>
-                <span className="ui-mono ml-auto shrink-0 text-xs text-ink-3">
+                <span className="truncate text-ink-2">{test.name}</span>
+                <span className="ui-mono ml-auto shrink-0 text-ink-3">
                   {test.seconds === undefined ? '—' : ms(test.seconds * 1000)}
                 </span>
               </button>
@@ -225,7 +223,7 @@ const SuiteBranch = ({
             <li>
               <button
                 type="button"
-                className="w-full rounded px-2 py-1.5 text-left text-sm text-ink-3 hover:bg-raised hover:text-ink"
+                className="w-full rounded px-2 py-1.5 text-left text-ink-3 hover:bg-raised hover:text-ink"
                 onClick={() => setShowAll((current) => !current)}
               >
                 {showAll ? t('show_less') : t('show_more_count', { count: hidden })}

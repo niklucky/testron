@@ -37,14 +37,12 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
       <header className="flex h-14 shrink-0 items-center border-b border-line px-5 [-webkit-app-region:drag]">
         <div className="w-[66px] shrink-0" />
         <div className="flex items-center gap-2.5">
-          <span className="ui-mono grid h-7 w-7 place-items-center rounded-[7px] bg-accent text-md font-bold text-accent-ink">
+          <span className="ui-mono grid h-7 w-7 place-items-center rounded-[7px] bg-accent font-bold text-accent-ink">
             {t('t')}
           </span>
-          <span className="text-md font-semibold tracking-[-0.01em]">
-            {viewerLabel(library.viewer)}
-          </span>
+          <span className="font-semibold tracking-[-0.01em]">{viewerLabel(library.viewer)}</span>
         </div>
-        <div className="ml-auto flex items-center gap-2 text-sm text-ink-3 [-webkit-app-region:no-drag]">
+        <div className="ml-auto flex items-center gap-2 text-ink-3 [-webkit-app-region:no-drag]">
           <PulseDot label={t('connected_to_server')} />
           {t('remote_workspace')}
           <IconButton
@@ -61,7 +59,7 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent-wash text-accent">
             <Icon name={unavailable ? 'alert' : 'grid'} size={20} />
           </div>
-          <span className="ui-mono mt-7 block text-xs tracking-[0.12em] text-accent uppercase">
+          <span className="ui-mono mt-7 block tracking-[0.12em] text-accent uppercase">
             {t('first_project')}
           </span>
           <h1 className="mt-2 text-[30px] leading-tight font-semibold tracking-[-0.03em]">
@@ -69,7 +67,7 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
               ? t('we_couldn_t_load_your_projects')
               : t('create_a_project_to_get_started')}
           </h1>
-          <p className="mt-3 text-md leading-6 text-ink-2">
+          <p className="mt-3 leading-6 text-ink-2">
             {unavailable
               ? t('reconnect_to_the_server_before_creating_a_project_your_account_a')
               : t('projects_keep_environments_tests_and_revision_history_together_y')}
@@ -80,7 +78,7 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
               {server?.message && (
                 <div
                   role="alert"
-                  className="mb-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 text-sm leading-5 text-ink-2"
+                  className="mb-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 leading-5 text-ink-2"
                 >
                   <Icon name="alert" size={14} className="mt-0.5 shrink-0 text-critical" />
                   {server.message}
@@ -99,7 +97,7 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
           ) : (
             <form className="mt-7" onSubmit={submit}>
               <label className="block">
-                <span className="text-sm font-medium text-ink-2">{t('project_name')}</span>
+                <span className="font-medium text-ink-2">{t('project_name')}</span>
                 <input
                   autoFocus
                   required
@@ -109,13 +107,13 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
                   disabled={submitting}
                   onChange={(event) => setName(event.target.value)}
                   placeholder={t('my_website')}
-                  className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                  className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>
               {creationError && (
                 <div
                   role="alert"
-                  className="mt-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 text-sm leading-5 text-ink-2"
+                  className="mt-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 leading-5 text-ink-2"
                 >
                   <Icon name="alert" size={14} className="mt-0.5 shrink-0 text-critical" />
                   {creationError}

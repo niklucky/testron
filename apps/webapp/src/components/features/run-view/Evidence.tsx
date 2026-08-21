@@ -47,8 +47,8 @@ const Artifacts = ({
             }`}
           >
             <Icon name={artifactIcon[artifact.kind]} size={13} className="shrink-0 text-ink-3" />
-            <span className="ui-mono min-w-0 flex-1 truncate text-sm">{artifact.name}</span>
-            <span className="ui-mono shrink-0 text-xs text-ink-3">
+            <span className="ui-mono min-w-0 flex-1 truncate ">{artifact.name}</span>
+            <span className="ui-mono shrink-0 text-ink-3">
               {artifact.captured ? artifact.size : t('not_captured')}
             </span>
           </button>
@@ -95,7 +95,7 @@ const FailureShot = ({ label }: { label: string }) => {
 };
 
 const Console = ({ lines }: { lines: ConsoleLine[] }) => (
-  <ul className="ui-mono space-y-1 rounded-lg border border-line bg-plane p-2 text-xs leading-4">
+  <ul className="ui-mono space-y-1 rounded-lg border border-line bg-plane p-2 leading-4">
     {lines.map((line) => (
       <li key={line.id} className="flex gap-2">
         <span className="shrink-0 text-ink-3">{ms(line.atMs)}</span>
@@ -110,7 +110,7 @@ const Console = ({ lines }: { lines: ConsoleLine[] }) => (
 const Facts = ({ run }: { run: RunReport }) => {
   const { t } = useTranslation();
   return (
-    <dl className="space-y-1 text-xs">
+    <dl className="space-y-1 ">
       {[
         ['Base URL', run.baseUrl],
         ['Browser', run.browser],
@@ -166,21 +166,19 @@ export const Evidence = ({
         <section>
           <SectionLabel className="mb-1.5 block">{t('failure_screenshot')}</SectionLabel>
           <FailureShot label={failingLabel} />
-          <p className="mt-1.5 text-xs text-ink-3">
-            {t('full_page_taken_the_moment_the_step_failed')}
-          </p>
+          <p className="mt-1.5 text-ink-3">{t('full_page_taken_the_moment_the_step_failed')}</p>
         </section>
       )}
 
       <section>
         <div className="mb-1.5 flex items-center gap-2">
           <SectionLabel>{t('console')}</SectionLabel>
-          <span className="ml-auto text-xs text-ink-3">
+          <span className="ml-auto text-ink-3">
             {run.console.filter((line) => line.level === 'error').length} {t('errors')}
           </span>
         </div>
         <Console lines={run.console} />
-        <p className="mt-1.5 text-xs text-ink-3">
+        <p className="mt-1.5 text-ink-3">
           {t('shown_from_the_page_under_test_the_runner_does_not_persist_this_')}
         </p>
       </section>

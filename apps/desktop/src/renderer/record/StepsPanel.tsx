@@ -47,7 +47,7 @@ export const StepsPanel = ({
   return (
     <div className="pb-4">
       {steps.length === 0 && (
-        <p className="px-4 py-10 text-center text-base leading-6 text-ink-3">
+        <p className="px-4 py-10 text-center leading-6 text-ink-3">
           {t('press')} <Kbd>{displayRecordShortcut('record')}</Kbd> {t('and_drive_the_page')}
           <br />
           {t('every_click_keystroke_and_assertion_lands_here_as_a_step')}
@@ -76,10 +76,10 @@ export const StepsPanel = ({
                       : 'border-transparent hover:bg-raised/60'
                 }`}
               >
-                <span className="ui-mono pt-[3px] text-xs text-ink-3">{index + 1}</span>
+                <span className="ui-mono pt-[3px] text-ink-3">{index + 1}</span>
 
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-base text-ink">
+                  <span className="flex items-center gap-1.5 text-ink">
                     <Icon
                       name={style.icon}
                       size={13}
@@ -96,7 +96,7 @@ export const StepsPanel = ({
                         event.stopPropagation();
                         onExpand(step.id);
                       }}
-                      className="ui-mono mt-1 flex w-full items-center gap-1 rounded px-1 py-px text-left text-xs text-ink-3 hover:bg-raised hover:text-ink-2"
+                      className="ui-mono mt-1 flex w-full items-center gap-1 rounded px-1 py-px text-left text-ink-3 hover:bg-raised hover:text-ink-2"
                     >
                       <span className="truncate">{step.locator}</span>
                       {step.alternatives.length > 0 && (
@@ -114,7 +114,7 @@ export const StepsPanel = ({
                           event.stopPropagation();
                           onUseAlternative(step.id, alternative);
                         }}
-                        className="ui-mono mt-0.5 block w-full truncate rounded border border-line-soft px-1 py-px text-left text-xs text-ink-3 hover:border-accent hover:text-accent"
+                        className="ui-mono mt-0.5 block w-full truncate rounded border border-line-soft px-1 py-px text-left text-ink-3 hover:border-accent hover:text-accent"
                       >
                         {alternative}
                       </button>
@@ -132,9 +132,7 @@ export const StepsPanel = ({
                 </span>
 
                 <span className="flex items-center gap-1 pt-[2px]">
-                  <span className="ui-mono text-xs text-ink-3 group-hover:hidden">
-                    {clock(step.at)}
-                  </span>
+                  <span className="ui-mono text-ink-3 group-hover:hidden">{clock(step.at)}</span>
                   {step.locator && (
                     <IconButton
                       icon={repicking ? 'close' : 'focus'}
@@ -181,14 +179,14 @@ export const StepsPanel = ({
       </ol>
 
       {status === 'recording' && (
-        <p className="flex items-center gap-2 px-3 py-2.5 text-base text-ink-3">
+        <p className="flex items-center gap-2 px-3 py-2.5 text-ink-3">
           <PulseDot tone="critical" label={t('recording')} />
           {t('listening_for_the_next_interaction')}
         </p>
       )}
 
       {status === 'paused' && steps.length > 0 && (
-        <p className="px-3 py-2.5 text-base text-ink-3">
+        <p className="px-3 py-2.5 text-ink-3">
           {t('paused_clicks_on_the_page_are_ignored_until_you_resume')}
         </p>
       )}
@@ -221,12 +219,12 @@ const LocatorEditor = ({
         aria-label={t('edit_locator')}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        className="ui-mono min-w-0 flex-1 rounded border border-line bg-plane px-1 py-1 text-xs text-ink outline-none focus:border-accent"
+        className="ui-mono min-w-0 flex-1 rounded border border-line bg-plane px-1 py-1 text-ink outline-none focus:border-accent"
       />
       <button
         type="submit"
         disabled={!draft.trim() || draft === locator}
-        className="rounded border border-line px-2 text-xs text-ink-2 hover:border-accent disabled:opacity-40"
+        className="rounded border border-line px-2 text-ink-2 hover:border-accent disabled:opacity-40"
       >
         {t('save')}
       </button>

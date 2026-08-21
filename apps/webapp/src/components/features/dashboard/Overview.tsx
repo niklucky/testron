@@ -167,7 +167,7 @@ export const Overview = ({
   const SortHead = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
     <button
       type="button"
-      className={`flex items-center gap-1 whitespace-nowrap text-2xs font-bold uppercase tracking-[0.09em] transition-colors ${
+      className={`flex items-center gap-1 whitespace-nowrap font-bold uppercase tracking-[0.09em] transition-colors ${
         sort.key === sortKey ? 'text-ink-2' : 'text-ink-3'
       }`}
       onClick={() =>
@@ -196,7 +196,7 @@ export const Overview = ({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('project_overview')}</h1>
-            <p className="mt-1 text-base text-ink-3">
+            <p className="mt-1 text-ink-3">
               {suites.length} {t('suites')} {shownTotals.tests} {t('tests_last_run')}{' '}
               {lastRunMinutesAgo === null
                 ? t('never')
@@ -264,7 +264,7 @@ export const Overview = ({
 
           <Panel className="col-span-2 flex flex-col p-4">
             <div className="flex items-center gap-2">
-              <p className="flex items-center gap-2 text-sm text-ink-3">
+              <p className="flex items-center gap-2 text-ink-3">
                 <Icon name="steps" size={14} />
                 {t('test_runs_last')} {range} {t('days')}
               </p>
@@ -312,9 +312,7 @@ export const Overview = ({
               <SortHead label={t('tests')} sortKey="tests" />
               <SortHead label={t('pass_rate')} sortKey="passRate" />
               <SortHead label={t('last_run')} sortKey="lastRun" />
-              <span className="text-2xs font-bold uppercase tracking-[0.09em] text-ink-3">
-                {t('owner')}
-              </span>
+              <span className="font-bold uppercase tracking-[0.09em] text-ink-3">{t('owner')}</span>
               <span />
             </div>
 
@@ -343,7 +341,7 @@ export const Overview = ({
                       <button
                         type="button"
                         aria-label={t('edit_test_suite', { value1: suite.name })}
-                        className="min-w-0 truncate rounded text-base font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                        className="min-w-0 truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         onClick={() => onEditSuite(suite)}
                       >
                         {suite.name}
@@ -354,23 +352,23 @@ export const Overview = ({
                         </Badge>
                       )}
                     </span>
-                    <span className="ui-mono text-base text-ink-2">{suite.tests.length}</span>
+                    <span className="ui-mono text-ink-2">{suite.tests.length}</span>
                     <span className="flex items-center gap-2">
                       <SplitBar
                         segments={healthSplits(counts)}
                         className="w-full max-w-[120px] flex-1"
                       />
-                      <span className="ui-mono shrink-0 text-sm text-ink-2">
+                      <span className="ui-mono shrink-0 text-ink-2">
                         {passRateOf(suite).toFixed(0)}%
                       </span>
                     </span>
-                    <span className="flex items-center gap-1.5 text-sm text-ink-3">
+                    <span className="flex items-center gap-1.5 text-ink-3">
                       <Icon name="clock" size={12} />
                       {suite.lastRunMinutesAgo === null
                         ? t('never_2')
                         : t('ago_value', { value: age(suite.lastRunMinutesAgo) })}
                     </span>
-                    <span className="truncate text-sm text-ink-3">{suite.owner}</span>
+                    <span className="truncate text-ink-3">{suite.owner}</span>
                     <button
                       type="button"
                       aria-label={t('test_suite_2', {
@@ -410,12 +408,12 @@ export const Overview = ({
                                 >
                                   <span className="flex min-w-0 items-center gap-2">
                                     <StatusDot tone={verdict.tone} label={verdict.label} />
-                                    <span className="truncate text-sm font-medium text-ink-2">
+                                    <span className="truncate font-medium text-ink-2">
                                       {test.name}
                                     </span>
                                   </span>
-                                  <span className="text-sm text-ink-3">{t(verdict.label)}</span>
-                                  <span className="ui-mono text-right text-xs text-ink-3">
+                                  <span className="text-ink-3">{t(verdict.label)}</span>
+                                  <span className="ui-mono text-right text-ink-3">
                                     {test.seconds === undefined
                                       ? t('never_run')
                                       : ms(test.seconds * 1000)}
@@ -463,14 +461,10 @@ export const Overview = ({
                         <Icon name={item.icon} size={12} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base">{item.title}</span>
-                        <span className="mt-0.5 block truncate text-xs text-ink-3">
-                          {item.detail}
-                        </span>
+                        <span className="block truncate ">{item.title}</span>
+                        <span className="mt-0.5 block truncate text-ink-3">{item.detail}</span>
                       </span>
-                      <span className="ui-mono shrink-0 text-xs text-ink-3">
-                        {age(item.minutesAgo)}
-                      </span>
+                      <span className="ui-mono shrink-0 text-ink-3">{age(item.minutesAgo)}</span>
                     </li>
                   ))}
                 </ul>
@@ -488,14 +482,12 @@ export const Overview = ({
                         <Icon name={tone.icon} size={12} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base">{item.test}</span>
-                        <span className="mt-0.5 block truncate text-xs text-ink-3">
+                        <span className="block truncate ">{item.test}</span>
+                        <span className="mt-0.5 block truncate text-ink-3">
                           {t(tone.label)} {t('in_2')} {item.suite} · {item.author}
                         </span>
                       </span>
-                      <span className="ui-mono shrink-0 text-xs text-ink-3">
-                        {age(item.minutesAgo)}
-                      </span>
+                      <span className="ui-mono shrink-0 text-ink-3">{age(item.minutesAgo)}</span>
                     </li>
                   );
                 })}

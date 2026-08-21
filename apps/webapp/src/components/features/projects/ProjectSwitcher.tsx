@@ -55,7 +55,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
   return (
     <>
       <div className="relative flex items-center gap-2">
-        <span className="ui-mono grid h-6 w-6 place-items-center rounded-[6px] bg-accent text-base font-bold text-accent-ink">
+        <span className="ui-mono grid h-6 w-6 place-items-center rounded-[6px] bg-accent font-bold text-accent-ink">
           {t('t')}
         </span>
         <div className="relative">
@@ -74,7 +74,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
                 projectId: event.target.value,
               });
             }}
-            className="h-9 min-w-44 appearance-none rounded-md border border-transparent bg-transparent py-0 pr-8 pl-2 text-md font-medium text-ink outline-none transition-colors hover:border-line hover:bg-raised focus:border-accent"
+            className="h-9 min-w-44 appearance-none rounded-md border border-transparent bg-transparent py-0 pr-8 pl-2 font-medium text-ink outline-none transition-colors hover:border-line hover:bg-raised focus:border-accent"
           >
             {library.projects.map((project) => (
               <option key={project.id} value={project.id}>
@@ -105,7 +105,7 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
               aria-labelledby="create-project-title"
               className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
             >
-              <span className="ui-mono text-xs tracking-[0.12em] text-accent uppercase">
+              <span className="ui-mono tracking-[0.12em] text-accent uppercase">
                 {t('new_project')}
               </span>
               <h2
@@ -114,12 +114,12 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
               >
                 {t('create_another_project')}
               </h2>
-              <p className="mt-2 text-base leading-5 text-ink-2">
+              <p className="mt-2 leading-5 text-ink-2">
                 {t('it_will_be_created_on_your_testron_server_and_selected_here_imme')}
               </p>
               <form className="mt-6" onSubmit={submit}>
                 <label className="block">
-                  <span className="text-sm font-medium text-ink-2">{t('project_name')}</span>
+                  <span className="font-medium text-ink-2">{t('project_name')}</span>
                   <input
                     autoFocus
                     required
@@ -129,13 +129,13 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
                     disabled={submitting}
                     onChange={(event) => setName(event.target.value)}
                     placeholder={t('marketing_website')}
-                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-md text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                   />
                 </label>
                 {creationError && (
                   <div
                     role="alert"
-                    className="mt-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 text-sm leading-5 text-ink-2"
+                    className="mt-4 flex items-start gap-2 rounded-md border border-critical/30 bg-critical-wash px-3 py-2.5 leading-5 text-ink-2"
                   >
                     <Icon name="alert" size={14} className="mt-0.5 shrink-0 text-critical" />
                     {creationError}
