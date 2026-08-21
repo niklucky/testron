@@ -55,9 +55,6 @@ export const ProjectSwitcher = ({ library }: { library: LibrarySnapshot }) => {
   return (
     <>
       <div className="relative flex items-center gap-2">
-        <span className="ui-mono grid h-6 w-6 place-items-center rounded-[6px] bg-accent font-bold text-accent-ink">
-          {t('t')}
-        </span>
         <div className="relative">
           <select
             aria-label={t('project')}

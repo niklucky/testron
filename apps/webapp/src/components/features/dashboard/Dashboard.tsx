@@ -1,30 +1,30 @@
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { AppSnapshot } from '../../../lib/library';
-import { Button, PulseDot } from '../../ui/design';
-import { ContextRail } from './ContextRail';
-import { buildSuites, failures, tally } from './data';
-import { initialOverviewState, Overview, type OverviewState } from './Overview';
-import { mapProjectOverview } from './overview-data';
 import { goToTest } from '../../../lib/navigation';
-import { runs } from './runHistory';
-import { failuresFromLibrary, projectRunsFromLibrary } from './serverRunData';
-import { initialRunsState, Runs, type RunsState } from './Runs';
-import { RunsRail } from './RunsRail';
-import { Sidebar } from './Sidebar';
-import { loadExpandedSuiteIds, saveExpandedSuiteIds } from './suiteExpansion';
-import { NewTestForm } from './NewTestForm';
-import { TestSuiteForm } from './TestSuiteForm';
-import { evidenceTabs, Triage } from './Triage';
-import { JumpTo, type JumpToItem } from './JumpTo';
-import { createDashboardHotkeyDefinitions, displayShortcut } from './hotkeys';
-import { ProjectSwitcher } from '../projects/ProjectSwitcher';
-import { ProjectSettings } from '../projects/ProjectSettings';
+import { Button, PulseDot } from '../../ui/design';
 import { ProfileModal } from '../account/ProfileModal';
 import { Members } from '../members/Members';
 import { PendingInvitationModal } from '../members/PendingInvitationModal';
+import { ProjectSettings } from '../projects/ProjectSettings';
+import { ProjectSwitcher } from '../projects/ProjectSwitcher';
+import { ContextRail } from './ContextRail';
+import { buildSuites, failures, tally } from './data';
+import { createDashboardHotkeyDefinitions, displayShortcut } from './hotkeys';
+import { JumpTo, type JumpToItem } from './JumpTo';
+import { NewTestForm } from './NewTestForm';
+import { initialOverviewState, Overview, type OverviewState } from './Overview';
+import { mapProjectOverview } from './overview-data';
+import { runs } from './runHistory';
+import { initialRunsState, Runs, type RunsState } from './Runs';
+import { RunsRail } from './RunsRail';
+import { failuresFromLibrary, projectRunsFromLibrary } from './serverRunData';
+import { Sidebar } from './Sidebar';
+import { loadExpandedSuiteIds, saveExpandedSuiteIds } from './suiteExpansion';
+import { TestSuiteForm } from './TestSuiteForm';
+import { evidenceTabs, Triage } from './Triage';
 import type {
   EvidenceTab,
   Failure,
@@ -477,14 +477,11 @@ export const Dashboard = ({
           {library && <ProjectSwitcher library={library} />}
         </div>
 
-        <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag]">
+        <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag] text-sm">
           <PulseDot label={t('runs_in_flight')} />
           <span className="text-ink-2">
-            {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}{' '}
-            {(liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0) === 1
-              ? t('run_2')
-              : t('runs_3')}{' '}
-            in flight
+            {t('now_running')}: {' '}
+            {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}
           </span>
         </div>
 

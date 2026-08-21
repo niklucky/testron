@@ -1,18 +1,18 @@
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
-import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../design';
 import { NewTestForm } from '../dashboard/NewTestForm';
+import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../design';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
 import { AssertionCard, DetailCard, RunCard, StepArrow, StepCard } from './columns';
-import { liveTestBoard } from './live';
 import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotkeys';
+import { liveTestBoard } from './live';
 import { SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
@@ -421,40 +421,8 @@ export const TestView = () => {
                   ? t('sync_conflict')
                   : snapshot.library.server.status}
               </Badge>
-              {snapshot.library.server.authentication === 'signedIn' && (
-                <>
-                  <Button
-                    size="sm"
-                    icon="rerun"
-                    onClick={() => window.testron?.command({ type: 'sync-now' })}
-                  >
-                    {t('sync')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      window.testron?.command({ type: 'logout-server' });
-                      window.testron.command({ type: 'show-product' });
-                    }}
-                  >
-                    {t('sign_out')}
-                  </Button>
-                </>
-              )}
-              {snapshot.library.server.authentication === 'signedOut' && (
-                <Button size="sm" onClick={() => window.testron.command({ type: 'show-product' })}>
-                  {t('sign_in')}
-                </Button>
-              )}
             </>
           )}
-          <IconButton
-            icon={theme === 'dark' ? 'sun' : 'moon'}
-            size="sm"
-            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
-            onClick={toggle}
-          />
         </div>
       </header>
 

@@ -74,7 +74,7 @@ export const Button = ({
       {icon && <Icon name={icon} size={size === 'sm' ? 13 : 14} />}
       {children}
       {iconEnd && <Icon name={iconEnd} size={size === 'sm' ? 13 : 14} />}
-      {kbd && <Kbd className="ml-0.5">{kbd}</Kbd>}
+      {kbd && <Kbd className="ml-0.5 text-sm">{kbd}</Kbd>}
     </button>
   );
 };
