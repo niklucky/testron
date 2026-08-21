@@ -42,6 +42,7 @@ import {
   type RevisionStep,
   type TestSnapshot,
   type TestRun,
+  type TestSuiteSummary,
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
@@ -64,10 +65,10 @@ import {
   RECORD_CHANNELS,
   RECORDER_CHANNEL,
   RECORDER_CONFIG_CHANNEL,
+  REMOTE_APP_CHANNELS,
   TESTED_WEBSITE_WEB_PREFERENCES,
 } from './security';
 
-const TOOLBAR_HEIGHT = 430;
 const APP_ICON_PATH = path.join(
   app.getAppPath(),
   'assets/brand/testron-app-icon-18-glass-t-gradient.png',
@@ -90,8 +91,26 @@ const recorderControlSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('repick-target'), target: targetObservationSchema }),
   z.object({ kind: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
+const remoteAppCommandSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('open-local'),
+    route: z.enum(['record', 'test', 'run', 'recovery']),
+    projectId: z.string().uuid().optional(),
+    environmentId: z.string().uuid().optional(),
+    testId: z.string().uuid().optional(),
+  }),
+  z.object({ type: z.literal('show-product') }),
+  z.object({ type: z.literal('login'), email: z.email(), password: z.string().min(12).max(200) }),
+  z.object({
+    type: z.literal('register'),
+    name: z.string().trim().min(1).max(100),
+    email: z.email(),
+    password: z.string().min(12).max(200),
+  }),
+]);
 
 let mainWindow: BrowserWindow | undefined;
+let remoteView: WebContentsView | undefined;
 let websiteView: WebContentsView | undefined;
 let panelViews = new Map<PanelId, WebContentsView>();
 let repository: TestronRepository | undefined;
@@ -151,6 +170,36 @@ const createWindow = async (): Promise<void> => {
     },
   });
 
+  const webappUrl = safeUrl(
+    process.env.TESTRON_WEBAPP_URL ??
+      (MAIN_WINDOW_VITE_DEV_SERVER_URL ? 'http://127.0.0.1:4402' : __TESTRON_WEBAPP_URL__),
+  );
+  const isWebappLocation = (url: string) => {
+    try {
+      return new URL(url).origin === new URL(webappUrl).origin;
+    } catch {
+      return false;
+    }
+  };
+  if (!localMode) {
+    remoteView = new WebContentsView({
+      webPreferences: {
+        ...APP_RENDERER_WEB_PREFERENCES,
+        preload: path.join(__dirname, 'remote.js'),
+      },
+    });
+    const trustedOrigin = new URL(webappUrl).origin;
+    remoteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    remoteView.webContents.on('will-navigate', (event, target) => {
+      try {
+        if (new URL(target).origin !== trustedOrigin) event.preventDefault();
+      } catch {
+        event.preventDefault();
+      }
+    });
+    mainWindow.contentView.addChildView(remoteView);
+  }
+
   websiteView = new WebContentsView({
     webPreferences: {
       ...TESTED_WEBSITE_WEB_PREFERENCES,
@@ -182,7 +231,7 @@ const createWindow = async (): Promise<void> => {
     panelViews.set(id, view);
   }
 
-  let shellRoute: 'dashboard' | 'recorder' = 'dashboard';
+  let productVisible = Boolean(remoteView);
   let recordLayout = idleRecordLayout();
 
   /**
@@ -193,7 +242,11 @@ const createWindow = async (): Promise<void> => {
    */
   const layout = (): void => {
     const [width, height] = mainWindow?.getContentSize() ?? [0, 0];
-    const plane = recordLayout.plane;
+    // A stale RecordScreen can still publish once after the remote product is
+    // shown. Product mode always wins so a tested-site view can never cover it.
+    const plane = productVisible ? null : recordLayout.plane;
+
+    remoteView?.setBounds(productVisible ? { x: 0, y: 0, width, height } : OFF_WINDOW);
 
     if (plane) {
       const stepsWidth = recordLayout.panels.steps.visible
@@ -212,12 +265,7 @@ const createWindow = async (): Promise<void> => {
         height: Math.min(plane.height, Math.max(0, height - plane.y)),
       });
     } else {
-      websiteView?.setBounds({
-        x: 0,
-        y: shellRoute === 'recorder' ? TOOLBAR_HEIGHT : height,
-        width,
-        height: shellRoute === 'recorder' ? Math.max(0, height - TOOLBAR_HEIGHT) : 0,
-      });
+      websiteView?.setBounds(OFF_WINDOW);
     }
 
     for (const [id, view] of panelViews) {
@@ -244,6 +292,17 @@ const createWindow = async (): Promise<void> => {
   layout();
   mainWindow.on('resize', layout);
 
+  const loadAppRenderer = async (contents: Electron.WebContents, route?: string): Promise<void> => {
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      await contents.loadURL(
+        route ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}#/${route}` : MAIN_WINDOW_VITE_DEV_SERVER_URL,
+      );
+      return;
+    }
+    const file = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+    await contents.loadFile(file, route ? { hash: `/${route}` } : {});
+  };
+
   const remoteTest = (id: string | undefined) =>
     remoteWorkspace?.tests.find((snapshot) => snapshot.test.id === id);
   const allProjects = () => {
@@ -265,16 +324,19 @@ const createWindow = async (): Promise<void> => {
         }))
       : store.listEnvironments();
   const allTests = () =>
-    (remoteWorkspace?.tests ?? []).map((snapshot) => ({
-      id: snapshot.test.id,
-      projectId: snapshot.test.projectId,
-      environmentId: snapshot.currentRevision.content.environmentId,
-      testSuiteId: snapshot.test.testSuiteId,
-      title: snapshot.test.title,
-      createdAt: snapshot.test.createdAt,
-      updatedAt: snapshot.currentRevision.createdAt,
-    }));
-  const allTestSuites = () => remoteWorkspace?.testSuites ?? [];
+    serverState.configured
+      ? (remoteWorkspace?.tests ?? []).map((snapshot) => ({
+          id: snapshot.test.id,
+          projectId: snapshot.test.projectId,
+          environmentId: snapshot.currentRevision.content.environmentId,
+          testSuiteId: snapshot.test.testSuiteId,
+          title: snapshot.test.title,
+          createdAt: snapshot.test.createdAt,
+          updatedAt: snapshot.currentRevision.createdAt,
+        }))
+      : store.listTests();
+  const allTestSuites = (): TestSuiteSummary[] =>
+    serverState.configured ? (remoteWorkspace?.testSuites ?? []) : [];
   const allProfiles = () =>
     serverState.configured
       ? (remoteWorkspace?.profiles ?? []).map((profile) => ({
@@ -292,7 +354,8 @@ const createWindow = async (): Promise<void> => {
         )
       : store.listProfileVariables();
   const stepsFor = (testId: string): Step[] =>
-    remoteTest(testId)?.currentRevision.content.steps.map(({ payload }) => payload) ?? [];
+    remoteTest(testId)?.currentRevision.content.steps.map(({ payload }) => payload) ??
+    store.loadSteps(testId);
   const ensureLocalProject = (projectId: string) => {
     const local = store.getProject(projectId);
     if (local) return local;
@@ -478,6 +541,10 @@ const createWindow = async (): Promise<void> => {
     steps: readonly Step[],
   ) => void = () => undefined;
   const session = new RecordingSession(sendSnapshot, (steps) => {
+    if (localMode && selectedTestId) {
+      store.replaceSteps(selectedTestId, steps);
+      return;
+    }
     const test = remoteTest(selectedTestId);
     if (test)
       queueTestRevision(
@@ -737,8 +804,21 @@ const createWindow = async (): Promise<void> => {
     if (!parsed.success) return;
     const command: AppCommand = parsed.data;
     switch (command.type) {
-      case 'set-shell-route':
-        shellRoute = command.route;
+      case 'show-product':
+        recordLayout = idleRecordLayout();
+        productVisible = Boolean(remoteView);
+        if (remoteView && !isWebappLocation(remoteView.webContents.getURL()))
+          void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
+        layout();
+        break;
+      case 'reload-product':
+        recordLayout = idleRecordLayout();
+        productVisible = Boolean(remoteView);
+        if (remoteView) {
+          if (isWebappLocation(remoteView.webContents.getURL()))
+            remoteView.webContents.reloadIgnoringCache();
+          else void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
+        }
         layout();
         break;
       case 'start-recording':
@@ -1396,6 +1476,21 @@ const createWindow = async (): Promise<void> => {
       }
       case 'create-test': {
         if (!serverClient || serverState.authentication !== 'signedIn') {
+          if (localMode) {
+            const test = store.createTest(
+              command.projectId,
+              command.environmentId,
+              command.title,
+              selectedTestSuiteId,
+            );
+            selectedProjectId = test.projectId;
+            selectedEnvironmentId = test.environmentId;
+            selectedTestId = test.id;
+            replaySnapshot = { status: 'idle', steps: [] };
+            session.load(test.title, []);
+            applyContext();
+            break;
+          }
           session.warn('Sign in before creating a test.');
           break;
         }
@@ -1498,7 +1593,13 @@ const createWindow = async (): Promise<void> => {
       }
       case 'rename-test': {
         const test = remoteTest(command.testId);
-        if (!test) break;
+        if (!test) {
+          if (localMode && store.listTests().some((candidate) => candidate.id === command.testId)) {
+            store.renameTest(command.testId, command.title);
+            if (selectedTestId === command.testId) session.setGenerationContext(command.title);
+          }
+          break;
+        }
         const steps =
           selectedTestId === test.test.id
             ? session.snapshot().steps
@@ -1522,6 +1623,27 @@ const createWindow = async (): Promise<void> => {
         applyContext();
         const test = remoteTest(selectedTestId);
         if (!test) {
+          if (localMode && selectedProjectId && selectedEnvironmentId) {
+            const steps = session.snapshot().steps;
+            const localTest = selectedTestId
+              ? store.listTests().find((candidate) => candidate.id === selectedTestId)
+              : undefined;
+            if (localTest) store.renameTest(localTest.id, command.title);
+            const saved =
+              localTest ??
+              store.createTest(
+                selectedProjectId,
+                selectedEnvironmentId,
+                command.title,
+                selectedTestSuiteId,
+              );
+            store.replaceSteps(saved.id, steps);
+            selectedTestId = saved.id;
+            session.load(command.title, steps);
+            replaySnapshot = { status: 'idle', steps: [] };
+            applyContext();
+            break;
+          }
           session.warn('Create the server test before saving the recording.');
           break;
         }
@@ -1715,6 +1837,9 @@ const createWindow = async (): Promise<void> => {
         runner.cancel();
         break;
       case 'set-record-layout':
+        // RecordScreen remains mounted underneath the remote WebContentsView.
+        // Ignore its late layout effects while the product owns the window.
+        if (productVisible) break;
         recordLayout = command.layout;
         layout();
         break;
@@ -1828,6 +1953,93 @@ const createWindow = async (): Promise<void> => {
       sendSnapshot(session.snapshot());
   });
 
+  ipcMain.on(REMOTE_APP_CHANNELS.command, (event, payload: unknown) => {
+    if (
+      event.sender !== remoteView?.webContents ||
+      event.senderFrame !== remoteView.webContents.mainFrame
+    )
+      return;
+    const parsed = remoteAppCommandSchema.safeParse(payload);
+    if (!parsed.success) return;
+    const command = parsed.data;
+
+    if (command.type === 'show-product') {
+      recordLayout = idleRecordLayout();
+      productVisible = true;
+      if (!isWebappLocation(remoteView.webContents.getURL()))
+        void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
+      layout();
+      return;
+    }
+
+    if (command.type === 'login' || command.type === 'register') {
+      if (!serverClient || !tokenStore) return;
+      const attempt = ++loginAttempt;
+      const operation =
+        command.type === 'login'
+          ? serverClient.login(command.email, command.password)
+          : serverClient.register(command.name, command.email, command.password);
+      void operation
+        .then(async (result) => {
+          if (attempt !== loginAttempt) return;
+          await tokenStore!.save(result.accessToken);
+          if (attempt !== loginAttempt) return;
+          await reloadRemoteWorkspace();
+          serverState = {
+            configured: true,
+            authentication: 'signedIn',
+            workspace: 'loaded',
+            status: 'idle',
+          };
+        })
+        .catch(async () => {
+          if (attempt !== loginAttempt) return;
+          await tokenStore!.clear();
+          serverState = {
+            configured: true,
+            authentication: 'signedOut',
+            workspace: 'loading',
+            status: 'error',
+            message: 'Desktop authentication failed.',
+          };
+        });
+      return;
+    }
+
+    void (async () => {
+      try {
+        if (serverClient && serverState.authentication === 'signedIn')
+          await reloadRemoteWorkspace();
+        if (command.projectId) selectedProjectId = command.projectId;
+        if (command.environmentId) selectedEnvironmentId = command.environmentId;
+        if (command.testId) selectedTestId = command.testId;
+        reconcileLibrarySelection();
+        const selectedTest = allTests().find((test) => test.id === selectedTestId);
+        if (selectedTest) {
+          selectedProjectId = selectedTest.projectId;
+          selectedEnvironmentId = selectedTest.environmentId;
+          selectedTestSuiteId = selectedTest.testSuiteId ?? undefined;
+          selectedProfileId = allProfiles().find(
+            (profile) => profile.environmentId === selectedTest.environmentId,
+          )?.id;
+          replaySnapshot = historyFor(selectedTest.id)[0] ?? { status: 'idle', steps: [] };
+          session.load(selectedTest.title, stepsFor(selectedTest.id));
+        }
+        productVisible = false;
+        recordLayout = idleRecordLayout();
+        await loadAppRenderer(mainWindow!.webContents, command.route);
+        applyContext();
+        sendSnapshot(session.snapshot());
+        layout();
+      } catch (error) {
+        productVisible = false;
+        session.warn(error instanceof Error ? error.message : String(error));
+        await loadAppRenderer(mainWindow!.webContents, 'recovery');
+        layout();
+      }
+    })();
+  });
+
   // Panels are not trusted to command the app — they report what the user did
   // in them, and the record screen decides what that means.
   ipcMain.on(RECORD_CHANNELS.event, (event, payload: unknown) => {
@@ -1845,25 +2057,28 @@ const createWindow = async (): Promise<void> => {
     if (syncRetry) clearTimeout(syncRetry);
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
+    ipcMain.removeAllListeners(REMOTE_APP_CHANNELS.command);
     ipcMain.removeAllListeners(RECORD_CHANNELS.event);
     for (const view of panelViews.values()) view.webContents.close();
     panelViews = new Map();
     websiteView = undefined;
+    remoteView = undefined;
     mainWindow = undefined;
   });
 
-  const loadAppRenderer = async (contents: Electron.WebContents, route?: string): Promise<void> => {
-    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-      await contents.loadURL(
-        route ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}#/${route}` : MAIN_WINDOW_VITE_DEV_SERVER_URL,
-      );
-      return;
-    }
-    const file = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
-    await contents.loadFile(file, route ? { hash: `/${route}` } : {});
-  };
+  await loadAppRenderer(mainWindow.webContents, localMode ? undefined : 'recovery');
 
-  await loadAppRenderer(mainWindow.webContents);
+  if (remoteView) {
+    remoteView.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
+      if (!isMainFrame) return;
+      productVisible = false;
+      void loadAppRenderer(mainWindow!.webContents, 'recovery').finally(layout);
+    });
+    void remoteView.webContents.loadURL(webappUrl).catch(() => {
+      productVisible = false;
+      layout();
+    });
+  }
 
   // The panels load alongside everything else rather than ahead of it: they
   // are off-window until the record screen asks for them, and a panel that

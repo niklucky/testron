@@ -1,6 +1,7 @@
 import type { WebWorkspaceSnapshot } from '@testron/protocol';
 
 import { mutationMeta, requestMeta } from './meta';
+import { goToTest } from './navigation';
 import { queryClient, trpcClient } from './trpc';
 import type { AppCommand, AppSnapshot, LibrarySnapshot, TestronApi } from './library';
 import { workspaceQueryOptions } from './workspace';
@@ -105,6 +106,7 @@ const command = (input: AppCommand): void => {
   const meta = mutationMeta(input.type);
   switch (input.type) {
     case 'login-server':
+      window.testronDesktop?.login(value(input, 'email'), value(input, 'password'));
       void trpcClient.auth.login
         .mutate({ email: value(input, 'email'), password: value(input, 'password') })
         .then(() => {
@@ -112,6 +114,11 @@ const command = (input: AppCommand): void => {
         });
       break;
     case 'register-server':
+      window.testronDesktop?.register(
+        value(input, 'name'),
+        value(input, 'email'),
+        value(input, 'password'),
+      );
       void trpcClient.auth.register
         .mutate({
           name: value(input, 'name'),
@@ -238,8 +245,8 @@ const command = (input: AppCommand): void => {
       );
       break;
     case 'create-test':
-      void mutate(
-        trpcClient.test.create.mutate({
+      void trpcClient.test.create
+        .mutate({
           meta,
           projectId: value(input, 'projectId'),
           testSuiteId: selectedTestSuiteId ?? null,
@@ -249,8 +256,26 @@ const command = (input: AppCommand): void => {
             environmentId: value(input, 'environmentId'),
             steps: [],
           },
-        }),
-      );
+        })
+        .then(async (snapshot) => {
+          selectedTestId = snapshot.test.id;
+          await refresh();
+          window.testronDesktop?.openLocal({
+            route: 'record',
+            projectId: snapshot.test.projectId,
+            environmentId: snapshot.currentRevision.content.environmentId,
+            testId: snapshot.test.id,
+          });
+          if (!window.testronDesktop) goToTest(snapshot.test.id);
+        });
+      break;
+    case 'run-test':
+      window.testronDesktop?.openLocal({
+        route: 'test',
+        projectId: selectedProjectId,
+        environmentId: selectedEnvironmentId,
+        testId: selectedTestId,
+      });
       break;
     case 'lookup-invitee':
       void trpcClient.invitation.lookup
@@ -314,7 +339,7 @@ const command = (input: AppCommand): void => {
 };
 
 export const browserApi: TestronApi = {
-  platform: 'web',
+  platform: window.testronDesktop ? 'desktop' : 'web',
   command,
   onSnapshot(listener) {
     listeners.add(listener);

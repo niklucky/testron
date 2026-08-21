@@ -138,5 +138,17 @@ export interface TestronApi {
 declare global {
   interface Window {
     testron?: TestronApi;
+    testronDesktop?: {
+      platform: 'desktop';
+      openLocal(request: {
+        route: 'record' | 'test' | 'run' | 'recovery';
+        projectId?: string;
+        environmentId?: string;
+        testId?: string;
+      }): void;
+      showProduct(): void;
+      login(email: string, password: string): void;
+      register(name: string, email: string, password: string): void;
+    };
   }
 }

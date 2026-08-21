@@ -42,7 +42,7 @@ export const NewTestForm = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-6 [-webkit-app-region:no-drag]"
+      className="desktop-window-controls fixed inset-0 z-50 grid place-items-center bg-black/35 p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

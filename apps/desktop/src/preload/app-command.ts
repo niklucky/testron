@@ -24,7 +24,8 @@ export type { VerifyAssertion } from './verify-assertion';
  * remains desktop-owned.
  */
 export const appCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('set-shell-route'), route: z.enum(['dashboard', 'recorder']) }),
+  z.object({ type: z.literal('show-product') }),
+  z.object({ type: z.literal('reload-product') }),
   z.object({ type: z.literal('start-recording'), append: z.boolean().optional() }),
   z.object({ type: z.literal('stop-recording') }),
   z.object({ type: z.literal('pause-recording') }),

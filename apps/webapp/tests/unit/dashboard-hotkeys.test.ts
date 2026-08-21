@@ -5,7 +5,7 @@ import {
   dashboardShortcutGroups,
   dashboardShortcuts,
   type DashboardHotkeyActions,
-} from '../../src/renderer/dashboard/hotkeys';
+} from '../../src/components/features/dashboard/hotkeys';
 
 const actions = (): DashboardHotkeyActions => ({
   toggleJump: vi.fn(),

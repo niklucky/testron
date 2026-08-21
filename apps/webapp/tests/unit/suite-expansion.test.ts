@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   loadExpandedSuiteIds,
   saveExpandedSuiteIds,
-} from '../../src/renderer/dashboard/suiteExpansion';
+} from '../../src/components/features/dashboard/suiteExpansion';
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();

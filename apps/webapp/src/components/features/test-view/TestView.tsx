@@ -1,5 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { Step } from '@testron/domain/steps/schema';
@@ -16,7 +16,7 @@ import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotk
 import { SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
-import { goToDashboard } from '../../../lib/navigation';
+import { goToDashboard, goToRecorder } from '../../../lib/navigation';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
   title: 'Untitled test',
@@ -54,7 +54,6 @@ export const TestView = () => {
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
-  const creatingFromTestId = useRef<string | undefined>(undefined);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -63,14 +62,6 @@ export const TestView = () => {
     const unsubscribe = window.testron?.onSnapshot((next) => {
       setSnapshot(next);
       setLoaded(true);
-      if (
-        creatingFromTestId.current !== undefined &&
-        next.library.selectedTestId &&
-        next.library.selectedTestId !== creatingFromTestId.current
-      ) {
-        creatingFromTestId.current = undefined;
-        window.location.hash = '#/record';
-      }
     });
     window.testron?.command({ type: 'request-snapshot' });
     return unsubscribe;
@@ -288,7 +279,7 @@ export const TestView = () => {
       {
         run,
         toggleSource: () => setSourceOpen((open) => !open),
-        edit: () => (window.location.hash = '#/record'),
+        edit: goToRecorder,
         closeSource: () => setSourceOpen(false),
       },
       {
@@ -335,7 +326,6 @@ export const TestView = () => {
                 environmentId,
                 title,
               });
-              creatingFromTestId.current = snapshot.library.selectedTestId ?? 'none';
               setNewTestOpen(false);
             }}
           />
@@ -478,11 +468,7 @@ export const TestView = () => {
         >
           {sourceOpen && wideSourceLayout ? t('hide_source') : t('view_source')}
         </Button>
-        <Button
-          icon="pencil"
-          onClick={() => (window.location.hash = '#/record')}
-          kbd={displayTestViewShortcut('edit')}
-        >
+        <Button icon="pencil" onClick={goToRecorder} kbd={displayTestViewShortcut('edit')}>
           {t('edit_in_recorder')}
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
@@ -560,7 +546,7 @@ export const TestView = () => {
                         const original = originalIndex(step.id);
                         if (original < 0) return;
                         window.testron?.command({ type: 'set-repick-step', index: original });
-                        window.location.hash = '#/record';
+                        goToRecorder();
                       }}
                       onAddAssertion={() => addAssertion(step)}
                       onDelete={() => {

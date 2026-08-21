@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectInvitation } from '@testron/protocol';
-import { passwordChangeError } from '../../src/renderer/account/validation';
-import { canCancelInvitation, canManageMembers } from '../../src/renderer/members/access';
+import { passwordChangeError } from '../../src/components/features/account/validation';
+import {
+  canCancelInvitation,
+  canManageMembers,
+} from '../../src/components/features/members/access';
 
 const invitation: ProjectInvitation = {
   id: '00000000-0000-4000-8000-000000000001',

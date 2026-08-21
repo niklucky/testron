@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectActivity } from '@testron/protocol';
-import { presentProjectActivity } from '../../src/renderer/dashboard/activity';
+import { presentProjectActivity } from '../../src/components/features/dashboard/activity';
 
 const event = (
   id: string,

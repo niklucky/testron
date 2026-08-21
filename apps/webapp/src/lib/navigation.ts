@@ -1,13 +1,62 @@
 const projectId = () => window.location.pathname.split('/')[2];
+
 export const goToDashboard = () => {
-  window.location.pathname = `/projects/${projectId()}`;
+  const currentProjectId = projectId();
+  void import('../router').then(({ router }) =>
+    router.navigate({
+      to: '/projects/$projectId',
+      params: { projectId: currentProjectId },
+    }),
+  );
 };
 export const goToRuns = () => {
-  window.location.pathname = `/projects/${projectId()}/runs`;
+  const currentProjectId = projectId();
+  void import('../router').then(({ router }) =>
+    router.navigate({
+      to: '/projects/$projectId/runs',
+      params: { projectId: currentProjectId },
+    }),
+  );
+};
+export const goToTest = (testId: string) => {
+  const currentProjectId = projectId();
+  if (window.testronDesktop) {
+    window.testronDesktop.openLocal({
+      route: 'test',
+      projectId: currentProjectId,
+      testId,
+    });
+    return;
+  }
+  void import('../router').then(({ router }) =>
+    router.navigate({
+      to: '/projects/$projectId/tests/$testId',
+      params: { projectId: currentProjectId, testId },
+    }),
+  );
+};
+export const goToRecorder = () => {
+  if (window.testronDesktop) {
+    window.testronDesktop.openLocal({
+      route: 'record',
+      projectId: projectId(),
+      testId: window.location.pathname.split('/')[4],
+    });
+    return;
+  }
+  window.location.hash = '#/record';
 };
 export const goToSelectedTest = () => {
+  const currentProjectId = projectId();
   const testId = window.location.pathname.split('/')[4];
-  window.location.pathname = testId
-    ? `/projects/${projectId()}/tests/${testId}`
-    : `/projects/${projectId()}`;
+  if (testId) {
+    void import('../router').then(({ router }) =>
+      router.navigate({
+        to: '/projects/$projectId/tests/$testId',
+        params: { projectId: currentProjectId, testId },
+      }),
+    );
+    return;
+  }
+  goToDashboard();
 };

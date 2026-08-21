@@ -1,11 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { WebDashboard } from '../components/features/dashboard/WebDashboard';
-import { useWorkspace } from '../lib/workspace';
+import { createFileRoute, Outlet } from '@tanstack/react-router';
+
 export const Route = createFileRoute('/projects/$projectId/tests')({
-  component: TestsRoute,
+  component: () => <Outlet />,
 });
-function TestsRoute() {
-  const { projectId } = Route.useParams();
-  const { data } = useWorkspace();
-  return data ? <WebDashboard workspace={data} projectId={projectId} /> : null;
-}

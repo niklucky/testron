@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectOverviewSummary } from '@testron/protocol';
-import { mapProjectOverview } from '../../src/renderer/dashboard/overview-data';
+import { mapProjectOverview } from '../../src/components/features/dashboard/overview-data';
 
 const summary = (patch: Partial<ProjectOverviewSummary> = {}): ProjectOverviewSummary => ({
   projectId: '00000000-0000-4000-8000-000000000001',

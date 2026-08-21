@@ -1,8 +1,8 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 
-import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
 import type { VerifyAssertion } from '../../preload/api';
+import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
 import { clock } from './codegen';
 import { displayRecordShortcut } from './hotkeys';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
@@ -34,6 +34,7 @@ export const SessionBar = ({
   profileId,
   onProfile,
   onConfigureProfile,
+  onMenuOpenChange,
   test,
   onTestEdit,
 }: {
@@ -58,117 +59,211 @@ export const SessionBar = ({
   profileId?: string;
   onProfile: (id: string) => void;
   onConfigureProfile: () => void;
+  onMenuOpenChange: (open: boolean) => void;
   test: string;
   onTestEdit: () => void;
 }) => {
   const { t } = useTranslation();
+  const [openMenu, setOpenMenu] = useState<'project' | 'suite' | 'environment' | 'profile'>();
+  const setMenu = (menu: typeof openMenu) => {
+    onMenuOpenChange(Boolean(menu));
+    setOpenMenu(menu);
+  };
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(undefined);
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [openMenu]);
+
   return (
-    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
-      <div className="w-[74px] shrink-0" />
+    <>
+      <header
+        className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-plane px-3"
+        onKeyDownCapture={(event) => {
+          if (event.key === 'Escape' && openMenu) {
+            event.preventDefault();
+            setMenu(undefined);
+          }
+        }}
+      >
+        <div className="desktop-window-drag h-full w-[74px] shrink-0" />
 
-      <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
-        <IconButton
-          icon="arrowLeft"
-          size="sm"
-          label={t('back_to_the_dashboard')}
-          onClick={onBack}
-        />
-        <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
-          <select
+        <div className="desktop-window-controls flex min-w-0 items-center gap-1.5">
+          <IconButton
+            icon="arrowLeft"
+            size="sm"
+            label={t('back_to_the_dashboard')}
+            onClick={onBack}
+          />
+          <SessionMenu
             aria-label={t('recording_project')}
+            open={openMenu === 'project'}
             value={projectId ?? ''}
-            onChange={(event) => onProject(event.target.value)}
-            className="max-w-40 bg-transparent py-1 outline-none"
-          >
-            {projects.length === 0 && <option value="">{project}</option>}
-            {projects.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <label className="flex items-center rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
-          <select
+            label={projects.find((entry) => entry.id === projectId)?.name ?? project}
+            options={projects}
+            onOpen={() => setMenu(openMenu === 'project' ? undefined : 'project')}
+            onSelect={(id) => {
+              onProject(id);
+              setMenu(undefined);
+            }}
+          />
+          <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
+          <SessionMenu
             aria-label={t('recording_test_suite')}
+            open={openMenu === 'suite'}
             value={suiteId ?? ''}
-            onChange={(event) => onSuite(event.target.value)}
-            className="max-w-40 bg-transparent py-1 outline-none"
-          >
-            <option value="">{suites.length ? t('choose_test_suite') : suite}</option>
-            {suites.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
-          <Icon name="grid" size={13} />
-          <select
+            label={
+              suites.find((entry) => entry.id === suiteId)?.name ??
+              (suites.length ? t('choose_test_suite') : suite)
+            }
+            options={[{ id: '', name: t('choose_test_suite') }, ...suites]}
+            onOpen={() => setMenu(openMenu === 'suite' ? undefined : 'suite')}
+            onSelect={(id) => {
+              onSuite(id);
+              setMenu(undefined);
+            }}
+          />
+          <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
+          <SessionMenu
             aria-label={t('recording_environment')}
+            open={openMenu === 'environment'}
             value={environmentId ?? ''}
-            onChange={(event) => onEnvironment(event.target.value)}
-            className="max-w-36 bg-transparent py-1 outline-none"
-          >
-            {environments.length === 0 && <option value="">{environment}</option>}
-            {environments.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <label className="flex items-center gap-1 rounded-md px-1.5 text-sm text-ink-2 hover:bg-raised">
-          <span className="text-ink-3">{t('profile')}</span>
-          <select
+            label={environments.find((entry) => entry.id === environmentId)?.name ?? environment}
+            options={environments}
+            icon={<Icon name="grid" size={13} />}
+            onOpen={() => setMenu(openMenu === 'environment' ? undefined : 'environment')}
+            onSelect={(id) => {
+              onEnvironment(id);
+              setMenu(undefined);
+            }}
+          />
+          <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
+          <SessionMenu
             aria-label={t('recording_profile')}
+            open={openMenu === 'profile'}
             value={profileId ?? ''}
-            onChange={(event) => onProfile(event.target.value)}
-            className="max-w-36 bg-transparent py-1 outline-none"
+            label={profiles.find((entry) => entry.id === profileId)?.name ?? t('no_profile')}
+            options={[{ id: '', name: t('no_profile') }, ...profiles]}
+            prefix={t('profile')}
+            onOpen={() => setMenu(openMenu === 'profile' ? undefined : 'profile')}
+            onSelect={(id) => {
+              onProfile(id);
+              setMenu(undefined);
+            }}
+          />
+          <IconButton
+            icon="pencil"
+            size="sm"
+            label={profile ? `Configure ${profile}` : t('create_authentication_profile')}
+            className="desktop-window-controls"
+            onClick={onConfigureProfile}
+          />
+          <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="pencil"
+            className="desktop-window-controls min-w-0"
+            onClick={onTestEdit}
           >
-            <option value="">{t('no_profile')}</option>
-            {profiles.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <IconButton
-          icon="pencil"
-          size="sm"
-          label={profile ? `Configure ${profile}` : t('create_authentication_profile')}
-          onClick={onConfigureProfile}
-        />
-        <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-        <Button variant="ghost" size="sm" icon="pencil" className="min-w-0" onClick={onTestEdit}>
-          <span className="truncate">{test}</span>
-        </Button>
-      </div>
+            <span className="truncate">{test}</span>
+          </Button>
+        </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
-        {status !== 'idle' && (
-          <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1">
-            {status === 'recording' ? (
-              <PulseDot tone="critical" label={t('recording')} />
-            ) : (
-              <span className="h-[7px] w-[7px] rounded-full bg-neutral" />
-            )}
-            <span className="ui-mono text-sm text-ink-2">{clock(elapsed)}</span>
-            <span className="text-sm text-ink-3">
-              · {steps} {t('step')}
-              {steps === 1 ? '' : t('s')}
+        <div className="desktop-window-controls ml-auto flex shrink-0 items-center gap-2">
+          {status !== 'idle' && (
+            <span className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1">
+              {status === 'recording' ? (
+                <PulseDot tone="critical" label={t('recording')} />
+              ) : (
+                <span className="h-[7px] w-[7px] rounded-full bg-neutral" />
+              )}
+              <span className="ui-mono text-sm text-ink-2">{clock(elapsed)}</span>
+              <span className="text-sm text-ink-3">
+                · {steps} {t('step')}
+                {steps === 1 ? '' : t('s')}
+              </span>
             </span>
-          </span>
-        )}
-      </div>
-    </header>
+          )}
+        </div>
+      </header>
+      {openMenu && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Close session menu"
+          className="desktop-window-controls fixed inset-0 z-40 cursor-default"
+          onClick={() => setMenu(undefined)}
+        />
+      )}
+    </>
   );
 };
+
+const SessionMenu = ({
+  'aria-label': ariaLabel,
+  open,
+  value,
+  label,
+  options,
+  prefix,
+  icon,
+  onOpen,
+  onSelect,
+}: {
+  'aria-label': string;
+  open: boolean;
+  value: string;
+  label: string;
+  options: Array<{ id: string; name: string }>;
+  prefix?: string;
+  icon?: ReactNode;
+  onOpen: () => void;
+  onSelect: (id: string) => void;
+}) => (
+  <div className="relative">
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      className="desktop-window-controls flex max-w-44 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-ink-2 hover:bg-raised"
+      onClick={onOpen}
+    >
+      {icon}
+      {prefix && <span className="text-ink-3">{prefix}</span>}
+      <span className="truncate">{label}</span>
+      <Icon name="caret" size={12} className="shrink-0 text-ink-3" />
+    </button>
+    {open && (
+      <div
+        role="listbox"
+        aria-label={ariaLabel}
+        className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-full overflow-hidden rounded-lg border border-line bg-surface p-1 shadow-xl"
+      >
+        {options.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="option"
+            aria-selected={option.id === value}
+            className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm hover:bg-raised ${
+              option.id === value ? 'text-accent' : 'text-ink-2'
+            }`}
+            onClick={() => onSelect(option.id)}
+          >
+            <span className="w-3">{option.id === value ? '✓' : ''}</span>
+            {option.name}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+);
 
 /**
  * Row two: the browser, then the recorder, then the panels — left to right in

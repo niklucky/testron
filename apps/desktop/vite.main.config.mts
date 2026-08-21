@@ -5,6 +5,9 @@ export default defineConfig({
     __TESTRON_DEFAULT_SERVER_URL__: JSON.stringify(
       process.env.TESTRON_SERVER_URL ?? 'http://127.0.0.1:4400',
     ),
+    __TESTRON_WEBAPP_URL__: JSON.stringify(
+      process.env.TESTRON_WEBAPP_URL ?? 'https://app.testron.dev',
+    ),
   },
   build: {
     sourcemap: true,

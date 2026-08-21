@@ -18,6 +18,7 @@ import { Route as ProjectsProjectIdMembersRouteImport } from './routes/projects.
 import { Route as ProjectsProjectIdRunsRouteImport } from './routes/projects.$projectId.runs'
 import { Route as ProjectsProjectIdSettingsRouteImport } from './routes/projects.$projectId.settings'
 import { Route as ProjectsProjectIdTestsRouteImport } from './routes/projects.$projectId.tests'
+import { Route as ProjectsProjectIdTestsIndexRouteImport } from './routes/projects.$projectId.tests.index'
 import { Route as ProjectsProjectIdTestsTestIdRouteImport } from './routes/projects.$projectId.tests.$testId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -67,6 +68,12 @@ const ProjectsProjectIdTestsRoute = ProjectsProjectIdTestsRouteImport.update({
   path: '/tests',
   getParentRoute: () => ProjectsProjectIdRoute,
 } as any)
+const ProjectsProjectIdTestsIndexRoute =
+  ProjectsProjectIdTestsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProjectsProjectIdTestsRoute,
+  } as any)
 const ProjectsProjectIdTestsTestIdRoute =
   ProjectsProjectIdTestsTestIdRouteImport.update({
     id: '/$testId',
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId/tests': typeof ProjectsProjectIdTestsRouteWithChildren
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tests/$testId': typeof ProjectsProjectIdTestsTestIdRoute
+  '/projects/$projectId/tests/': typeof ProjectsProjectIdTestsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,9 +101,9 @@ export interface FileRoutesByTo {
   '/projects/$projectId/members': typeof ProjectsProjectIdMembersRoute
   '/projects/$projectId/runs': typeof ProjectsProjectIdRunsRoute
   '/projects/$projectId/settings': typeof ProjectsProjectIdSettingsRoute
-  '/projects/$projectId/tests': typeof ProjectsProjectIdTestsRouteWithChildren
   '/projects/$projectId': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tests/$testId': typeof ProjectsProjectIdTestsTestIdRoute
+  '/projects/$projectId/tests': typeof ProjectsProjectIdTestsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/projects/$projectId/tests': typeof ProjectsProjectIdTestsRouteWithChildren
   '/projects/$projectId/': typeof ProjectsProjectIdIndexRoute
   '/projects/$projectId/tests/$testId': typeof ProjectsProjectIdTestsTestIdRoute
+  '/projects/$projectId/tests/': typeof ProjectsProjectIdTestsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -123,6 +132,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/tests'
     | '/projects/$projectId/'
     | '/projects/$projectId/tests/$testId'
+    | '/projects/$projectId/tests/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -131,9 +141,9 @@ export interface FileRouteTypes {
     | '/projects/$projectId/members'
     | '/projects/$projectId/runs'
     | '/projects/$projectId/settings'
-    | '/projects/$projectId/tests'
     | '/projects/$projectId'
     | '/projects/$projectId/tests/$testId'
+    | '/projects/$projectId/tests'
   id:
     | '__root__'
     | '/'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId/tests'
     | '/projects/$projectId/'
     | '/projects/$projectId/tests/$testId'
+    | '/projects/$projectId/tests/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -220,6 +231,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectIdTestsRouteImport
       parentRoute: typeof ProjectsProjectIdRoute
     }
+    '/projects/$projectId/tests/': {
+      id: '/projects/$projectId/tests/'
+      path: '/'
+      fullPath: '/projects/$projectId/tests/'
+      preLoaderRoute: typeof ProjectsProjectIdTestsIndexRouteImport
+      parentRoute: typeof ProjectsProjectIdTestsRoute
+    }
     '/projects/$projectId/tests/$testId': {
       id: '/projects/$projectId/tests/$testId'
       path: '/$testId'
@@ -232,11 +250,13 @@ declare module '@tanstack/react-router' {
 
 interface ProjectsProjectIdTestsRouteChildren {
   ProjectsProjectIdTestsTestIdRoute: typeof ProjectsProjectIdTestsTestIdRoute
+  ProjectsProjectIdTestsIndexRoute: typeof ProjectsProjectIdTestsIndexRoute
 }
 
 const ProjectsProjectIdTestsRouteChildren: ProjectsProjectIdTestsRouteChildren =
   {
     ProjectsProjectIdTestsTestIdRoute: ProjectsProjectIdTestsTestIdRoute,
+    ProjectsProjectIdTestsIndexRoute: ProjectsProjectIdTestsIndexRoute,
   }
 
 const ProjectsProjectIdTestsRouteWithChildren =

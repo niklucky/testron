@@ -20,7 +20,9 @@ const openRecordScreen = async () => {
   await appWindow.evaluate(() => {
     window.location.hash = '#/record';
   });
-  await appWindow.getByRole('button', { name: 'Record' }).waitFor({ timeout: 10_000 });
+  await appWindow
+    .getByRole('button', { name: 'Record R', exact: true })
+    .waitFor({ timeout: 10_000 });
   await appWindow.evaluate(() =>
     window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
   );
@@ -68,6 +70,132 @@ const appSnapshot = (appWindow: Page) =>
       }),
   );
 
+const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.launch>>) => {
+  const process = electronApp.process();
+  await Promise.race([
+    electronApp.close().catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+  if (process.exitCode === null) process.kill('SIGTERM');
+};
+
+test('remote product opens local TestView and fully reclaims the window after recording', async () => {
+  test.setTimeout(60_000);
+  const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-remote-view-'));
+  const electronApp = await electron.launch({
+    args: ['.'],
+    env: {
+      ...process.env,
+      TESTRON_DATA_DIR: dataDirectory,
+      TESTRON_LOCAL_MODE: '0',
+      TESTRON_WEBAPP_URL: 'http://127.0.0.1:4174/',
+    },
+  });
+  try {
+    const appWindow = await electronApp.firstWindow();
+    const openFromRemote = (route: 'record' | 'test') =>
+      electronApp.evaluate(async ({ BrowserWindow, webContents }, nextRoute) => {
+        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+        const remote = webContents
+          .getAllWebContents()
+          .find(
+            (contents) =>
+              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+          );
+        if (!remote) throw new Error('Remote product WebContentsView was not found.');
+        await remote.executeJavaScript(
+          `window.testronDesktop.openLocal(${JSON.stringify({ route: nextRoute })})`,
+        );
+      }, route);
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+        ),
+      )
+      .toBe(true);
+
+    await openFromRemote('test');
+    await expect(appWindow).toHaveURL(/#\/test$/);
+    await expect(appWindow.getByText('No test selected')).toBeVisible();
+
+    await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
+    await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+
+    await openFromRemote('record');
+    await appWindow
+      .getByRole('button', { name: 'Record R', exact: true })
+      .waitFor({ timeout: 10_000 });
+    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBeGreaterThan(0);
+
+    await appWindow.getByRole('button', { name: 'recorded test' }).click();
+    await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
+    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+    await appWindow.getByRole('button', { name: 'Cancel' }).click();
+
+    await appWindow.getByLabel('Create authentication profile').click();
+    await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
+    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+    await appWindow.getByRole('button', { name: 'Cancel' }).click();
+
+    await appWindow.getByLabel('Back to the dashboard').click();
+    await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('recorder header controls stay above the tested website view', async () => {
+  test.setTimeout(60_000);
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await test.step('session menus open above the tested website and restore it on close', async () => {
+      for (const label of [
+        'Recording project',
+        'Recording test suite',
+        'Recording environment',
+        'Recording profile',
+      ]) {
+        await appWindow.getByRole('button', { name: label }).click();
+        await expect(appWindow.getByRole('listbox', { name: label })).toBeVisible();
+        await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+        await appWindow
+          .getByRole('button', { name: 'Close session menu' })
+          .click({ position: { x: 4, y: 80 } });
+        await expect(appWindow.getByRole('listbox', { name: label })).toBeHidden();
+        await expect
+          .poll(async () => (await childBounds(electronApp))[0]?.width)
+          .toBeGreaterThan(0);
+      }
+    });
+
+    await test.step('edit title', async () => {
+      await appWindow.getByRole('button', { name: 'Untitled test' }).click();
+      await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
+      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+      await appWindow.getByRole('button', { name: 'Cancel' }).click();
+      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    });
+
+    await test.step('edit profile', async () => {
+      await appWindow.getByLabel('Create authentication profile').click();
+      await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
+      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+      await appWindow.getByRole('button', { name: 'Cancel' }).click();
+      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('profile variables auto-fill exact field names and record only references', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
@@ -95,7 +223,12 @@ test('profile variables auto-fill exact field names and record only references',
     await appWindow.getByRole('button', { name: 'Create and select' }).click();
     await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(1);
 
-    await appWindow.getByRole('button', { name: 'Record' }).click();
+    await appWindow.getByLabel('Configure Administrator').click();
+    await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
+    await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+    await appWindow.getByRole('button', { name: 'Cancel' }).click();
+
+    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
     const resolvedValue = await electronApp.evaluate(async ({ webContents }) => {
       const website = webContents
         .getAllWebContents()
@@ -125,7 +258,7 @@ test('profile variables auto-fill exact field names and record only references',
 test('records a table row collection count with its current match total', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record' }).click();
+    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
     await appWindow.getByRole('button', { name: 'Assert' }).click();
 
     const websiteEval = (source: string) =>
@@ -481,7 +614,7 @@ test('panel blocks are opaque over the tested website', async () => {
 test('hover inspector targets deep HTML and SVG content and re-hits after scrolling', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record' }).click();
+    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
     const websiteEval = (source: string) =>
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
@@ -546,7 +679,7 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
 test('hover picker chooses a primary locator and an action can become an assertion', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record' }).click();
+    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
 
     await electronApp.evaluate(async ({ webContents }) => {
       const website = webContents
@@ -688,7 +821,25 @@ test('hiding a panel takes its view off the window', async () => {
 test('records live website interactions and saves the new test', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record' }).click();
+    appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'Phase 2' }));
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
+    const projectId = (await appSnapshot(appWindow)).library.selectedProjectId!;
+    appWindow.evaluate(
+      (id) =>
+        window.testron.command({
+          type: 'create-environment',
+          projectId: id,
+          name: 'Local',
+          baseUrl: 'http://127.0.0.1:4174/',
+          testIdAttribute: 'data-testid',
+        }),
+      projectId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedEnvironmentId)
+      .toBeTruthy();
+
+    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
     await expect(appWindow.getByRole('button', { name: 'Pause' })).toBeVisible();
 
     await electronApp.evaluate(async ({ webContents }) => {
@@ -728,14 +879,6 @@ test('records live website interactions and saves the new test', async () => {
 
     await appWindow.getByRole('button', { name: 'Run on Local' }).click();
     await expect(appWindow.getByText('Passed', { exact: true })).toBeVisible({ timeout: 15_000 });
-
-    await appWindow.evaluate(() => {
-      window.location.hash = '#/recorder';
-    });
-    await expect(appWindow.getByLabel('Test', { exact: true })).toContainText(
-      'Phase 2 edited flow',
-    );
-    await expect(appWindow.locator('.human')).toContainText('edited@example.test');
   } finally {
     await electronApp.close().catch(() => undefined);
     rmSync(dataDirectory, { recursive: true, force: true });

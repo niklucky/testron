@@ -58,7 +58,6 @@ export const TestView = () => {
   const [log, setLog] = useState('Loading the selected test…');
 
   useEffect(() => {
-    window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
     const unsubscribe = window.testron?.onSnapshot((next) => {
       setSnapshot(next);
       setLoaded(true);
@@ -345,14 +344,14 @@ export const TestView = () => {
 
   return (
     <main className="ui-root flex h-screen w-screen flex-col overflow-hidden bg-plane font-sans text-ink antialiased">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
+      <header className="desktop-window-drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
         <div className="w-[74px] shrink-0" />
-        <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
+        <div className="desktop-window-controls flex min-w-0 items-center gap-1.5">
           <IconButton
             icon="arrowLeft"
             size="sm"
             label={t('back_to_the_dashboard')}
-            onClick={() => (window.location.hash = '#/')}
+            onClick={() => window.testron.command({ type: 'show-product' })}
           />
           <Button variant="ghost" size="sm" iconEnd="caret">
             {detail.project}
@@ -399,7 +398,7 @@ export const TestView = () => {
             <span className="truncate">{detail.name}</span>
           </span>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
+        <div className="desktop-window-controls ml-auto flex shrink-0 items-center gap-1.5">
           <Badge tone="good" icon="check">
             {t('persisted')}
           </Badge>
@@ -436,7 +435,7 @@ export const TestView = () => {
                     variant="ghost"
                     onClick={() => {
                       window.testron?.command({ type: 'logout-server' });
-                      window.location.hash = '#/';
+                      window.testron.command({ type: 'show-product' });
                     }}
                   >
                     {t('sign_out')}
@@ -444,7 +443,7 @@ export const TestView = () => {
                 </>
               )}
               {snapshot.library.server.authentication === 'signedOut' && (
-                <Button size="sm" onClick={() => (window.location.hash = '#/')}>
+                <Button size="sm" onClick={() => window.testron.command({ type: 'show-product' })}>
                   {t('sign_in')}
                 </Button>
               )}

@@ -8,7 +8,7 @@ import { ContextRail } from './ContextRail';
 import { buildSuites, failures, tally } from './data';
 import { initialOverviewState, Overview, type OverviewState } from './Overview';
 import { mapProjectOverview } from './overview-data';
-import { openDashboardTest } from './navigation';
+import { goToTest } from '../../../lib/navigation';
 import { runs } from './runHistory';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
@@ -73,8 +73,6 @@ export const Dashboard = ({
   const [library, setLibrary] = useState<AppSnapshot['library']>();
   const [suiteForm, setSuiteForm] = useState<SuiteRecord | null>();
   const [newTestSuite, setNewTestSuite] = useState<SuiteRecord | null>();
-  const [creatingTest, setCreatingTest] = useState(false);
-  const creatingFromTestId = useRef<string | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [profileOpen, setProfileOpen] = useState(false);
   const [jumpOpen, setJumpOpen] = useState(false);
@@ -93,19 +91,6 @@ export const Dashboard = ({
       unsubscribe?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (!creatingTest || !library?.selectedTestId) return;
-    if (library.selectedTestId === creatingFromTestId.current) return;
-    setCreatingTest(false);
-    window.location.hash = '#/record';
-  }, [creatingTest, library?.selectedTestId]);
-
-  useEffect(() => {
-    if (!creatingTest || library?.server?.status !== 'error') return;
-    setCreatingTest(false);
-    setLog(library.server.message ?? 'The test could not be created.');
-  }, [creatingTest, library?.server?.message, library?.server?.status]);
 
   const suites = useMemo(() => {
     if (!library?.server?.configured) return mockSuites;
@@ -241,7 +226,8 @@ export const Dashboard = ({
 
   const openTest = (test: TestRecord) => {
     setLog(`Opening test · ${test.name}`);
-    openDashboardTest(test, window.testron, window.location);
+    window.testron?.command({ type: 'select-test', testId: test.id });
+    goToTest(test.id);
   };
 
   const recordManualVerdict = (verdict: ManualVerdict) => {
@@ -586,8 +572,6 @@ export const Dashboard = ({
               environmentId,
               title,
             });
-            creatingFromTestId.current = library?.selectedTestId;
-            setCreatingTest(true);
             setNewTestSuite(undefined);
             setLog(`Creating test on server · ${title}`);
           }}

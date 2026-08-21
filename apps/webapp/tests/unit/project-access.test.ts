@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { LibrarySnapshot } from '../../src/main/persistence/repository';
-import { projectSurface, viewerLabel } from '../../src/renderer/projects/access';
+import type { LibrarySnapshot } from '../../src/lib/library';
+import { projectSurface, viewerLabel } from '../../src/components/features/projects/access';
 
 const library = (
   server: NonNullable<LibrarySnapshot['server']>,
