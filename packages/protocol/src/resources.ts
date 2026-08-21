@@ -285,6 +285,7 @@ export const testRunSchema = z
     startedAt: timestampSchema,
     finishedAt: timestampSchema.nullable(),
     durationMs: z.number().int().nonnegative().nullable(),
+    error: z.string().max(10_000).nullable(),
   })
   .strict();
 
@@ -300,6 +301,9 @@ export const workspaceSnapshotSchema = z
     profiles: z.array(profileSchema),
     testSuites: z.array(testSuiteSummarySchema),
     tests: z.array(testSnapshotSchema),
+    /** Deleted records are separated so existing workspace consumers stay active-only. */
+    deletedTestSuites: z.array(testSuiteSummarySchema).optional(),
+    deletedTests: z.array(testSnapshotSchema).optional(),
     latestTestRuns: z
       .record(
         entityIdSchema,

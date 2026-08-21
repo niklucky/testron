@@ -664,12 +664,18 @@ describe('PostgreSQL tRPC vertical slice', () => {
     const finished = await api.run.finish.mutate({
       meta: mutationMeta(),
       runId: run.id,
-      status: 'passed',
+      status: 'failed',
       durationMs: 1_250,
+      error: "expect(locator).toBeHidden() failed\nfailedLocator: getByTestId('login-button')",
     });
-    expect(finished).toMatchObject({ status: 'passed', durationMs: 1_250 });
+    expect(finished).toMatchObject({
+      status: 'failed',
+      durationMs: 1_250,
+      error: "expect(locator).toBeHidden() failed\nfailedLocator: getByTestId('login-button')",
+    });
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       activeRuns: [],
+      recentRuns: [{ id: run.id, error: expect.stringContaining('login-button') }],
       projectOverviews: [{ projectId: snapshot.test.projectId, activeRunCount: 0 }],
     });
   });
@@ -741,6 +747,22 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
 
     const workspace = await owner.api.workspace.get.query({ meta: requestMeta() });
+    expect(workspace.deletedTestSuites).toEqual([
+      expect.objectContaining({
+        id: suite.id,
+        name: 'Renamed suite',
+        deletion: expect.objectContaining({ status: 'deleted' }),
+      }),
+    ]);
+    expect(workspace.deletedTests).toEqual([
+      expect.objectContaining({
+        test: expect.objectContaining({
+          id: snapshot.test.id,
+          title: 'Renamed test',
+          deletion: expect.objectContaining({ status: 'deleted' }),
+        }),
+      }),
+    ]);
     expect(workspace.recentActivity.map((activity) => activity.action).sort()).toEqual(
       [
         'member.invited',

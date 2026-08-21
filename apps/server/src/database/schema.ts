@@ -243,6 +243,7 @@ export const testRuns = pgTable(
     startedAt: instant('started_at').defaultNow().notNull(),
     finishedAt: instant('finished_at'),
     durationMs: integer('duration_ms'),
+    error: text('error'),
   },
   (table) => [
     index('test_runs_project_status_idx').on(table.projectId, table.status),

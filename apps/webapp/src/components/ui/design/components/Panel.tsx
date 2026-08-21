@@ -41,7 +41,7 @@ export const SectionLabel = ({
   children: ReactNode;
   className?: string;
 }) => (
-  <span className={`font-semibold uppercase tracking-[0.11em] text-ink-2 ${className}`}>
+  <span className={`font-semibold uppercase tracking-[0.11em] text-ink-3 ${className} text-sm`}>
     {children}
   </span>
 );

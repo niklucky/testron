@@ -83,3 +83,48 @@ a workstation, create an SSH tunnel and connect locally on port 4401:
 ```sh
 ssh -L 4401:127.0.0.1:4401 github@your-vps
 ```
+
+## Public site (testron.dev)
+
+`apps/web` is a static Vite build published to GitHub Pages by
+`.github/workflows/web.yml`. The workflow runs on pushes to `main` that touch
+`apps/web`, `packages/ui`, the lockfile, or the workflow itself, so ordinary
+application commits do not redeploy the site. It can also be run manually from
+the Actions tab.
+
+One-time setup in the repository settings:
+
+- **Pages → Build and deployment → Source**: `GitHub Actions`.
+- **Pages → Custom domain**: `testron.dev`, with **Enforce HTTPS** enabled. The
+  domain is also committed as `apps/web/public/CNAME`, which keeps it set across
+  deployments.
+- DNS for the apex: four `A` records to GitHub's Pages addresses
+  (`185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`),
+  or `ALIAS`/`ANAME` to `niklucky.github.io` where the provider supports it.
+  `app.testron.dev` stays a separate record pointing at the VPS.
+
+The site reads the newest release tag from the public GitHub API purely to
+display it. Download links do not depend on that request.
+
+## Desktop releases
+
+`.github/workflows/release.yml` builds four distributables — macOS arm64, macOS
+x64, Windows x64, Linux x64 — and publishes them to a GitHub Release when a
+`v*` tag is pushed:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Assets are renamed to fixed names (`Testron-macos-arm64.zip`,
+`Testron-macos-x64.zip`, `Testron-windows-x64.zip`, `Testron-linux-x64.zip`) so
+that `releases/latest/download/<asset>` keeps working as versions change. The
+site's download buttons rely on those names; renaming an asset means editing
+`apps/web/src/lib/platform.ts` in the same commit.
+
+Builds embed `TESTRON_SERVER_URL` from the `TESTRON_PUBLIC_URL` repository
+variable, falling back to `https://app.testron.dev`. A manual run of the
+workflow builds all four targets and attaches them to the run without creating a
+release. Nothing is code-signed or notarized yet, so macOS and Windows show the
+usual unidentified-developer warnings on first launch.

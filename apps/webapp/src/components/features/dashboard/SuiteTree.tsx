@@ -115,7 +115,7 @@ const SuiteBranch = ({
               <span className="truncate font-medium">{suite.name}</span>
               <Badge mono>{testCount}</Badge>
               {failedCount > 0 && (
-                <span className="ml-auto flex shrink-0 items-center gap-1 font-semibold text-critical">
+                <span className="ml-auto flex shrink-0 items-center gap-1 font-semibold text-critical text-sm">
                   <Icon name="alert" size={11} />
                   {failedCount}
                 </span>
@@ -127,54 +127,58 @@ const SuiteBranch = ({
             </span>
           </span>
         </button>
-        <IconButton
-          icon="plus"
-          size="sm"
-          label={t('add_a_test_to', { value1: suite.name })}
-          className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-          onClick={() => onNewTest(suite)}
-        />
-        <div className="relative">
+        {!suite.synthetic && (
           <IconButton
-            icon="dots"
+            icon="plus"
             size="sm"
-            label={t('more_actions_for', { value1: suite.name })}
-            className={`focus-visible:opacity-100 group-hover:opacity-100 ${
-              actionsOpen ? 'opacity-100' : 'opacity-0'
-            }`}
-            aria-expanded={actionsOpen}
-            onClick={() => setActionsOpen((current) => !current)}
+            label={t('add_a_test_to', { value1: suite.name })}
+            className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+            onClick={() => onNewTest(suite)}
           />
-          {actionsOpen && (
-            <div
-              role="menu"
-              className="absolute top-7 right-0 z-20 w-32 rounded-md border border-line bg-surface p-1 shadow-lg"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full rounded px-2 py-1.5 text-left text-ink-2 hover:bg-raised hover:text-ink"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onEditSuite(suite);
-                }}
+        )}
+        {!suite.synthetic && (
+          <div className="relative">
+            <IconButton
+              icon="dots"
+              size="sm"
+              label={t('more_actions_for', { value1: suite.name })}
+              className={`focus-visible:opacity-100 group-hover:opacity-100 ${
+                actionsOpen ? 'opacity-100' : 'opacity-0'
+              }`}
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((current) => !current)}
+            />
+            {actionsOpen && (
+              <div
+                role="menu"
+                className="absolute top-7 right-0 z-20 w-32 rounded-md border border-line bg-surface p-1 shadow-lg"
               >
-                {t('edit')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="w-full rounded px-2 py-1.5 text-left text-critical hover:bg-critical-wash"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onDeleteSuite(suite);
-                }}
-              >
-                {t('delete')}
-              </button>
-            </div>
-          )}
-        </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded px-2 py-1.5 text-left text-ink-2 hover:bg-raised hover:text-ink"
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onEditSuite(suite);
+                  }}
+                >
+                  {t('edit')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded px-2 py-1.5 text-left text-critical hover:bg-critical-wash"
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onDeleteSuite(suite);
+                  }}
+                >
+                  {t('delete')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {open && (

@@ -77,6 +77,8 @@ export interface LibrarySnapshot {
   profileVariables: Array<Omit<ProfileVariableRecord, 'value'>>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
+  deletedTests?: TestRecord[];
+  deletedTestSuites?: TestSuiteSummary[];
   latestTestRuns?: Record<
     string,
     {

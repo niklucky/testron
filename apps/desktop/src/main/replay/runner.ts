@@ -1,5 +1,6 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import {
   chromium,
@@ -227,7 +228,9 @@ export class LocalReplayRunner {
         } catch (error) {
           result.status = 'failed';
           result.durationMs = Date.now() - stepStarted;
-          result.error = error instanceof Error ? error.message : String(error);
+          result.error = stripVTControlCharacters(
+            error instanceof Error ? error.message : String(error),
+          );
           result.pageUrl = page.url();
           await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
           snapshot = {

@@ -164,8 +164,9 @@ describe('server-owned local run lifecycle', () => {
         runId: ids.revision,
         status: 'passed',
         durationMs: 250,
+        error: 'The assertion failed.',
       }),
-    ).toMatchObject({ status: 'passed', durationMs: 250 });
+    ).toMatchObject({ status: 'passed', durationMs: 250, error: 'The assertion failed.' });
     expect(
       finishTestRunRequestSchema.safeParse({
         meta,

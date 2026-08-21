@@ -11,6 +11,8 @@
     "dev:server": "pnpm --filter @testron/server dev",
     "dev:webapp": "pnpm --filter @testron/webapp dev",
     "build:webapp": "pnpm --filter @testron/webapp build",
+    "dev:web": "pnpm --filter @testron/web dev",
+    "build:web": "pnpm --filter @testron/web build",
     "compose:up": "docker compose -f compose.local.yml up --detach --wait",
     "compose:down": "docker compose -f compose.local.yml down",
     "test:db:up": "docker compose -f compose.test.yml up --detach --wait",

@@ -250,6 +250,7 @@ export const finishTestRunRequestSchema = z
     runId: entityIdSchema,
     status: testRunStatusSchema.exclude(['running']),
     durationMs: z.number().int().nonnegative(),
+    error: z.string().min(1).max(10_000).optional(),
   })
   .strict();
 

@@ -13,8 +13,8 @@ import {
   useTheme,
   type ThemePreference,
 } from '../../ui/design';
-import { SuiteTree } from './SuiteTree';
 import { ms } from './format';
+import { SuiteTree } from './SuiteTree';
 import { TriageQueue } from './TriageQueue';
 import type { Failure, Scope, SuiteRecord, TestRecord, View } from './types';
 
@@ -69,7 +69,7 @@ export const Sidebar = ({
   filterOpen: boolean;
   onFilterOpen: (open: boolean) => void;
   filterRef: RefObject<HTMLInputElement | null>;
-  selectedFailure: Failure;
+  selectedFailure?: Failure;
   compact: boolean;
   quarantined: string[];
   onSelectFailure: (index: number) => void;
@@ -157,7 +157,7 @@ export const Sidebar = ({
       </nav>
 
       <section className="flex min-h-0 flex-[1.25] flex-col border-t border-line">
-        <div className="flex h-9 shrink-0 items-center gap-2 px-3">
+        <div className="flex h-9 shrink-0 items-center gap-2 px-3 text-sm">
           <SectionLabel>{t('test_suites')}</SectionLabel>
           <span className="ui-mono text-ink-3">
             {suites.length} ·{' '}
@@ -178,8 +178,11 @@ export const Sidebar = ({
           activeTestId={
             view === 'triage'
               ? suites
-                  .flatMap((suite) => suite.tests)
-                  .find((test) => test.failureId === selectedFailure.id)?.id
+                  .find((suite) => suite.name === selectedFailure?.suite)
+                  ?.tests.find(
+                    (test) =>
+                      test.failureId === selectedFailure?.id || test.name === selectedFailure?.test,
+                  )?.id
               : undefined
           }
           onOpenTest={onOpenTest}
@@ -200,7 +203,7 @@ export const Sidebar = ({
         filterOpen={filterOpen}
         onFilterOpen={onFilterOpen}
         filterRef={filterRef}
-        selectedId={selectedFailure.id}
+        selectedId={selectedFailure?.id}
         active={view === 'triage'}
         compact={compact}
         quarantined={quarantined}

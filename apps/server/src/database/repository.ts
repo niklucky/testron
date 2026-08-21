@@ -428,6 +428,7 @@ export class CanonicalRepository {
         .set({
           status: request.status,
           durationMs: request.durationMs,
+          error: request.error ?? null,
           finishedAt: new Date().toISOString(),
         })
         .where(eq(testRuns.id, request.runId))
@@ -687,6 +688,7 @@ export class CanonicalRepository {
               .orderBy(asc(profiles.createdAt));
       const profileValues = await Promise.all(profileRows.map((row) => this.profile(tx, row)));
       const testSuiteValues = await this.testSuiteSummaries(tx, projectIds);
+      const deletedTestSuiteValues = await this.testSuiteSummaries(tx, projectIds, 'deleted');
       const testRows =
         projectIds.length === 0
           ? []
@@ -696,6 +698,17 @@ export class CanonicalRepository {
               .where(and(inArray(tests.projectId, projectIds), isNull(tests.deletedAt)))
               .orderBy(asc(tests.createdAt));
       const testValues = await Promise.all(testRows.map((row) => this.snapshot(tx, row.id)));
+      const deletedTestRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select({ id: tests.id })
+              .from(tests)
+              .where(and(inArray(tests.projectId, projectIds), isNotNull(tests.deletedAt)))
+              .orderBy(asc(tests.createdAt));
+      const deletedTestValues = await Promise.all(
+        deletedTestRows.map((row) => this.snapshot(tx, row.id)),
+      );
       const testIds = testRows.map((test) => test.id);
       const completedRunRows =
         testIds.length === 0
@@ -897,6 +910,8 @@ export class CanonicalRepository {
         profiles: profileValues,
         testSuites: testSuiteValues,
         tests: testValues,
+        deletedTestSuites: deletedTestSuiteValues,
+        deletedTests: deletedTestValues,
         latestTestRuns,
         projectOverviews,
         recentActivity,
@@ -1254,19 +1269,29 @@ export class CanonicalRepository {
   private async testSuiteSummaries(
     tx: Transaction,
     projectIds: string[],
+    deletion: 'active' | 'deleted' = 'active',
   ): Promise<TestSuiteSummary[]> {
     if (projectIds.length === 0) return [];
     const suiteRows = await tx
       .select()
       .from(testSuites)
-      .where(and(inArray(testSuites.projectId, projectIds), isNull(testSuites.deletedAt)))
+      .where(
+        and(
+          inArray(testSuites.projectId, projectIds),
+          deletion === 'active' ? isNull(testSuites.deletedAt) : isNotNull(testSuites.deletedAt),
+        ),
+      )
       .orderBy(asc(testSuites.createdAt));
     const suiteIds = suiteRows.map((testSuite) => testSuite.id);
     if (suiteIds.length === 0) return [];
     const testRows = await tx
       .select({ id: tests.id, testSuiteId: tests.testSuiteId })
       .from(tests)
-      .where(and(inArray(tests.testSuiteId, suiteIds), isNull(tests.deletedAt)));
+      .where(
+        deletion === 'active'
+          ? and(inArray(tests.testSuiteId, suiteIds), isNull(tests.deletedAt))
+          : inArray(tests.testSuiteId, suiteIds),
+      );
     const testIds = testRows.map((test) => test.id);
     const runRows =
       testIds.length === 0
@@ -1332,7 +1357,10 @@ export class CanonicalRepository {
         currentRevision: { id: test.currentRevisionId, number: test.currentRevisionNumber },
         createdAt: instant(test.createdAt),
         createdBy: test.createdBy,
-        deletion: activeDeletion,
+        deletion:
+          test.deletedAt && test.deletedBy
+            ? { status: 'deleted', deletedAt: instant(test.deletedAt), deletedBy: test.deletedBy }
+            : activeDeletion,
       },
       currentRevision: this.revision(revision),
     });
@@ -1430,6 +1458,7 @@ export class CanonicalRepository {
       startedAt: instant(row.startedAt),
       finishedAt: row.finishedAt ? instant(row.finishedAt) : null,
       durationMs: row.durationMs,
+      error: row.error,
     };
   }
 }

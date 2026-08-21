@@ -2,6 +2,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
+import { stripVTControlCharacters } from 'node:util';
 
 import {
   app,
@@ -265,6 +266,16 @@ const createWindow = async (): Promise<void> => {
       : store.listTests();
   const allTestSuites = (): TestSuiteSummary[] =>
     serverState.configured ? (remoteWorkspace?.testSuites ?? []) : [];
+  const deletedTests = () =>
+    (remoteWorkspace?.deletedTests ?? []).map((snapshot) => ({
+      id: snapshot.test.id,
+      projectId: snapshot.test.projectId,
+      environmentId: snapshot.currentRevision.content.environmentId,
+      testSuiteId: snapshot.test.testSuiteId,
+      title: snapshot.test.title,
+      createdAt: snapshot.test.createdAt,
+      updatedAt: snapshot.currentRevision.createdAt,
+    }));
   const allProfiles = () =>
     serverState.configured
       ? (remoteWorkspace?.profiles ?? []).map((profile) => ({
@@ -378,8 +389,11 @@ const createWindow = async (): Promise<void> => {
     })),
     tests: allTests(),
     testSuites: allTestSuites(),
+    deletedTests: deletedTests(),
+    deletedTestSuites: remoteWorkspace?.deletedTestSuites ?? [],
     latestTestRuns: remoteWorkspace?.latestTestRuns ?? {},
     recentRuns: remoteWorkspace?.recentRuns ?? [],
+    activeRuns: remoteWorkspace?.activeRuns ?? [],
     projectOverviews: remoteWorkspace?.projectOverviews ?? [],
     recentActivity: remoteWorkspace?.recentActivity ?? [],
     ...(selectedProjectId ? { selectedProjectId } : {}),
@@ -1687,12 +1701,15 @@ const createWindow = async (): Promise<void> => {
             )
               return;
             try {
+              const error =
+                result.steps.find((step) => step.status === 'failed')?.error ?? result.error;
               const finishedRun = await serverClient.finishTestRun(
                 finishTestRunRequestSchema.parse({
                   meta: mutationMeta(`run-finish-${serverRun.id}`),
                   runId: serverRun.id,
                   status: result.status,
                   durationMs: result.durationMs ?? 0,
+                  ...(error ? { error: stripVTControlCharacters(error).slice(0, 10_000) } : {}),
                 }),
               );
               if (remoteWorkspace)
@@ -1755,7 +1772,9 @@ const createWindow = async (): Promise<void> => {
               steps: replaySnapshot.steps,
               startedAt: replaySnapshot.startedAt,
               durationMs: replaySnapshot.durationMs,
-              error: error instanceof Error ? error.message : String(error),
+              error: stripVTControlCharacters(
+                error instanceof Error ? error.message : String(error),
+              ),
             } as ReplaySnapshot;
             rememberReplay(runTestId, replaySnapshot);
             await finishServerRun(replaySnapshot);

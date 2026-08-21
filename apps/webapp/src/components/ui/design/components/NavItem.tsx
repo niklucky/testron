@@ -34,7 +34,7 @@ export const NavItem = ({
     {label}
     {badge !== undefined && (
       <span
-        className="ui-mono ml-auto rounded-full px-1.5 font-semibold"
+        className="ui-mono ml-auto rounded-full px-1.5 font-semibold text-sm"
         style={toneStyle(badgeTone)}
       >
         {badge}

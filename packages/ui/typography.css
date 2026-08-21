@@ -1,6 +1,10 @@
 /* The product type scale is shared by the web and desktop renderers.
    Body copy has one size; only semantic headings opt into the header scale. */
 @theme {
+  --text-xs: 10px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12px;
+  --text-sm--line-height: 18px;
   --text-md: 14px;
   --text-md--line-height: 20px;
   --text-lg: 16px;

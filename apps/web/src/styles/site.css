@@ -1,0 +1,82 @@
+@import 'tailwindcss';
+
+@import './tokens.css';
+@import '../../../../packages/ui/typography.css';
+
+/* Token → utility bridge, the same arrangement the app uses: utilities emit the
+   token reference rather than a copy of the value. */
+@theme inline {
+  --color-plane: var(--ui-plane);
+  --color-surface: var(--ui-surface);
+  --color-raised: var(--ui-raised);
+  --color-line: var(--ui-line);
+  --color-line-soft: var(--ui-line-soft);
+
+  --color-ink: var(--ui-ink);
+  --color-ink-2: var(--ui-ink-2);
+  --color-ink-3: var(--ui-ink-3);
+
+  --color-accent: var(--ui-accent);
+  --color-accent-ink: var(--ui-accent-ink);
+  --color-accent-wash: var(--ui-accent-wash);
+
+  --color-good: var(--ui-good);
+  --color-good-wash: var(--ui-good-wash);
+  --color-warning-ink: var(--ui-warning-ink);
+  --color-warning-wash: var(--ui-warning-wash);
+
+  --color-glass: var(--ui-glass);
+  --color-glass-line: var(--ui-glass-line);
+
+  --font-sans: var(--ui-font-sans);
+  --font-mono: var(--ui-font-mono);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+  }
+
+  body {
+    color: var(--ui-ink);
+    background: var(--ui-plane);
+    font-family: var(--ui-font-sans);
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  /* One focus ring for the whole page, matching the app. */
+  :focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+}
+
+/* Numerals that line up — version strings and file sizes. */
+.ui-mono {
+  font-family: var(--ui-font-mono);
+  font-feature-settings: 'zero' 1;
+}
+
+/* The soft light behind the mark. Purely decorative; it never carries meaning,
+   so it is safe for it to disappear under forced colours. */
+.site-glow {
+  background: radial-gradient(
+    60% 60% at 50% 40%,
+    rgb(57 135 229 / 18%) 0%,
+    rgb(57 135 229 / 6%) 45%,
+    transparent 70%
+  );
+}

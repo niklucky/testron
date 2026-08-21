@@ -31,6 +31,7 @@ export type OverviewState = {
   range: number;
   query: string;
   onlyAttention: boolean;
+  showDeleted: boolean;
   sort: Sort;
 };
 
@@ -38,6 +39,7 @@ export const initialOverviewState: OverviewState = {
   range: 14,
   query: '',
   onlyAttention: false,
+  showDeleted: false,
   sort: { key: 'lastRun', direction: 'asc' },
 };
 
@@ -85,9 +87,17 @@ export const Overview = ({
   onLog: (message: string) => void;
 }) => {
   const { t } = useTranslation();
-  const { range, query, onlyAttention, sort } = state;
+  const { range, query, onlyAttention, showDeleted, sort } = state;
   const patch = (next: Partial<OverviewState>) => onState({ ...state, ...next });
   const liveActivity = useMemo(() => presentProjectActivity(recentActivity), [recentActivity]);
+  const activeSuites = useMemo(
+    () =>
+      suites
+        .filter((suite) => !suite.deleted)
+        .map((suite) => ({ ...suite, tests: suite.tests.filter((test) => !test.deleted) }))
+        .filter((suite) => !suite.synthetic || suite.tests.length > 0),
+    [suites],
+  );
 
   const shownTotals = live?.totals ?? totals;
   const passRate = live
@@ -98,9 +108,9 @@ export const Overview = ({
     live?.runs ?? sourceDays.reduce((sum, day) => sum + day.passed + day.skipped + day.failed, 0);
   const lastRunMinutesAgo = live
     ? live.lastRunMinutesAgo
-    : suites.length === 0
+    : activeSuites.length === 0
       ? null
-      : (suites
+      : (activeSuites
           .map((suite) => suite.lastRunMinutesAgo)
           .filter((value) => value !== null)
           .sort((a, b) => a - b)[0] ?? null);
@@ -113,7 +123,16 @@ export const Overview = ({
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const filtered = suites.filter((suite) => {
+    const available = suites
+      .filter((suite) => showDeleted || !suite.deleted)
+      .map((suite) => ({
+        ...suite,
+        tests: suite.tests.filter(
+          (test) => (showDeleted || !test.deleted) && (!onlyAttention || test.status === 'failed'),
+        ),
+      }))
+      .filter((suite) => showDeleted || !suite.synthetic || suite.tests.length > 0);
+    const filtered = available.filter((suite) => {
       if (onlyAttention && tally(suite).failed === 0) return false;
       if (!needle) return true;
       return (
@@ -139,7 +158,9 @@ export const Overview = ({
           );
       }
     });
-  }, [suites, query, onlyAttention, sort]);
+  }, [suites, query, onlyAttention, showDeleted, sort]);
+
+  const availableSuiteCount = showDeleted ? suites.length : activeSuites.length;
 
   if (dataStatus === 'loading' || dataStatus === 'error')
     return (
@@ -197,7 +218,7 @@ export const Overview = ({
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('project_overview')}</h1>
             <p className="mt-1 text-ink-3">
-              {suites.length} {t('suites')} {shownTotals.tests} {t('tests_last_run')}{' '}
+              {activeSuites.length} {t('suites')} {shownTotals.tests} {t('tests_last_run')}{' '}
               {lastRunMinutesAgo === null
                 ? t('never')
                 : t('ago_value', { value: age(lastRunMinutesAgo) })}
@@ -228,8 +249,8 @@ export const Overview = ({
             delta={dataStatus === 'local' ? <Trend value={12} digits={0} /> : undefined}
             foot={
               dataStatus === 'local'
-                ? t('suites_summary_added', { count: suites.length, added: 12 })
-                : t('suites_summary', { count: suites.length })
+                ? t('suites_summary_added', { count: activeSuites.length, added: 12 })
+                : t('suites_summary', { count: activeSuites.length })
             }
           />
           <StatCard
@@ -258,7 +279,7 @@ export const Overview = ({
               dataStatus === 'local' ? <Badge tone="warning">{t('3_flaky')}</Badge> : undefined
             }
             foot={t('failing_in_suites', {
-              value1: suites.filter((suite) => tally(suite).failed > 0).length,
+              value1: activeSuites.filter((suite) => tally(suite).failed > 0).length,
             })}
           />
 
@@ -284,7 +305,7 @@ export const Overview = ({
           <Panel className="flex min-h-0 flex-col overflow-hidden">
             <PanelHeader
               title={t('test_suites')}
-              subtitle={t('of_suites', { value1: rows.length, value2: suites.length })}
+              subtitle={t('of_suites', { value1: rows.length, value2: availableSuiteCount })}
               action={
                 <div className="flex items-center gap-2">
                   <SearchField
@@ -302,6 +323,14 @@ export const Overview = ({
                     onClick={() => patch({ onlyAttention: !onlyAttention })}
                   >
                     {t('needs_attention')}
+                  </Button>
+                  <Button
+                    icon="trash"
+                    size="sm"
+                    pressed={showDeleted}
+                    onClick={() => patch({ showDeleted: !showDeleted })}
+                  >
+                    {t('show_deleted')}
                   </Button>
                 </div>
               }
@@ -339,27 +368,44 @@ export const Overview = ({
                                 : t('all_passing')
                           }
                         />
-                        <button
-                          type="button"
-                          aria-label={t('edit_test_suite', { value1: suite.name })}
-                          className="min-w-0 truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                          onClick={() => onEditSuite(suite)}
-                        >
-                          {suite.name}
-                        </button>
+                        {suite.synthetic || suite.deleted ? (
+                          <span
+                            className={`min-w-0 truncate font-medium ${
+                              suite.deleted ? 'text-ink-3' : ''
+                            }`}
+                          >
+                            {suite.name}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            aria-label={t('edit_test_suite', { value1: suite.name })}
+                            className="min-w-0 truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                            onClick={() => onEditSuite(suite)}
+                          >
+                            {suite.name}
+                          </button>
+                        )}
+                        {suite.deleted && <Badge>{t('deleted')}</Badge>}
                         {counts.failed > 0 && (
                           <Badge tone="critical">
                             {counts.failed} {t('failing')}
                           </Badge>
                         )}
                       </span>
-                      <span className="ui-mono text-ink-2">{suite.tests.length}</span>
+                      <span className={`ui-mono ${suite.deleted ? 'text-ink-3' : 'text-ink-2'}`}>
+                        {suite.tests.length}
+                      </span>
                       <span className="flex items-center gap-2">
                         <SplitBar
                           segments={healthSplits(counts)}
                           className="w-full max-w-[120px] flex-1"
                         />
-                        <span className="ui-mono shrink-0 text-ink-2">
+                        <span
+                          className={`ui-mono shrink-0 ${
+                            suite.deleted ? 'text-ink-3' : 'text-ink-2'
+                          }`}
+                        >
                           {passRateOf(suite).toFixed(0)}%
                         </span>
                       </span>
@@ -409,14 +455,22 @@ export const Overview = ({
                                 <li key={test.id}>
                                   <button
                                     type="button"
-                                    className="grid w-full grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-accent"
+                                    disabled={test.deleted}
+                                    className={`grid w-full grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 rounded-md px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+                                      test.deleted ? 'cursor-default opacity-70' : 'hover:bg-raised'
+                                    }`}
                                     onClick={() => onOpenTest(test)}
                                   >
                                     <span className="flex min-w-0 items-center gap-2">
                                       <StatusDot tone={verdict.tone} label={verdict.label} />
-                                      <span className="truncate font-medium text-ink-2">
+                                      <span
+                                        className={`truncate font-medium ${
+                                          test.deleted ? 'text-ink-3' : 'text-ink-2'
+                                        }`}
+                                      >
                                         {test.name}
                                       </span>
+                                      {test.deleted && <Badge>{t('deleted')}</Badge>}
                                     </span>
                                     <span className="text-ink-3">{t(verdict.label)}</span>
                                     <span className="ui-mono text-right text-ink-3">

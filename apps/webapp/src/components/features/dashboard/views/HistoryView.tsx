@@ -40,29 +40,37 @@ export const HistoryView = ({ failure }: { failure: Failure }) => {
         />
 
         <p className="mt-2 text-ink-3">
-          {failed} {t('failures_in_24_runs_first_seen')} {age(failure.ageMinutes)} {t('ago_2')}{' '}
-          {failure.kind === 'flaky'
-            ? t('alternates_green_and_red_on_the_same_commit')
-            : t('consistent')}
+          {failure.steps.length === 0
+            ? t('failures_in_recent_runs', {
+                value1: failed,
+                value2: failure.history.length,
+              })
+            : `${failed} ${t('failures_in_24_runs_first_seen')} ${age(failure.ageMinutes)} ${t('ago_2')} ${
+                failure.kind === 'flaky'
+                  ? t('alternates_green_and_red_on_the_same_commit')
+                  : t('consistent')
+              }`}
         </p>
       </div>
 
-      <div className="rounded-lg border border-line bg-plane p-3">
-        <SectionLabel>{t('timeline')}</SectionLabel>
-        <ul className="mt-2 space-y-2 ">
-          {[
-            [`${age(failure.ageMinutes)} ago`, `First failure on ${failure.env}`],
-            ['2h ago', `${failure.owner} was assigned`],
-            ['5h ago', 'Locator changed in commit 8e715a3'],
-            ['1d ago', 'Last green run'],
-          ].map(([when, what]) => (
-            <li key={what} className="flex gap-3">
-              <span className="ui-mono w-16 shrink-0 text-ink-3">{when}</span>
-              <span className="text-ink-2">{what}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {failure.steps.length > 0 && (
+        <div className="rounded-lg border border-line bg-plane p-3">
+          <SectionLabel>{t('timeline')}</SectionLabel>
+          <ul className="mt-2 space-y-2 ">
+            {[
+              [`${age(failure.ageMinutes)} ago`, `First failure on ${failure.env}`],
+              ['2h ago', `${failure.owner} was assigned`],
+              ['5h ago', 'Locator changed in commit 8e715a3'],
+              ['1d ago', 'Last green run'],
+            ].map(([when, what]) => (
+              <li key={what} className="flex gap-3">
+                <span className="ui-mono w-16 shrink-0 text-ink-3">{when}</span>
+                <span className="text-ink-2">{what}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,0 +1,97 @@
+name: Release
+
+# Desktop distributables. Push a `v*` tag to publish them; a manual run builds
+# the same four targets without touching releases, which is how a packaging
+# change gets checked before it is tagged.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: darwin
+            arch: arm64
+            asset: Testron-macos-arm64.zip
+          - os: macos-15
+            platform: darwin
+            arch: x64
+            asset: Testron-macos-x64.zip
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            asset: Testron-windows-x64.zip
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            asset: Testron-linux-x64.zip
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Make distributable
+        run: pnpm --filter @testron/desktop exec electron-forge make --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+        env:
+          # The packaged app talks to the hosted server; the site tells people
+          # the same address.
+          TESTRON_SERVER_URL: ${{ vars.TESTRON_PUBLIC_URL || 'https://app.testron.dev' }}
+      - name: Name the artifact
+        shell: bash
+        # Forge stamps the package version into the file name. The site links to
+        # `releases/latest/download/<asset>`, so the published name has to be
+        # stable across versions.
+        run: |
+          mkdir -p dist
+          built=$(find apps/desktop/out/make -name '*.zip' -type f | head -n 1)
+          if [ -z "$built" ]; then
+            echo "No distributable was produced for ${{ matrix.platform }}/${{ matrix.arch }}." >&2
+            exit 1
+          fi
+          mv "$built" "dist/${{ matrix.asset }}"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" dist/*.zip

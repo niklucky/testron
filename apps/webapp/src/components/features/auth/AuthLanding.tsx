@@ -19,10 +19,15 @@ export const AuthenticationLoading = () => {
   );
 };
 
+/* The public site links straight to registration with `?mode=register`; any
+   other value lands on the sign-in tab. */
+const requestedMode = (): AuthMode =>
+  new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login';
+
 export const AuthLanding = ({ server }: { server: ServerState }) => {
   const { t } = useTranslation();
   const { theme, toggle } = useTheme();
-  const [mode, setMode] = useState<AuthMode>('login');
+  const [mode, setMode] = useState<AuthMode>(requestedMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

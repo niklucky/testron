@@ -1,25 +1,70 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { HeatMap, Icon, Kbd, Meter, Panel, SectionLabel } from '../../ui/design';
-import { failures, owners, pulse } from './data';
 import { dashboardShortcutGroups, displayShortcutGroup } from './hotkeys';
+import { failureGrid, type ProjectRun } from './runHistory';
+import type { Failure, SuiteRecord } from './types';
 
 /**
  * Everything you might want *while* triaging, and nothing you have to click:
- * how big the queue is, which suites are burning, who is holding what. It is
+ * how big the queue is, which suites are burning, and how much is running. It is
  * the first thing to go in focus mode.
  */
-export const ContextRail = ({ failing }: { failing: number }) => {
+export const ContextRail = ({
+  failures,
+  runs,
+  suites,
+}: {
+  failures: Failure[];
+  runs: ProjectRun[];
+  suites: SuiteRecord[];
+}) => {
   const { t } = useTranslation();
-  const busiest = Math.max(...owners.map((owner) => owner.open));
+  const finishedDurations = runs
+    .filter((run) => run.verdict !== 'running')
+    .map((run) => run.seconds)
+    .sort((left, right) => left - right);
+  const medianDuration = finishedDurations[Math.floor(finishedDurations.length / 2)] ?? 0;
+  const runsToday = runs.filter((run) => run.minutesAgo < 1_440).length;
+  const runsLastHour = runs.filter((run) => run.minutesAgo < 60).length;
+  const pulse = failureGrid(
+    runs.filter((run) => run.minutesAgo < 14 * 1_440),
+    14,
+  );
+  const queueBySuite = suites
+    .map((suite) => ({
+      name: suite.name,
+      open: failures.filter((failure) => failure.suite === suite.name).length,
+    }))
+    .filter((suite) => suite.open > 0)
+    .sort((left, right) => right.open - left.open);
+  const busiest = Math.max(1, ...queueBySuite.map((suite) => suite.open));
 
   return (
     <section className="flex min-h-0 flex-col gap-4 overflow-y-auto border-l border-line p-3">
       <div className="grid grid-cols-2 gap-2">
         {[
-          { label: 'Open failures', value: String(failures.length), sub: '3 new today' },
-          { label: 'Failing tests', value: String(failing), sub: 'across 6 suites' },
-          { label: 'Median triage', value: '12m', sub: 'last 7 days' },
-          { label: 'Runs today', value: '38', sub: '6 in the last hour' },
+          {
+            label: 'Open failures',
+            value: String(failures.length),
+            sub: t('new_failures', {
+              value1: failures.filter((failure) => failure.kind === 'new').length,
+            }),
+          },
+          {
+            label: 'Failing tests',
+            value: String(failures.length),
+            sub: t('suites_summary', { count: queueBySuite.length }),
+          },
+          {
+            label: 'median_duration',
+            value: `${medianDuration.toFixed(1)}s`,
+            sub: t('finished_runs', { value1: finishedDurations.length }),
+          },
+          {
+            label: 'Runs today',
+            value: String(runsToday),
+            sub: t('runs_in_last_hour', { value1: runsLastHour }),
+          },
         ].map((tile) => (
           <Panel key={tile.label} className="p-2.5">
             <p className="text-ink-3">{t(tile.label)}</p>
@@ -48,20 +93,23 @@ export const ContextRail = ({ failing }: { failing: number }) => {
 
       <div>
         <h3 className="mb-2">
-          <SectionLabel>{t('queue_by_owner')}</SectionLabel>
+          <SectionLabel>{t('queue_by_suite')}</SectionLabel>
         </h3>
         <ul className="space-y-1.5">
-          {owners.map((owner) => (
-            <li key={owner.name} className="flex items-center gap-2">
-              <span className="w-[88px] shrink-0 truncate text-ink-2">{owner.name}</span>
+          {queueBySuite.map((suite) => (
+            <li key={suite.name} className="flex items-center gap-2">
+              <span className="w-[88px] shrink-0 truncate text-ink-2">{suite.name}</span>
               <Meter
                 className="flex-1"
-                value={owner.open / busiest}
-                label={t('open_3', { value1: owner.open })}
+                value={suite.open / busiest}
+                label={t('open_3', { value1: suite.open })}
               />
-              <span className="ui-mono w-4 shrink-0 text-right text-ink-3">{owner.open}</span>
+              <span className="ui-mono w-4 shrink-0 text-right text-ink-3">{suite.open}</span>
             </li>
           ))}
+          {queueBySuite.length === 0 && (
+            <li className="text-ink-3">{t('nothing_failed_enjoy_it')}</li>
+          )}
         </ul>
       </div>
 

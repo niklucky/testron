@@ -7,6 +7,12 @@
       "cwd": "${workspaceFolder}/apps/desktop",
       "runtimeArgs": ["vite", "--config", "vite.renderer.config.mts", "--port", "5199"],
       "port": 5199
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@testron/web", "dev"],
+      "port": 4403
     }
   ]
 }

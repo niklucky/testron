@@ -62,8 +62,11 @@ export interface LibrarySnapshot {
   profileVariables: Array<{ profileId: string; name: string; sensitive: boolean }>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
+  deletedTests?: TestRecord[];
+  deletedTestSuites?: TestSuiteSummary[];
   latestTestRuns?: WebWorkspaceSnapshot['latestTestRuns'];
   recentRuns?: TestRun[];
+  activeRuns?: TestRun[];
   projectOverviews?: ProjectOverviewSummary[];
   recentActivity?: ProjectActivity[];
   selectedProjectId?: string;

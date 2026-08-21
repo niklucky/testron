@@ -1,9 +1,9 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useMemo } from 'react';
 
+import { goToRuns } from '../../../lib/navigation';
 import {
   Badge,
-  Button,
   EmptyState,
   HeatMap,
   Icon,
@@ -18,10 +18,9 @@ import {
   type Tone,
 } from '../../ui/design';
 import { age, ms } from './format';
-import { dayIndexOf, dayLabel, environments, failureGrid, runs, summarize } from './runHistory';
 import type { ProjectRun, ProjectRunVerdict } from './runHistory';
+import { dayIndexOf, dayLabel, failureGrid, summarize } from './runHistory';
 import { verdictTone } from './tone';
-import { goToRuns } from '../../../lib/navigation';
 
 export type RunsState = {
   range: number;
@@ -65,10 +64,12 @@ const columns =
  * the two things that turn "it failed" into something reproducible.
  */
 export const Runs = ({
+  runs,
   state,
   onState,
   onLog,
 }: {
+  runs: ProjectRun[];
   state: RunsState;
   onState: (state: RunsState) => void;
   onLog: (message: string) => void;
@@ -76,8 +77,12 @@ export const Runs = ({
   const { t } = useTranslation();
   const { range, environment, verdict, query } = state;
   const patch = (next: Partial<RunsState>) => onState({ ...state, ...next });
+  const environments = useMemo(
+    () => [...new Set(runs.map((run) => run.environment))].sort(),
+    [runs],
+  );
 
-  const period = useMemo(() => runs.filter((run) => dayIndexOf(run) < range), [range]);
+  const period = useMemo(() => runs.filter((run) => dayIndexOf(run) < range), [runs, range]);
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -86,7 +91,7 @@ export const Runs = ({
       if (verdict === 'failed' && run.verdict !== 'failed') return false;
       if (verdict === 'flaky' && run.verdict !== 'flaky') return false;
       if (!needle) return true;
-      return `${run.test} ${run.suite} ${run.branch} ${run.commit} ${run.signature ?? ''}`
+      return `${run.test} ${run.suite} ${run.environment} ${run.branch} ${run.commit} ${run.signature ?? ''}`
         .toLowerCase()
         .includes(needle);
     });
@@ -243,7 +248,7 @@ export const Runs = ({
         </div>
 
         <div
-          className={`grid ${columns} border-b border-line-soft px-4 py-2 font-bold uppercase tracking-[0.09em] text-ink-3`}
+          className={`grid ${columns} border-b border-line-soft px-4 py-2 font-bold uppercase tracking-[0.09em] text-ink-3 text-sm`}
         >
           <span />
           <span>{t('test')}</span>
@@ -338,17 +343,6 @@ export const Runs = ({
             })}
           </div>
         ))}
-
-        <div className="flex items-center gap-2 px-4 py-2.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            icon="caret"
-            onClick={() => onLog('Older runs · pagination is not wired up yet')}
-          >
-            {t('older_runs')}
-          </Button>
-        </div>
       </Panel>
     </section>
   );

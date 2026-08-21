@@ -43,6 +43,7 @@ export type TestRecord = {
   minutesAgo: number;
   seconds?: number;
   failureId?: string;
+  deleted?: boolean;
 };
 
 export type SuiteRecord = {
@@ -52,6 +53,9 @@ export type SuiteRecord = {
   owner: string;
   tests: TestRecord[];
   lastRunMinutesAgo: number | null;
+  /** A display-only group for tests that do not belong to a persisted suite. */
+  synthetic?: boolean;
+  deleted?: boolean;
   revision?: number;
   testCount?: number;
   failedCount?: number;

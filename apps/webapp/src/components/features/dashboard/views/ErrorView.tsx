@@ -1,6 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { SectionLabel } from '../../../ui/design';
-import { failures } from '../data';
 import type { Failure } from '../types';
 
 /**
@@ -10,9 +9,11 @@ import type { Failure } from '../types';
  */
 export const ErrorView = ({
   failure,
+  failures,
   onSelect,
 }: {
   failure: Failure;
+  failures: Failure[];
   onSelect: (id: string) => void;
 }) => {
   const { t } = useTranslation();
@@ -36,8 +37,12 @@ export const ErrorView = ({
           <p className="text-ink-3">{t('locator_under_test')}</p>
           <p className="ui-mono mt-1.5 break-all ">{failure.locator}</p>
           <p className="mt-2 text-ink-3">
-            {t('resolved_in')} {failure.occurrences} {t('of_the_last_24_runs_owner')}{' '}
-            {failure.owner}
+            {failure.steps.length === 0
+              ? t('failures_in_recent_runs', {
+                  value1: failure.occurrences,
+                  value2: failure.history.length,
+                })
+              : `${t('resolved_in')} ${failure.occurrences} ${t('of_the_last_24_runs_owner')} ${failure.owner}`}
           </p>
         </div>
 

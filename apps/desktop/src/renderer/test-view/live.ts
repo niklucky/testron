@@ -79,7 +79,11 @@ const serverRun = (
     minutesAgo: Math.max(0, (Date.now() - Date.parse(run.startedAt)) / 60_000),
     by: 'Server runner',
     trigger: 'manual',
-    ...(run.status === 'timedOut' ? { error: 'The run exceeded its timeout.' } : {}),
+    ...(run.error
+      ? { error: run.error }
+      : run.status === 'timedOut'
+        ? { error: 'The run exceeded its timeout.' }
+        : {}),
     completed: run.status === 'passed' ? fullSteps.length : 0,
   };
 };

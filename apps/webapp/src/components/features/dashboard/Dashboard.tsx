@@ -10,6 +10,7 @@ import { initialOverviewState, Overview, type OverviewState } from './Overview';
 import { mapProjectOverview } from './overview-data';
 import { goToTest } from '../../../lib/navigation';
 import { runs } from './runHistory';
+import { failuresFromLibrary, projectRunsFromLibrary } from './serverRunData';
 import { initialRunsState, Runs, type RunsState } from './Runs';
 import { RunsRail } from './RunsRail';
 import { Sidebar } from './Sidebar';
@@ -69,7 +70,7 @@ export const Dashboard = ({
   const [shotView, setShotView] = useState<'actual' | 'expected'>('actual');
   const [overview, setOverview] = useState<OverviewState>(initialOverviewState);
   const [runsState, setRunsState] = useState<RunsState>(initialRunsState);
-  const [log, setLog] = useState('Ready · 9 open failures across 6 suites');
+  const [log, setLog] = useState('Ready');
   const [library, setLibrary] = useState<AppSnapshot['library']>();
   const [suiteForm, setSuiteForm] = useState<SuiteRecord | null>();
   const [newTestSuite, setNewTestSuite] = useState<SuiteRecord | null>();
@@ -95,28 +96,29 @@ export const Dashboard = ({
   const suites = useMemo(() => {
     if (!library?.server?.configured) return mockSuites;
     const owner = library.viewer?.name ?? library.viewer?.email ?? 'Workspace owner';
-    return library.testSuites
+    const toTestRecord = (persisted: (typeof library.tests)[number]): TestRecord => {
+      const latestRun = library.latestTestRuns?.[persisted.id];
+      return {
+        id: persisted.id,
+        name: persisted.title,
+        status: !latestRun
+          ? 'skipped'
+          : latestRun.status === 'passed'
+            ? 'passed'
+            : latestRun.status === 'failed' || latestRun.status === 'timedOut'
+              ? 'failed'
+              : 'skipped',
+        minutesAgo: latestRun
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / 60_000))
+          : 0,
+        seconds: latestRun ? latestRun.durationMs / 1000 : undefined,
+      };
+    };
+    const persistedSuites = library.testSuites
       .filter((testSuite) => testSuite.projectId === library.selectedProjectId)
       .map((testSuite): SuiteRecord => {
         const persistedTests = library.tests.filter((test) => test.testSuiteId === testSuite.id);
-        const tests = persistedTests.map((persisted) => {
-          const latestRun = library.latestTestRuns?.[persisted.id];
-          return {
-            id: persisted.id,
-            name: persisted.title,
-            status: !latestRun
-              ? ('skipped' as const)
-              : latestRun.status === 'passed'
-                ? ('passed' as const)
-                : latestRun.status === 'failed' || latestRun.status === 'timedOut'
-                  ? ('failed' as const)
-                  : ('skipped' as const),
-            minutesAgo: latestRun
-              ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / 60_000))
-              : 0,
-            seconds: latestRun ? latestRun.durationMs / 1000 : undefined,
-          };
-        });
+        const tests = persistedTests.map(toTestRecord);
         return {
           id: testSuite.id,
           projectId: testSuite.projectId,
@@ -132,10 +134,111 @@ export const Dashboard = ({
           totalLatestDurationMs: testSuite.totalLatestDurationMs,
         };
       });
+
+    const ungrouppedTests = library.tests
+      .filter((test) => test.projectId === library.selectedProjectId && !test.testSuiteId)
+      .map(toTestRecord);
+    if (ungrouppedTests.length === 0) return persistedSuites;
+
+    return [
+      ...persistedSuites,
+      {
+        id: `ungroupped:${library.selectedProjectId ?? 'project'}`,
+        projectId: library.selectedProjectId,
+        name: 'Ungroupped',
+        owner,
+        tests: ungrouppedTests,
+        lastRunMinutesAgo: null,
+        synthetic: true,
+        testCount: ungrouppedTests.length,
+        failedCount: ungrouppedTests.filter((test) => test.status === 'failed').length,
+        totalLatestDurationMs: ungrouppedTests.reduce(
+          (total, test) => total + (test.seconds ?? 0) * 1000,
+          0,
+        ),
+      },
+    ];
   }, [library, mockSuites]);
+
+  const overviewSuites = useMemo(() => {
+    if (!library?.server?.configured) return suites;
+    const owner = library.viewer?.name ?? library.viewer?.email ?? 'Workspace owner';
+    const deletedTestIds = new Set((library.deletedTests ?? []).map((test) => test.id));
+    const allTests = [...library.tests, ...(library.deletedTests ?? [])];
+    const toTestRecord = (persisted: (typeof allTests)[number]): TestRecord => {
+      const latestRun = library.latestTestRuns?.[persisted.id];
+      return {
+        id: persisted.id,
+        name: persisted.title,
+        status: !latestRun
+          ? 'skipped'
+          : latestRun.status === 'passed'
+            ? 'passed'
+            : latestRun.status === 'failed' || latestRun.status === 'timedOut'
+              ? 'failed'
+              : 'skipped',
+        minutesAgo: latestRun
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.startedAt)) / 60_000))
+          : 0,
+        seconds: latestRun ? latestRun.durationMs / 1000 : undefined,
+        deleted: deletedTestIds.has(persisted.id),
+      };
+    };
+
+    const deletedBySuite = new Map<string | null, TestRecord[]>();
+    for (const persisted of library.deletedTests ?? []) {
+      if (persisted.projectId !== library.selectedProjectId) continue;
+      const suiteId = persisted.testSuiteId ?? null;
+      deletedBySuite.set(suiteId, [
+        ...(deletedBySuite.get(suiteId) ?? []),
+        toTestRecord(persisted),
+      ]);
+    }
+
+    const combined = suites.map((suite) => {
+      const deleted = deletedBySuite.get(suite.synthetic ? null : suite.id) ?? [];
+      return deleted.length === 0 ? suite : { ...suite, tests: [...suite.tests, ...deleted] };
+    });
+    if (!combined.some((suite) => suite.synthetic) && (deletedBySuite.get(null)?.length ?? 0) > 0)
+      combined.push({
+        id: `ungroupped:${library.selectedProjectId ?? 'project'}`,
+        projectId: library.selectedProjectId,
+        name: 'Ungroupped',
+        owner,
+        tests: deletedBySuite.get(null) ?? [],
+        lastRunMinutesAgo: null,
+        synthetic: true,
+      });
+
+    const deletedSuites = (library.deletedTestSuites ?? [])
+      .filter((suite) => suite.projectId === library.selectedProjectId)
+      .map((suite): SuiteRecord => ({
+        id: suite.id,
+        projectId: suite.projectId,
+        name: suite.name,
+        owner,
+        tests: allTests.filter((test) => test.testSuiteId === suite.id).map(toTestRecord),
+        lastRunMinutesAgo: suite.lastRunAt
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(suite.lastRunAt)) / 60_000))
+          : null,
+        revision: suite.revision,
+        deleted: true,
+      }));
+    return [...combined, ...deletedSuites];
+  }, [library, suites]);
+
+  const projectRuns = useMemo(
+    () => (library?.server?.configured ? projectRunsFromLibrary(library) : runs),
+    [library],
+  );
+  const openFailures = useMemo(
+    () => (library?.server?.configured ? failuresFromLibrary(library) : failures),
+    [library],
+  );
 
   const expansionProjectId = library?.selectedProjectId ?? 'local-workspace';
   const suiteIds = useMemo(() => suites.map((suite) => suite.id), [suites]);
+  const overviewSuiteIds = useMemo(() => overviewSuites.map((suite) => suite.id), [overviewSuites]);
   const defaultExpandedSuiteIds = useMemo(
     () => suites.filter((suite) => suite.name === 'Checkout').map((suite) => suite.id),
     [suites],
@@ -159,12 +262,12 @@ export const Dashboard = ({
       loadExpandedSuiteIds(
         window.localStorage,
         expansionProjectId,
-        new Set(suiteIds),
+        new Set(overviewSuiteIds),
         [],
         'overview',
       ),
     );
-  }, [expansionProjectId, suiteIds]);
+  }, [expansionProjectId, overviewSuiteIds]);
 
   const toggleSuite = (suiteId: string) => {
     setExpandedSuiteIds((current) => {
@@ -188,22 +291,26 @@ export const Dashboard = ({
 
   const queue = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return failures.filter((failure) => {
+    const viewer = library?.server?.configured
+      ? (library.viewer?.name ?? library.viewer?.email)
+      : 'Nikita S.';
+    return openFailures.filter((failure) => {
       if (scope === 'new' && failure.kind !== 'new') return false;
       if (scope === 'flaky' && failure.kind !== 'flaky') return false;
-      if (scope === 'mine' && failure.owner !== 'Nikita S.') return false;
+      if (scope === 'mine' && failure.owner !== viewer) return false;
       if (!needle) return true;
       return `${failure.signature} ${failure.test} ${failure.suite} ${failure.file}`
         .toLowerCase()
         .includes(needle);
     });
-  }, [scope, query]);
+  }, [library?.viewer, openFailures, scope, query]);
 
-  const selected: Failure = queue[Math.min(cursor, queue.length - 1)] ?? failures[0];
+  const selected: Failure | undefined = queue[Math.min(cursor, queue.length - 1)];
 
   useEffect(() => {
     setManualCursor(0);
-  }, [selected.id]);
+    if (selected && selected.steps.length === 0) setTab('error');
+  }, [selected?.id]);
 
   const hold = (failure: Failure) => {
     setQuarantined((current) =>
@@ -219,6 +326,7 @@ export const Dashboard = ({
   };
 
   const runAction = (key: 'r' | 'q' | 'b') => {
+    if (!selected) return;
     if (key === 'r') setLog(`Re-run queued · ${selected.file} on ${selected.env}`);
     if (key === 'q') hold(selected);
     if (key === 'b') setLog(`Bug drafted · ${selected.signature} → tracker`);
@@ -231,6 +339,7 @@ export const Dashboard = ({
   };
 
   const recordManualVerdict = (verdict: ManualVerdict) => {
+    if (!selected) return;
     const step = selected.steps[manualCursor];
     if (!step) return;
     setManualResults((current) => ({ ...current, [step.id]: verdict }));
@@ -256,9 +365,12 @@ export const Dashboard = ({
           );
         },
         moveEvidence: (direction) => {
-          const index = evidenceTabs.findIndex((entry) => entry.id === tab);
-          const next = (index + direction + evidenceTabs.length) % evidenceTabs.length;
-          setTab(evidenceTabs[next].id);
+          const tabs = selected?.steps.length
+            ? evidenceTabs
+            : evidenceTabs.filter((entry) => entry.id === 'error' || entry.id === 'history');
+          const index = tabs.findIndex((entry) => entry.id === tab);
+          const next = (Math.max(0, index) + direction + tabs.length) % tabs.length;
+          setTab(tabs[next].id);
         },
         openFilter: () => {
           setFilterOpen(true);
@@ -396,7 +508,7 @@ export const Dashboard = ({
           suites={suites}
           expandedSuiteIds={expandedSuiteIds}
           onToggleSuite={toggleSuite}
-          openFailures={failures.length}
+          openFailures={openFailures.length}
           queue={queue}
           scope={scope}
           onScope={(next) => {
@@ -422,9 +534,11 @@ export const Dashboard = ({
           onNewTest={(suite) => setNewTestSuite(suite ?? null)}
           onReorder={reorder}
           onNewSuite={() => setSuiteForm(null)}
-          onEditSuite={(suite) => setSuiteForm(suite)}
+          onEditSuite={(suite) => {
+            if (!suite.synthetic && !suite.deleted) setSuiteForm(suite);
+          }}
           onDeleteSuite={(suite) => {
-            if (suite.revision === undefined) return;
+            if (suite.synthetic || suite.revision === undefined) return;
             window.testron?.command({
               type: 'delete-test-suite',
               testSuiteId: suite.id,
@@ -441,7 +555,7 @@ export const Dashboard = ({
 
         {view === 'overview' ? (
           <Overview
-            suites={suites}
+            suites={overviewSuites}
             totals={totals}
             live={liveOverview}
             dataStatus={overviewDataStatus}
@@ -453,7 +567,9 @@ export const Dashboard = ({
             state={overview}
             onState={setOverview}
             onToggleSuite={toggleOverviewSuite}
-            onEditSuite={(suite) => setSuiteForm(suite)}
+            onEditSuite={(suite) => {
+              if (!suite.synthetic && !suite.deleted) setSuiteForm(suite);
+            }}
             onOpenTest={openTest}
             onLog={setLog}
           />
@@ -463,10 +579,10 @@ export const Dashboard = ({
           ) : null
         ) : view === 'runs' ? (
           <>
-            <Runs state={runsState} onState={setRunsState} onLog={setLog} />
+            <Runs runs={projectRuns} state={runsState} onState={setRunsState} onLog={setLog} />
             {!focusMode && (
               <RunsRail
-                period={runs.filter((run) => run.minutesAgo / 1_440 < runsState.range)}
+                period={projectRuns.filter((run) => run.minutesAgo / 1_440 < runsState.range)}
                 onFilter={(query) => setRunsState({ ...runsState, query })}
               />
             )}
@@ -475,6 +591,7 @@ export const Dashboard = ({
           <>
             <Triage
               failure={selected}
+              failures={queue}
               tab={tab}
               onTab={setTab}
               shotView={shotView}
@@ -486,11 +603,16 @@ export const Dashboard = ({
                 setManualResults((current) => ({ ...current, [stepId]: verdict }));
                 setLog(`Manual verdict recorded · ${verdict}`);
               }}
-              quarantined={quarantined.includes(selected.id)}
+              quarantined={selected ? quarantined.includes(selected.id) : false}
               onAction={runAction}
-              onSelectFailure={(id) => setCursor(queue.findIndex((entry) => entry.id === id))}
+              onSelectFailure={(id) => {
+                const index = queue.findIndex((entry) => entry.id === id);
+                if (index >= 0) setCursor(index);
+              }}
             />
-            {!focusMode && <ContextRail failing={totals.failed} />}
+            {!focusMode && (
+              <ContextRail failures={openFailures} runs={projectRuns} suites={suites} />
+            )}
           </>
         )}
       </div>
@@ -501,16 +623,12 @@ export const Dashboard = ({
             ? t('commerce_app_overview')
             : view === 'members'
               ? t('project_access_members')
-              : selected.file}
+              : (selected?.file ?? t('triage'))}
         </span>
         <span className="truncate">{log}</span>
         <span className="ml-auto flex shrink-0 items-center gap-3">
           <span>
             {quarantined.length} {t('quarantined')}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[6px] w-[6px] rounded-full bg-good" />
-            {t('4_workers_online')}
           </span>
           <a href="#/experiments" className="text-ink-3 no-underline hover:text-ink">
             {t('ui_studies')}

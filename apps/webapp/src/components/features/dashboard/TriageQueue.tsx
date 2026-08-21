@@ -1,19 +1,9 @@
 import { useTranslation } from '@warpunit/slang-react';
 import type { RefObject } from 'react';
 
-import {
-  Badge,
-  IconButton,
-  Kbd,
-  SearchField,
-  SectionLabel,
-  SegmentedControl,
-  Sparkline,
-  StatusDot,
-} from '../../ui/design';
-import { age } from './format';
+import { IconButton, Kbd, SearchField, SectionLabel, SegmentedControl } from '../../ui/design';
 import { displayShortcut } from './hotkeys';
-import { severityTone } from './tone';
+import { TriageFailureRow } from './TriageFailureRow';
 import type { Failure, Scope } from './types';
 
 const scopes: { id: Scope; label: string }[] = [
@@ -24,8 +14,8 @@ const scopes: { id: Scope; label: string }[] = [
 ];
 
 /**
- * The day's work: one row per open failure, ordered oldest-first so nothing
- * rots at the bottom. Rows are keyboard-first (j/k) — the mouse is the
+ * The day's work: one row per currently failing test, with the latest failures
+ * first. Rows are keyboard-first (j/k) — the mouse is the
  * fallback, which is why the selected row is marked by an accent edge that
  * survives at the edge of vision.
  */
@@ -104,65 +94,16 @@ export const TriageQueue = ({
       )}
 
       <ul className="min-h-0 flex-1 overflow-y-auto">
-        {queue.map((failure, index) => {
-          const selected = failure.id === selectedId && active;
-          return (
-            <li key={failure.id}>
-              <button
-                type="button"
-                aria-current={selected}
-                className={`flex w-full gap-2 border-b border-l-2 border-line-soft text-left transition-colors ${
-                  compact ? 'px-2.5 py-[7px]' : 'px-2.5 py-2.5'
-                } ${
-                  selected
-                    ? 'border-l-accent bg-accent-wash'
-                    : 'border-l-transparent hover:bg-raised'
-                }`}
-                onClick={() => onSelect(index)}
-              >
-                <StatusDot
-                  tone={severityTone[failure.severity].tone}
-                  label={severityTone[failure.severity].label}
-                  className="mt-[5px]"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-2">
-                    <span className="ui-mono truncate ">{failure.signature}</span>
-                    <span className="ui-mono ml-auto shrink-0 text-ink-3">
-                      ×{failure.occurrences}
-                    </span>
-                  </span>
-                  <span className="mt-[3px] block truncate text-ink-2">{failure.test}</span>
-                  <span className="mt-1.5 flex items-center gap-2">
-                    <span className="truncate text-ink-3">
-                      {failure.suite} · {failure.env} · {age(failure.ageMinutes)}
-                    </span>
-                    {failure.kind !== 'known' && (
-                      <Badge
-                        size="sm"
-                        uppercase
-                        tone={failure.kind === 'flaky' ? 'warning' : 'accent'}
-                      >
-                        {failure.kind}
-                      </Badge>
-                    )}
-                    {quarantined.includes(failure.id) && (
-                      <Badge size="sm" uppercase>
-                        {t('held')}
-                      </Badge>
-                    )}
-                    <span className="ml-auto shrink-0">
-                      <Sparkline
-                        values={failure.spark}
-                        label={t('occurrences_over_7_days', { value1: failure.occurrences })}
-                      />
-                    </span>
-                  </span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {queue.map((failure, index) => (
+          <TriageFailureRow
+            key={failure.id}
+            failure={failure}
+            selected={failure.id === selectedId && active}
+            compact={compact}
+            quarantined={quarantined.includes(failure.id)}
+            onSelect={() => onSelect(index)}
+          />
+        ))}
         {queue.length === 0 && (
           <li className="px-3 py-6 text-center text-ink-3">
             {t('nothing_matches')}
