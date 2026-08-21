@@ -319,6 +319,16 @@ export const workspaceSnapshotSchema = z
   })
   .strict();
 
+export const webProfileSchema = profileSchema.omit({ variables: true }).extend({
+  variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
+});
+
+/** Browser-safe workspace projection. Stored credential values stay server-side. */
+export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema
+  .omit({ profiles: true })
+  .extend({ profiles: z.array(webProfileSchema) })
+  .strict();
+
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
 export type ProfileVariable = z.infer<typeof profileVariableSchema>;
@@ -342,3 +352,5 @@ export type ProjectInvitation = z.infer<typeof projectInvitationSchema>;
 export type ProjectActivityAction = z.infer<typeof projectActivityActionSchema>;
 export type ProjectActivity = z.infer<typeof projectActivitySchema>;
 export type WorkspaceSnapshot = z.infer<typeof workspaceSnapshotSchema>;
+export type WebProfile = z.infer<typeof webProfileSchema>;
+export type WebWorkspaceSnapshot = z.infer<typeof webWorkspaceSnapshotSchema>;

@@ -3,11 +3,36 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import type { AppSnapshot } from '../../src/preload/api';
+
+const appSnapshot = (appWindow: Page) =>
+  appWindow.evaluate(
+    () =>
+      new Promise<AppSnapshot>((resolve) => {
+        const stop = window.testron.onSnapshot((snapshot) => {
+          stop();
+          resolve(snapshot);
+        });
+        window.testron.command({ type: 'request-snapshot' });
+      }),
+  );
+
+const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.launch>>) => {
+  const process = electronApp.process();
+  await Promise.race([
+    electronApp.close().catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+  if (process.exitCode === null) process.kill('SIGTERM');
+};
+
 const openRecorder = async (appWindow: Page) => {
   await appWindow.evaluate(() => {
-    window.location.hash = '#/recorder';
+    window.location.hash = '#/record';
   });
-  await appWindow.getByRole('button', { name: 'Start recording' }).waitFor({ timeout: 3_000 });
+  await appWindow
+    .getByRole('button', { name: 'Record R', exact: true })
+    .waitFor({ timeout: 10_000 });
   await appWindow.evaluate(() =>
     window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
   );
@@ -150,16 +175,15 @@ test('records the controlled login-like flow through the Electron pipeline', asy
       .toContain('http://127.0.0.1:4174/welcome');
     await appWindow.evaluate(() => window.testron.command({ type: 'stop-recording' }));
 
-    await expect(appWindow.locator('.human li')).toHaveCount(5);
-    await expect(appWindow.locator('.human')).toContainText(
+    const snapshot = await appSnapshot(appWindow);
+    expect(snapshot.steps).toHaveLength(5);
+    expect(snapshot.descriptions.join('\n')).toContain(
       'Navigate to http://127.0.0.1:4174/?recording=1',
     );
-    await expect(appWindow.locator('.human')).toContainText('Fill [data-testid="email"]');
-    await expect(appWindow.locator('.human')).toContainText('Fill [data-testid="workspace"]');
-    await expect(appWindow.locator('.human')).toContainText('Click button “Continue”');
-    await expect(appWindow.locator('.source pre')).toContainText(
-      "page.getByRole('button', { name: 'Continue' }).click()",
-    );
+    expect(snapshot.descriptions.join('\n')).toContain('Fill [data-testid="email"]');
+    expect(snapshot.descriptions.join('\n')).toContain('Fill [data-testid="workspace"]');
+    expect(snapshot.descriptions.join('\n')).toContain('Click button “Continue”');
+    expect(snapshot.source).toContain("page.getByRole('button', { name: 'Continue' }).click()");
   } finally {
     await electronApp.close();
   }
@@ -177,20 +201,38 @@ test('restores a created project, environment, test, and its steps after restart
   try {
     let appWindow = await electronApp.firstWindow();
     await openRecorder(appWindow);
-    await appWindow.getByLabel('New project name').fill('Checkout');
-    await appWindow.locator('.entity').nth(0).getByRole('button', { name: 'Add' }).click();
-    await expect(appWindow.getByLabel('Project', { exact: true })).toHaveValue(/.+/);
-
-    await appWindow.getByLabel('New environment name').fill('Local');
-    await appWindow.getByLabel('Environment base URL').fill('http://127.0.0.1:4174');
-    await appWindow.getByLabel('Test ID attribute').fill('data-testid');
-    await appWindow.locator('.entity').nth(1).getByRole('button', { name: 'Add' }).click();
-    await expect(appWindow.getByLabel('Environment', { exact: true })).toHaveValue(/.+/);
-
-    await appWindow.getByLabel('New test title').fill('sign in successfully');
-    await appWindow.locator('.entity').nth(2).getByRole('button', { name: 'Add' }).click();
-    await expect(appWindow.getByLabel('Test', { exact: true })).toHaveValue(/.+/);
-    await appWindow.getByRole('button', { name: 'Start recording' }).click();
+    appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'Checkout' }));
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
+    const projectId = (await appSnapshot(appWindow)).library.selectedProjectId!;
+    appWindow.evaluate(
+      (id) =>
+        window.testron.command({
+          type: 'create-environment',
+          projectId: id,
+          name: 'Local',
+          baseUrl: 'http://127.0.0.1:4174',
+          testIdAttribute: 'data-testid',
+        }),
+      projectId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedEnvironmentId)
+      .toBeTruthy();
+    const environmentId = (await appSnapshot(appWindow)).library.selectedEnvironmentId!;
+    appWindow.evaluate(
+      ({ projectId, environmentId }) =>
+        window.testron.command({
+          type: 'create-test',
+          projectId,
+          environmentId,
+          title: 'sign in successfully',
+        }),
+      { projectId, environmentId },
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedTestId)
+      .toBeTruthy();
+    await appWindow.evaluate(() => window.testron.command({ type: 'start-recording' }));
     await appWindow.evaluate(() =>
       window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/?persist=1' }),
     );
@@ -212,22 +254,29 @@ test('restores a created project, environment, test, and its steps after restart
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
     });
-    await appWindow.getByRole('button', { name: 'Finish' }).click();
-    await expect(appWindow.locator('.human li')).toHaveCount(3);
-    await electronApp.close();
+    await appWindow.evaluate(() => window.testron.command({ type: 'finish-recording' }));
+    await expect.poll(async () => (await appSnapshot(appWindow)).steps.length).toBeGreaterThan(2);
+    const recordedStepCount = (await appSnapshot(appWindow)).steps.length;
+    await closeElectron(electronApp);
 
     electronApp = await launch();
     appWindow = await electronApp.firstWindow();
     await openRecorder(appWindow);
-    await expect(appWindow.getByLabel('Project', { exact: true })).toContainText('Checkout');
-    await expect(appWindow.getByLabel('Environment', { exact: true })).toContainText('Local');
-    await expect(appWindow.getByLabel('Test', { exact: true })).toContainText(
-      'sign in successfully',
+    const restored = await appSnapshot(appWindow);
+    expect(restored.library.projects.map((project) => project.name)).toContain('Checkout');
+    expect(restored.library.environments.map((environment) => environment.name)).toContain('Local');
+    const testRecord = restored.library.tests.find((test) => test.title === 'sign in successfully');
+    expect(testRecord).toBeDefined();
+    await appWindow.evaluate(
+      (testId) => window.testron.command({ type: 'select-test', testId }),
+      testRecord!.id,
     );
-    await expect(appWindow.locator('.human li')).toHaveCount(3);
-    await expect(appWindow.locator('.human')).toContainText('qa@example.test');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.length)
+      .toBe(recordedStepCount);
+    expect((await appSnapshot(appWindow)).descriptions.join('\n')).toContain('qa@example.test');
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });

@@ -28,6 +28,7 @@ export const startTestronServer = async (options: {
   migrate?: boolean;
   invitationMailer?: InvitationMailer;
   resend?: { apiKey: string; from: string };
+  webappDirectory?: string;
 }): Promise<RunningTestronServer> => {
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
@@ -38,7 +39,12 @@ export const startTestronServer = async (options: {
     (options.resend ? new ResendInvitationMailer(options.resend) : disabledInvitationMailer);
   const repository = new CanonicalRepository(database.db, invitationMailer);
   const router = createAppRouter({ authentication, repository });
-  const server = createHttpServer({ router, authentication });
+  const server = createHttpServer({
+    router,
+    authentication,
+    secureCookies: new URL(options.publicBaseUrl ?? 'http://localhost').protocol === 'https:',
+    ...(options.webappDirectory ? { webappDirectory: options.webappDirectory } : {}),
+  });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve);

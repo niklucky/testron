@@ -33,10 +33,6 @@ export const RunView = () => {
   const [expanded, setExpanded] = useState<number>();
   const [log, setLog] = useState('Report · run-4471 failed on Staging');
 
-  useEffect(() => {
-    window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
-  }, []);
-
   const run = runs.find((entry) => entry.id === selectedId) ?? runs[0];
 
   useEffect(() => {
@@ -66,9 +62,9 @@ export const RunView = () => {
 
   return (
     <main className="ui-root flex h-screen w-screen flex-col overflow-hidden bg-plane font-sans text-ink antialiased">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-3 [-webkit-app-region:drag]">
+      <header className="desktop-window-drag flex h-11 shrink-0 items-center gap-2 border-b border-line px-3">
         <div className="w-[74px] shrink-0" />
-        <div className="flex min-w-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
+        <div className="desktop-window-controls flex min-w-0 items-center gap-1.5">
           <IconButton
             icon="arrowLeft"
             size="sm"
@@ -91,7 +87,7 @@ export const RunView = () => {
           </Badge>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2 [-webkit-app-region:no-drag]">
+        <div className="desktop-window-controls ml-auto flex shrink-0 items-center gap-2">
           <span className="text-sm text-ink-3">
             {run.trigger === 'ci'
               ? t('ci')

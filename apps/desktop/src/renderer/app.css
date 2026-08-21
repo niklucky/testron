@@ -3,10 +3,13 @@
 @import './design/tokens.css';
 @import './design/base.css';
 
-/* The frozen UI studies behind #/experiments and the recorder shell. Fully
-   scoped to their own class names — nothing in here reaches the design
-   system. Delete this import once those screens have been rebuilt. */
-@import './design/experiments/styles.css';
+.desktop-window-drag {
+  -webkit-app-region: drag;
+}
+
+.desktop-window-controls {
+  -webkit-app-region: no-drag;
+}
 
 /* --------------------------------------------------------------------------
    Token → utility bridge.

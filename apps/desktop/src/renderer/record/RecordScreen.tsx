@@ -1,21 +1,16 @@
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
+import { NewTestForm } from '../dashboard/NewTestForm';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
-import { NewTestForm } from '../dashboard/NewTestForm';
-import { clock, sourceText } from './codegen';
 import { convertStepToAssertion } from './assertion';
+import { clock, sourceText } from './codegen';
 import { CodePanel } from './CodePanel';
 import { GlassPanel } from './GlassPanel';
-import { presentRecordedSteps, presentSource, recordingContext } from './live';
-import { replacePrimaryLocator } from './locator-edit';
-import { StepsPanel } from './StepsPanel';
-import { TargetPage, type PageState } from './TargetPage';
-import { BrowserBar, SessionBar } from './Toolbar';
 import {
   createRecordHotkeyDefinitions,
   displayRecordShortcut,
@@ -23,6 +18,11 @@ import {
   runRecordShortcut,
   type RecordHotkeyActions,
 } from './hotkeys';
+import { presentRecordedSteps, presentSource, recordingContext } from './live';
+import { replacePrimaryLocator } from './locator-edit';
+import { StepsPanel } from './StepsPanel';
+import { TargetPage, type PageState } from './TargetPage';
+import { BrowserBar, SessionBar } from './Toolbar';
 import type { CaptureMode, PanelId, RecordStatus } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
@@ -49,6 +49,12 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   replayHistory: [],
   verifyAssertion: 'visible',
 };
+
+const parkedRecordLayout = (): RecordLayout => ({
+  plane: null,
+  panels: { steps: { visible: false, width: 25 }, code: { visible: false, width: 25 } },
+  resizing: null,
+});
 
 /**
  * Recording a test.
@@ -86,6 +92,7 @@ export const RecordScreen = () => {
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
   const [configuringProfile, setConfiguringProfile] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
@@ -117,20 +124,13 @@ export const RecordScreen = () => {
     snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
 
   useEffect(() => {
-    // The legacy recorder shell's own layout stays parked: from here on the
-    // record layout below decides where every view goes.
-    window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
     const unsubscribe = window.testron?.onSnapshot(setSnapshot);
     window.testron?.command({ type: 'request-snapshot' });
     return () => {
       unsubscribe?.();
       window.testron?.command({
         type: 'set-record-layout',
-        layout: {
-          plane: null,
-          panels: { steps: { visible: false, width: 25 }, code: { visible: false, width: 25 } },
-          resizing: null,
-        },
+        layout: parkedRecordLayout(),
       });
     };
   }, []);
@@ -342,7 +342,7 @@ export const RecordScreen = () => {
    */
   const layout = (): RecordLayout => {
     const rect =
-      finishing || configuringProfile || editingTitle
+      finishing || configuringProfile || editingTitle || sessionMenuOpen
         ? undefined
         : planeRef.current?.getBoundingClientRect();
     return {
@@ -407,6 +407,7 @@ export const RecordScreen = () => {
     finishing,
     configuringProfile,
     editingTitle,
+    sessionMenuOpen,
   ]);
 
   // The plane moves when the window does, and the panels have to follow.
@@ -508,11 +509,22 @@ export const RecordScreen = () => {
             ...(profileId ? { profileId } : {}),
           })
         }
-        onConfigureProfile={() => setConfiguringProfile(true)}
+        onConfigureProfile={() => {
+          window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
+          setConfiguringProfile(true);
+        }}
+        onMenuOpenChange={(open) => {
+          if (open)
+            window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
+          setSessionMenuOpen(open);
+        }}
         test={name}
-        onTestEdit={() => setEditingTitle(true)}
+        onTestEdit={() => {
+          window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
+          setEditingTitle(true);
+        }}
         onBack={() => {
-          window.location.hash = '#/';
+          window.testron.command({ type: 'show-product' });
         }}
       />
       <BrowserBar
@@ -647,17 +659,37 @@ export const RecordScreen = () => {
         {configuringProfile && (
           <ProfileSheet
             environment={context.environment}
+            profile={
+              selectedProfile
+                ? {
+                    name: selectedProfile.name,
+                    variables: snapshot.library.profileVariables
+                      .filter((variable) => variable.profileId === selectedProfile.id)
+                      .map(({ name, sensitive }) => ({ name, sensitive })),
+                  }
+                : undefined
+            }
             disabled={!selectedEnvironmentId}
             onCancel={() => setConfiguringProfile(false)}
             onSave={(profileName, variables) => {
               if (!selectedEnvironmentId) return;
-              window.testron?.command({
-                type: 'create-profile',
-                environmentId: selectedEnvironmentId,
-                name: profileName,
-                authenticationType: 'credentials',
-                variables,
-              });
+              if (selectedProfile?.revision)
+                window.testron?.command({
+                  type: 'update-profile',
+                  profileId: selectedProfile.id,
+                  baseRevision: selectedProfile.revision,
+                  name: profileName,
+                  authenticationType: 'credentials',
+                  variables,
+                });
+              else
+                window.testron?.command({
+                  type: 'create-profile',
+                  environmentId: selectedEnvironmentId,
+                  name: profileName,
+                  authenticationType: 'credentials',
+                  variables,
+                });
               setConfiguringProfile(false);
               setLog(`Profile ${profileName} selected · ${variables.length} variables available`);
             }}

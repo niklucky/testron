@@ -11,6 +11,7 @@ const config: ForgeConfig = {
         { entry: 'src/main/main.ts', config: 'vite.main.config.mts', target: 'main' },
         { entry: 'src/preload/app.ts', config: 'vite.preload.config.mts', target: 'preload' },
         { entry: 'src/preload/recorder.ts', config: 'vite.preload.config.mts', target: 'preload' },
+        { entry: 'src/preload/remote.ts', config: 'vite.preload.config.mts', target: 'preload' },
       ],
       renderer: [{ name: 'main_window', config: 'vite.renderer.config.mts' }],
     }),

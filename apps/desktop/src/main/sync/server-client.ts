@@ -36,7 +36,7 @@ export class DesktopServerClient {
     this.api = createTRPCClient<AppRouter>({
       links: [
         httpBatchLink({
-          url: new URL('/trpc', baseUrl).toString(),
+          url: new URL('/api/trpc', baseUrl).toString(),
           headers: async () => {
             const accessToken = await token();
             return accessToken ? { authorization: `Bearer ${accessToken}` } : {};

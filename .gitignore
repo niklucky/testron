@@ -4,6 +4,7 @@ node_modules/
 .env.*
 !.env.example
 .vite/
+dist/
 out/
 playwright-report/
 test-results/

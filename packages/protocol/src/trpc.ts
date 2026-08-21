@@ -41,6 +41,7 @@ import {
   testSuiteSummarySchema,
   workspaceSnapshotSchema,
   workspaceViewerSchema,
+  webWorkspaceSnapshotSchema,
 } from './resources';
 
 export const updateAccountProfileProcedure = {
@@ -142,6 +143,10 @@ export const deleteTestProcedure = {
 export const getWorkspaceProcedure = {
   input: getWorkspaceRequestSchema,
   output: workspaceSnapshotSchema,
+} as const;
+export const getWebWorkspaceProcedure = {
+  input: getWorkspaceRequestSchema,
+  output: webWorkspaceSnapshotSchema,
 } as const;
 export const getTestProcedure = {
   input: getTestRequestSchema,

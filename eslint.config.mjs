@@ -6,6 +6,8 @@ export default tseslint.config(
     ignores: [
       '.vite/**',
       '**/.vite/**',
+      '**/dist/**',
+      '**/routeTree.gen.ts',
       'node_modules/**',
       'out/**',
       'playwright-report/**',
