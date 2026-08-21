@@ -1,7 +1,7 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useState, type ReactNode } from 'react';
 
-import { Badge, Button, Icon, IconButton, Kbd } from '../../ui/design';
+import { Badge, Button, IconButton, Kbd } from '../../ui/design';
 import { sourceText, type CodeLine } from '../record/codegen';
 import { CodePanel } from '../record/CodePanel';
 import { InlineSelect } from './InlineField';
@@ -281,54 +281,89 @@ export const PrerequisiteSheet = ({
   );
 };
 
-const destinations = [
-  { project: 'Commerce app', suite: 'Checkout' },
-  { project: 'Commerce app', suite: 'Cart' },
-  { project: 'Commerce app', suite: 'Account' },
-  { project: 'Admin console', suite: 'Billing' },
-];
-
-/** Moving a test is a two-part choice, so it gets a list rather than a menu. */
+/** Pick the destination project first, then a suite belonging to it. */
 export const MoveSheet = ({
-  current,
+  projects,
+  testSuites,
+  currentProjectId,
+  currentTestSuiteId,
   onMove,
   onClose,
 }: {
-  current: { project: string; suite: string };
-  onMove: (destination: { project: string; suite: string }) => void;
+  projects: Array<{ id: string; name: string }>;
+  testSuites: Array<{ id: string; projectId: string; name: string }>;
+  currentProjectId?: string;
+  currentTestSuiteId?: string | null;
+  onMove: (destination: { projectId: string; testSuiteId: string }) => void;
   onClose: () => void;
 }) => {
   const { t } = useTranslation();
+  const [projectId, setProjectId] = useState(currentProjectId ?? projects[0]?.id ?? '');
+  const suites = testSuites.filter((suite) => suite.projectId === projectId);
+  const [testSuiteId, setTestSuiteId] = useState(
+    currentTestSuiteId && suites.some((suite) => suite.id === currentTestSuiteId)
+      ? currentTestSuiteId
+      : (suites[0]?.id ?? ''),
+  );
   return (
-    <Sheet
-      title={t('move_test')}
-      subtitle={t('message_2', { value1: current.project, value2: current.suite })}
-      onClose={onClose}
-    >
-      <ul className="p-2">
-        {destinations.map((destination) => {
-          const here =
-            destination.project === current.project && destination.suite === current.suite;
-          return (
-            <li key={`${destination.project}/${destination.suite}`}>
-              <button
-                type="button"
-                disabled={here}
-                onClick={() => onMove(destination)}
-                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left ${
-                  here ? 'text-ink-3' : 'hover:bg-raised'
-                }`}
-              >
-                <Icon name="suite" size={14} className="text-ink-3" />
-                <span className="truncate">
-                  {destination.project} <span className="text-ink-3">·</span> {destination.suite}
-                </span>
-                {here && <span className="ml-auto text-ink-3">{t('current')}</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+    <Sheet title={t('move_test')} onClose={onClose}>
+      <div className="grid gap-4 px-4 py-4">
+        <label className="grid gap-1.5">
+          <span className="text-ink-3">{t('project')}</span>
+          <select
+            aria-label={t('project')}
+            value={projectId}
+            onChange={(event) => {
+              const nextProjectId = event.target.value;
+              setProjectId(nextProjectId);
+              setTestSuiteId(
+                testSuites.find((suite) => suite.projectId === nextProjectId)?.id ?? '',
+              );
+            }}
+            className="w-full rounded-md border border-line bg-plane px-2.5 py-2 outline-none focus:border-accent"
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-ink-3">{t('test_suite')}</span>
+          <select
+            aria-label={t('test_suite')}
+            value={testSuiteId}
+            disabled={suites.length === 0}
+            onChange={(event) => setTestSuiteId(event.target.value)}
+            className="w-full rounded-md border border-line bg-plane px-2.5 py-2 outline-none focus:border-accent disabled:text-ink-3"
+          >
+            {suites.length === 0 && <option value="">{t('no_test_suite')}</option>}
+            {suites.map((suite) => (
+              <option key={suite.id} value={suite.id}>
+                {suite.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <footer className="flex items-center gap-2 border-t border-line-soft px-4 py-3">
+        <Button
+          variant="primary"
+          icon="suite"
+          disabled={
+            !projectId ||
+            !testSuiteId ||
+            (projectId === currentProjectId && testSuiteId === currentTestSuiteId)
+          }
+          onClick={() => onMove({ projectId, testSuiteId })}
+        >
+          {t('move')}
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          {t('cancel')}
+        </Button>
+      </footer>
     </Sheet>
   );
 };

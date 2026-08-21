@@ -640,6 +640,78 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).resolves.toEqual([]);
   });
 
+  it('moves a test to another project and suite with a new current revision', async () => {
+    const { api } = await signIn();
+    const source = await api.project.create.mutate({ meta: mutationMeta(), name: 'Source' });
+    const destination = await api.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Destination',
+    });
+    const sourceEnvironment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: source.id,
+      name: 'Production',
+      baseUrl: 'https://source.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const destinationEnvironment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: destination.id,
+      name: 'Production',
+      baseUrl: 'https://destination.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const suite = await api.testSuite.create.mutate({
+      meta: mutationMeta(),
+      projectId: destination.id,
+      name: 'Moved tests',
+    });
+    const snapshot = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: source.id,
+      content: content(sourceEnvironment.id, 'Movable test'),
+    });
+
+    const moved = await api.test.move.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      baseRevision: snapshot.test.currentRevision,
+      projectId: destination.id,
+      testSuiteId: suite.id,
+      environmentId: destinationEnvironment.id,
+    });
+
+    expect(moved).toMatchObject({
+      test: {
+        id: snapshot.test.id,
+        projectId: destination.id,
+        testSuiteId: suite.id,
+        currentRevision: { number: 2 },
+      },
+      currentRevision: {
+        projectId: destination.id,
+        number: 2,
+        content: { environmentId: destinationEnvironment.id, title: 'Movable test' },
+      },
+    });
+    const workspace = await api.workspace.get.query({ meta: requestMeta() });
+    expect(workspace.tests).toEqual([
+      expect.objectContaining({
+        test: expect.objectContaining({ projectId: destination.id, testSuiteId: suite.id }),
+      }),
+    ]);
+    await expect(
+      api.test.move.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        baseRevision: snapshot.test.currentRevision,
+        projectId: destination.id,
+        testSuiteId: suite.id,
+        environmentId: destinationEnvironment.id,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
   it('uses the server as the source of truth for local runs in flight', async () => {
     const { api } = await signIn();
     const { environment, snapshot } = await createSlice(api);

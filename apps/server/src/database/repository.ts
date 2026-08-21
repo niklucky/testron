@@ -23,6 +23,7 @@ import {
   type CreateTestSuiteRequest,
   type DeleteTestSuiteRequest,
   type DeleteTestRequest,
+  type MoveTestRequest,
   type Environment,
   type ProjectInvitation,
   type ProjectActivityAction,
@@ -390,6 +391,64 @@ export class CanonicalRepository {
         entityLabel: row.title,
       });
       return this.snapshot(tx, test.id);
+    });
+  }
+
+  moveTest(user: AuthenticatedUser, request: MoveTestRequest): Promise<TestSnapshot> {
+    return this.idempotent(user, 'test.move', request, async (tx) => {
+      const test = await this.authorizeTest(tx, user, request.testId);
+      await this.authorizeProject(tx, user, request.projectId);
+      await this.requireTestSuite(tx, request.testSuiteId, request.projectId);
+      await this.requireEnvironment(tx, request.environmentId, request.projectId);
+      if (
+        test.currentRevisionId !== request.baseRevision.id ||
+        test.currentRevisionNumber !== request.baseRevision.number
+      )
+        throw new RepositoryError('CONFLICT', 'The test changed.');
+
+      const current = await this.snapshot(tx, request.testId);
+      const nextNumber = request.baseRevision.number + 1;
+      const [revision] = await tx
+        .insert(testRevisions)
+        .values({
+          testId: request.testId,
+          projectId: request.projectId,
+          number: nextNumber,
+          parentRevisionId: request.baseRevision.id,
+          parentRevisionNumber: request.baseRevision.number,
+          content: { ...current.currentRevision.content, environmentId: request.environmentId },
+          createdBy: user.id,
+        })
+        .returning();
+      if (!revision) throw new Error('Could not create the moved test revision.');
+
+      const [row] = await tx
+        .update(tests)
+        .set({
+          projectId: request.projectId,
+          testSuiteId: request.testSuiteId,
+          currentRevisionId: revision.id,
+          currentRevisionNumber: nextNumber,
+        })
+        .where(
+          and(
+            eq(tests.id, request.testId),
+            eq(tests.currentRevisionId, request.baseRevision.id),
+            eq(tests.currentRevisionNumber, request.baseRevision.number),
+            isNull(tests.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The test changed.');
+
+      await this.recordActivity(tx, user, {
+        projectId: request.projectId,
+        action: 'test.updated',
+        entityType: 'test',
+        entityId: row.id,
+        entityLabel: row.title,
+      });
+      return this.snapshot(tx, row.id);
     });
   }
 

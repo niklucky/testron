@@ -28,10 +28,12 @@ import {
   createProjectRequestSchema,
   createTestRequestSchema,
   createTestSuiteRequestSchema,
+  deleteTestRequestSchema,
   deleteTestSuiteRequestSchema,
   finishTestRunRequestSchema,
   getWorkspaceRequestSchema,
   lookupInviteeRequestSchema,
+  moveTestRequestSchema,
   respondInvitationRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
@@ -1556,6 +1558,73 @@ const createWindow = async (): Promise<void> => {
           steps,
         );
         if (selectedTestId === test.test.id) session.setGenerationContext(command.title);
+        break;
+      }
+      case 'delete-test': {
+        const test = remoteTest(command.testId);
+        if (!test || !serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .deleteTest(
+            deleteTestRequestSchema.parse({
+              meta: mutationMeta(
+                `test-delete-${command.testId}-${test.test.currentRevision.number}`,
+              ),
+              testId: command.testId,
+              baseRevision: test.test.currentRevision,
+            }),
+          )
+          .then(async () => {
+            if (!remoteWorkspace) return;
+            await reloadRemoteWorkspace();
+            sendSnapshot(session.snapshot());
+            productVisible = Boolean(remoteView);
+            if (remoteView) {
+              if (isWebappLocation(remoteView.webContents.getURL()))
+                remoteView.webContents.reloadIgnoringCache();
+              else void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
+            }
+            layout();
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Test deletion failed.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'move-test': {
+        const test = remoteTest(command.testId);
+        if (!test || !serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .moveTest(
+            moveTestRequestSchema.parse({
+              meta: mutationMeta(
+                `test-move-${command.testId}-${test.test.currentRevision.number}-${command.testSuiteId}`,
+              ),
+              testId: command.testId,
+              baseRevision: test.test.currentRevision,
+              projectId: command.projectId,
+              testSuiteId: command.testSuiteId,
+              environmentId: command.environmentId,
+            }),
+          )
+          .then(async (moved) => {
+            selectedProjectId = moved.test.projectId;
+            selectedTestSuiteId = moved.test.testSuiteId ?? undefined;
+            selectedEnvironmentId = moved.currentRevision.content.environmentId;
+            selectedTestId = moved.test.id;
+            session.load(
+              moved.test.title,
+              moved.currentRevision.content.steps.map(({ payload }) => payload),
+            );
+            await reloadRemoteWorkspace();
+            sendSnapshot(session.snapshot());
+            if (remoteView && isWebappLocation(remoteView.webContents.getURL()))
+              remoteView.webContents.reloadIgnoringCache();
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Test move failed.');
+            sendSnapshot(session.snapshot());
+          });
         break;
       }
       case 'prepare-new-test':

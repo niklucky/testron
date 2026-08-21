@@ -1,7 +1,7 @@
 import type { WebWorkspaceSnapshot } from '@testron/protocol';
 
 import { mutationMeta, requestMeta } from './meta';
-import { goToTest } from './navigation';
+import { goToDashboard, goToTest } from './navigation';
 import { queryClient, trpcClient } from './trpc';
 import type { AppCommand, AppSnapshot, LibrarySnapshot, TestronApi } from './library';
 import { workspaceQueryOptions } from './workspace';
@@ -280,6 +280,46 @@ const command = (input: AppCommand): void => {
           if (!window.testronDesktop) goToTest(snapshot.test.id);
         });
       break;
+    case 'delete-test': {
+      const testId = value<string>(input, 'testId');
+      const test = workspace?.tests.find((item) => item.test.id === testId);
+      if (!test) break;
+      void trpcClient.test.delete
+        .mutate({
+          meta,
+          testId,
+          baseRevision: test.test.currentRevision,
+        })
+        .then(async () => {
+          if (selectedTestId === testId) selectedTestId = undefined;
+          await refresh();
+          goToDashboard();
+        });
+      break;
+    }
+    case 'move-test': {
+      const testId = value<string>(input, 'testId');
+      const test = workspace?.tests.find((item) => item.test.id === testId);
+      if (!test) break;
+      void trpcClient.test.move
+        .mutate({
+          meta,
+          testId,
+          baseRevision: test.test.currentRevision,
+          projectId: value(input, 'projectId'),
+          testSuiteId: value(input, 'testSuiteId'),
+          environmentId: value(input, 'environmentId'),
+        })
+        .then(async (moved) => {
+          selectedProjectId = moved.test.projectId;
+          selectedTestSuiteId = moved.test.testSuiteId ?? undefined;
+          selectedEnvironmentId = moved.currentRevision.content.environmentId;
+          selectedTestId = moved.test.id;
+          await refresh();
+          goToTest(moved.test.id, moved.test.projectId);
+        });
+      break;
+    }
     case 'run-test':
       window.testronDesktop?.openLocal({
         route: 'test',

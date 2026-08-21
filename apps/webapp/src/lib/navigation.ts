@@ -18,12 +18,11 @@ export const goToRuns = () => {
     }),
   );
 };
-export const goToTest = (testId: string) => {
-  const currentProjectId = projectId();
+export const goToTest = (testId: string, targetProjectId = projectId()) => {
   if (window.testronDesktop) {
     window.testronDesktop.openLocal({
       route: 'test',
-      projectId: currentProjectId,
+      projectId: targetProjectId,
       testId,
     });
     return;
@@ -31,7 +30,7 @@ export const goToTest = (testId: string) => {
   void import('../router').then(({ router }) =>
     router.navigate({
       to: '/projects/$projectId/tests/$testId',
-      params: { projectId: currentProjectId, testId },
+      params: { projectId: targetProjectId, testId },
     }),
   );
 };

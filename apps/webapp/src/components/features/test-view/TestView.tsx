@@ -13,7 +13,7 @@ import { Branch, EmptyLane, Flow, Lane } from './Board';
 import { AssertionCard, DetailCard, RunCard, StepArrow, StepCard } from './columns';
 import { liveTestBoard } from './live';
 import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotkeys';
-import { SourceSheet } from './sheets';
+import { DeleteSheet, MoveSheet, SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
 import { goToDashboard, goToRecorder } from '../../../lib/navigation';
@@ -54,6 +54,8 @@ export const TestView = () => {
   const [selectedRun, setSelectedRun] = useState<string>();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -85,6 +87,9 @@ export const TestView = () => {
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
   const testSuites = snapshot.library.testSuites.filter(
     (suite) => suite.projectId === snapshot.library.selectedProjectId,
+  );
+  const movableProjects = snapshot.library.projects.filter((project) =>
+    snapshot.library.environments.some((environment) => environment.projectId === project.id),
   );
   const running = snapshot.replay.status === 'running';
   const selectedReplay = useMemo(() => {
@@ -472,10 +477,10 @@ export const TestView = () => {
           {t('edit_in_recorder')}
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
-        <Button icon="suite" disabled>
+        <Button icon="suite" onClick={() => setMoveOpen(true)}>
           {t('move')}
         </Button>
-        <Button icon="trash" disabled>
+        <Button icon="trash" onClick={() => setDeleteOpen(true)}>
           {t('delete')}
         </Button>
         <span className="ml-auto flex items-center gap-3 text-ink-3">
@@ -654,6 +659,50 @@ export const TestView = () => {
           />
         )}
       </div>
+
+      {moveOpen && (
+        <MoveSheet
+          projects={movableProjects}
+          testSuites={snapshot.library.testSuites}
+          currentProjectId={selectedTest?.projectId ?? snapshot.library.selectedProjectId}
+          currentTestSuiteId={selectedTest?.testSuiteId}
+          onMove={({ projectId, testSuiteId }) => {
+            if (!selectedTestId || !selectedTest) return;
+            const currentEnvironment = snapshot.library.environments.find(
+              (environment) => environment.id === selectedTest.environmentId,
+            );
+            const destinationEnvironments = snapshot.library.environments.filter(
+              (environment) => environment.projectId === projectId,
+            );
+            const environment =
+              destinationEnvironments.find(
+                (candidate) => candidate.name === currentEnvironment?.name,
+              ) ?? destinationEnvironments[0];
+            if (!environment) return;
+            window.testron?.command({
+              type: 'move-test',
+              testId: selectedTestId,
+              projectId,
+              testSuiteId,
+              environmentId: environment.id,
+            });
+            setMoveOpen(false);
+            setLog('Moving test…');
+          }}
+          onClose={() => setMoveOpen(false)}
+        />
+      )}
+
+      {deleteOpen && selectedTestId && (
+        <DeleteSheet
+          name={detail.name}
+          onClose={() => setDeleteOpen(false)}
+          onDelete={() => {
+            window.testron?.command({ type: 'delete-test', testId: selectedTestId });
+            setDeleteOpen(false);
+          }}
+        />
+      )}
 
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-line px-3 text-ink-3">
         <span className="ui-mono truncate text-ink-2">{detail.file}</span>

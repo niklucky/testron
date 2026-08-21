@@ -15,6 +15,7 @@ import type {
   GetWorkspaceRequest,
   ListTestSuitesRequest,
   LookupInviteeRequest,
+  MoveTestRequest,
   SaveTestRevisionRequest,
   StartTestRunRequest,
   RespondInvitationRequest,
@@ -112,6 +113,10 @@ export class DesktopServerClient {
 
   deleteTest(value: DeleteTestRequest) {
     return this.api.test.delete.mutate(value);
+  }
+
+  moveTest(value: MoveTestRequest) {
+    return this.api.test.move.mutate(value);
   }
 
   createTestSuite(value: CreateTestSuiteRequest) {

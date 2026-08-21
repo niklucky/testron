@@ -207,6 +207,17 @@ export const deleteTestRequestSchema = z
   })
   .strict();
 
+export const moveTestRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    testId: entityIdSchema,
+    baseRevision: revisionPointerSchema,
+    projectId: entityIdSchema,
+    testSuiteId: entityIdSchema,
+    environmentId: entityIdSchema,
+  })
+  .strict();
+
 export const getWorkspaceRequestSchema = z.object({ meta: requestMetadataSchema }).strict();
 
 export const getWorkspaceSuccessSchema = z
@@ -303,6 +314,7 @@ export const updateTestSuiteResultSchema = z.union([testSuiteSuccessSchema, erro
 export const deleteTestSuiteResultSchema = z.union([testSuiteSuccessSchema, errorResponseSchema]);
 export const createTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const deleteTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
+export const moveTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const getTestResultSchema = z.union([testSnapshotSuccessSchema, errorResponseSchema]);
 export const getWorkspaceResultSchema = z.union([getWorkspaceSuccessSchema, errorResponseSchema]);
 export const saveTestRevisionResultSchema = z.union([
@@ -336,6 +348,7 @@ export type UpdateTestSuiteRequest = z.infer<typeof updateTestSuiteRequestSchema
 export type DeleteTestSuiteRequest = z.infer<typeof deleteTestSuiteRequestSchema>;
 export type CreateTestRequest = z.infer<typeof createTestRequestSchema>;
 export type DeleteTestRequest = z.infer<typeof deleteTestRequestSchema>;
+export type MoveTestRequest = z.infer<typeof moveTestRequestSchema>;
 export type GetTestRequest = z.infer<typeof getTestRequestSchema>;
 export type GetWorkspaceRequest = z.infer<typeof getWorkspaceRequestSchema>;
 export type GetTestRevisionHistoryRequest = z.infer<typeof getTestRevisionHistoryRequestSchema>;

@@ -107,6 +107,37 @@ describe('desktop application command schema', () => {
     ).toBe(false);
   });
 
+  it('validates server-backed test deletion', () => {
+    expect(appCommandSchema.parse({ type: 'delete-test', testId: id })).toEqual({
+      type: 'delete-test',
+      testId: id,
+    });
+    expect(appCommandSchema.safeParse({ type: 'delete-test', testId: 'not-an-id' }).success).toBe(
+      false,
+    );
+  });
+
+  it('validates server-backed test moves', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'move-test',
+        testId: id,
+        projectId: id,
+        testSuiteId: id,
+        environmentId: id,
+      }),
+    ).toMatchObject({ type: 'move-test', testSuiteId: id });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'move-test',
+        testId: id,
+        projectId: id,
+        testSuiteId: 'not-an-id',
+        environmentId: id,
+      }).success,
+    ).toBe(false);
+  });
+
   it('validates server-backed profile updates', () => {
     expect(
       appCommandSchema.parse({
