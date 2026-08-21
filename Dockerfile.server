@@ -14,6 +14,9 @@ COPY apps/server apps/server
 COPY apps/webapp apps/webapp
 COPY packages/domain packages/domain
 COPY packages/protocol packages/protocol
+# The webapp's stylesheet imports the shared type scale by path; the package
+# holds no manifest, so nothing else pulls it in.
+COPY packages/ui packages/ui
 RUN pnpm --filter @testron/server build
 RUN pnpm --filter @testron/webapp build
 RUN pnpm --filter @testron/server deploy --prod --legacy /opt/testron-server
