@@ -737,5 +737,19 @@
   "you_company_com": "you@company.com",
   "you_example_com": "you@example.com",
   "your_latest_test_activity": "Ваша последняя тестовая активность",
-  "your_name": "Ваше имя"
+  "your_name": "Ваше имя",
+  "chromium_is_required": "Требуется Chromium",
+  "testron_uses_a_private_chromium": "Для запуска тестов на этом компьютере Testron нужен собственный совместимый Chromium.",
+  "chromium_is_only_used_by_testron": "Браузер устанавливается для вашей учетной записи и используется только Testron.",
+  "download_and_install": "Скачать и установить",
+  "download_size": "Размер загрузки",
+  "install_location": "Место установки",
+  "installation_in_progress": "Выполняется установка",
+  "not_now": "Не сейчас",
+  "preparing_installation": "Подготовка установки…",
+  "downloading_chromium": "Загрузка Chromium…",
+  "extracting_chromium": "Распаковка Chromium…",
+  "verifying_chromium": "Проверка Chromium…",
+  "technical_details": "Технические сведения",
+  "up_to_size": "До {{value1}}"
 }

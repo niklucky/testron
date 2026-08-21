@@ -213,6 +213,8 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     reuseAuthState: z.boolean(),
   }),
   z.object({ type: z.literal('cancel-run') }),
+  z.object({ type: z.literal('install-browser') }),
+  z.object({ type: z.literal('cancel-browser-install') }),
   z.object({ type: z.literal('clear-auth-state') }),
   authLoginInputSchema.extend({ type: z.literal('login-server') }),
   authRegisterInputSchema.extend({ type: z.literal('register-server') }),

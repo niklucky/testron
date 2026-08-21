@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
 import { stripVTControlCharacters } from 'node:util';
@@ -56,6 +57,7 @@ import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
 import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
+import { BrowserInstaller } from './replay/browser-installer';
 import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
 import { SecureTokenStore } from './sync/token-store';
@@ -110,6 +112,7 @@ let repository: TestronRepository | undefined;
 let tokenStore: SecureTokenStore | undefined;
 let serverClient: DesktopServerClient | undefined;
 let syncCoordinator: DesktopSyncCoordinator | undefined;
+let browserInstaller: BrowserInstaller | undefined;
 let remoteWorkspace: WorkspaceSnapshot | undefined;
 let inviteeLookup: LibrarySnapshot['inviteeLookup'];
 let accountAction: LibrarySnapshot['accountAction'];
@@ -147,6 +150,8 @@ const requestMeta = (): Omit<MutationMetadata, 'idempotencyKey'> => ({
 const createWindow = async (): Promise<void> => {
   const store = repository;
   if (!store) throw new Error('Persistence is not initialized.');
+  const installer = browserInstaller;
+  if (!installer) throw new Error('Browser installation service is not initialized.');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
@@ -445,6 +450,7 @@ const createWindow = async (): Promise<void> => {
         library: librarySnapshot(),
         replay: replaySnapshot,
         replayHistory: historyFor(selectedTestId),
+        browserInstallation: installer.status(),
         verifyAssertion,
         ...(repickIndex === undefined ? {} : { repickIndex }),
       });
@@ -1724,6 +1730,11 @@ const createWindow = async (): Promise<void> => {
       }
       case 'run-test': {
         if (replaySnapshot.status === 'running') break;
+        if (installer.status().status !== 'ready') {
+          session.warn('Chromium must be installed before running this test.');
+          sendSnapshot(session.snapshot());
+          break;
+        }
         const { selectedTest, environment } = selectedContext();
         if (!selectedTest || !environment) {
           session.warn('Select a saved test and environment before running.');
@@ -1878,6 +1889,12 @@ const createWindow = async (): Promise<void> => {
       }
       case 'cancel-run':
         runner.cancel();
+        break;
+      case 'install-browser':
+        void installer.install(() => sendSnapshot(session.snapshot()));
+        break;
+      case 'cancel-browser-install':
+        installer.cancel();
         break;
       case 'set-record-layout':
         // The tested page and panels are DOM children of RecordScreen now.
@@ -2142,6 +2159,22 @@ app.whenReady().then(async () => {
     app.dock?.setIcon(APP_ICON_PATH);
   }
   const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
+  const browserInstallPath =
+    process.env.TESTRON_BROWSERS_PATH ?? path.join(dataDirectory, 'browsers');
+  process.env.PLAYWRIGHT_BROWSERS_PATH = browserInstallPath;
+  const playwright = await import('@playwright/test');
+  const runtimeRequire = createRequire(path.join(app.getAppPath(), 'package.json'));
+  const playwrightCliPath = path
+    .join(path.dirname(runtimeRequire.resolve('playwright/package.json')), 'cli.js')
+    .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+  browserInstaller = new BrowserInstaller(browserInstallPath, playwrightCliPath, {
+    browserExecutablePath: () => playwright.chromium.executablePath(),
+    verifyBrowser: async () => {
+      const browser = await playwright.chromium.launch({ headless: true });
+      await browser.close();
+    },
+  });
+  await browserInstaller.check();
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
   if (!localMode) {
     const serverUrl = safeUrl(__TESTRON_DEFAULT_SERVER_URL__);
@@ -2203,6 +2236,8 @@ app.on('before-quit', () => {
   tokenStore = undefined;
   serverClient = undefined;
   syncCoordinator = undefined;
+  browserInstaller?.cancel();
+  browserInstaller = undefined;
   remoteWorkspace = undefined;
 });
 

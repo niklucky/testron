@@ -87,6 +87,11 @@ const snapshot: AppSnapshot = {
     ],
   },
   replayHistory: [],
+  browserInstallation: {
+    status: 'ready',
+    installPath: '/tmp/testron-browsers',
+    estimatedDownloadBytes: 300 * 1024 * 1024,
+  },
 };
 
 describe('live test board', () => {

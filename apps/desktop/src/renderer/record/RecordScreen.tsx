@@ -47,6 +47,11 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   },
   replay: { status: 'idle', steps: [] },
   replayHistory: [],
+  browserInstallation: {
+    status: 'checking',
+    installPath: '',
+    estimatedDownloadBytes: 300 * 1024 * 1024,
+  },
   verifyAssertion: 'visible',
 };
 

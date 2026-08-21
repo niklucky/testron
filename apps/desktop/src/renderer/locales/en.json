@@ -737,5 +737,19 @@
   "you_company_com": "you@company.com",
   "you_example_com": "you@example.com",
   "your_latest_test_activity": "Your latest test activity",
-  "your_name": "Your name"
+  "your_name": "Your name",
+  "chromium_is_required": "Chromium is required",
+  "testron_uses_a_private_chromium": "Testron needs its own compatible Chromium to run tests on this computer.",
+  "chromium_is_only_used_by_testron": "This browser is installed for your account and is only used by Testron.",
+  "download_and_install": "Download and install",
+  "download_size": "Download size",
+  "install_location": "Install location",
+  "installation_in_progress": "Installation in progress",
+  "not_now": "Not now",
+  "preparing_installation": "Preparing installation…",
+  "downloading_chromium": "Downloading Chromium…",
+  "extracting_chromium": "Extracting Chromium…",
+  "verifying_chromium": "Verifying Chromium…",
+  "technical_details": "Technical details",
+  "up_to_size": "Up to {{value1}}"
 }

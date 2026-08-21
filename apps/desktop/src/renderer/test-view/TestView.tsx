@@ -10,6 +10,7 @@ import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
+import { BrowserInstallModal } from './BrowserInstallModal';
 import {
   AssertionCard,
   DetailCard,
@@ -47,6 +48,11 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   },
   replay: { status: 'idle', steps: [] },
   replayHistory: [],
+  browserInstallation: {
+    status: 'checking',
+    installPath: '',
+    estimatedDownloadBytes: 300 * 1024 * 1024,
+  },
   verifyAssertion: 'visible',
 };
 
@@ -66,6 +72,8 @@ export const TestView = () => {
     index: number | null;
     value: string;
   }>();
+  const [browserInstallOpen, setBrowserInstallOpen] = useState(false);
+  const runAfterInstall = useRef(false);
   const creatingFromTestId = useRef<string | undefined>(undefined);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
@@ -281,12 +289,7 @@ export const TestView = () => {
     replaceSteps(next, `Assertion moved to step ${actionIndex + direction + 1}`);
   };
 
-  const run = () => {
-    if (running) {
-      window.testron?.command({ type: 'cancel-run' });
-      setLog('Cancelling run…');
-      return;
-    }
+  const startRun = () => {
     window.testron?.command({
       type: 'run-test',
       environmentVariables: {},
@@ -295,6 +298,27 @@ export const TestView = () => {
     });
     setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
   };
+
+  const run = () => {
+    if (running) {
+      window.testron?.command({ type: 'cancel-run' });
+      setLog('Cancelling run…');
+      return;
+    }
+    if (snapshot.browserInstallation.status !== 'ready') {
+      setBrowserInstallOpen(true);
+      return;
+    }
+    startRun();
+  };
+
+  useEffect(() => {
+    if (!browserInstallOpen || !runAfterInstall.current) return;
+    if (snapshot.browserInstallation.status !== 'ready') return;
+    runAfterInstall.current = false;
+    setBrowserInstallOpen(false);
+    startRun();
+  }, [browserInstallOpen, snapshot.browserInstallation.status]);
 
   const sourceModalOpen = sourceOpen && !wideSourceLayout;
   useHotkeys(
@@ -733,6 +757,24 @@ export const TestView = () => {
           onDelete={() => {
             window.testron?.command({ type: 'delete-test', testId: selectedTestId });
             setDeleteOpen(false);
+          }}
+        />
+      )}
+
+      {browserInstallOpen && snapshot.browserInstallation.status !== 'ready' && (
+        <BrowserInstallModal
+          installation={snapshot.browserInstallation}
+          onInstall={() => {
+            runAfterInstall.current = true;
+            window.testron?.command({ type: 'install-browser' });
+          }}
+          onCancel={() => {
+            runAfterInstall.current = false;
+            window.testron?.command({ type: 'cancel-browser-install' });
+          }}
+          onClose={() => {
+            runAfterInstall.current = false;
+            setBrowserInstallOpen(false);
           }}
         />
       )}

@@ -2,12 +2,11 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import {
-  chromium,
-  expect,
-  type BrowserContext,
-  type Locator as PwLocator,
-  type Page,
+import type {
+  BrowserContext,
+  expect as PlaywrightExpect,
+  Locator as PwLocator,
+  Page,
 } from '@playwright/test';
 
 import type { Locator } from '@testron/domain/locators/schema';
@@ -97,6 +96,7 @@ const executeStep = async (
   page: Page,
   step: Step,
   environmentVariables: Readonly<Record<string, string>>,
+  expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
     case 'navigate':
@@ -181,6 +181,9 @@ export class LocalReplayRunner {
   }
 
   async run(options: ReplayOptions): Promise<ReplaySnapshot> {
+    // Loaded only after main.ts configures PLAYWRIGHT_BROWSERS_PATH. A static
+    // import makes Playwright cache its default browser directory too early.
+    const { chromium, expect } = await import('@playwright/test');
     this.cancelled = false;
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
@@ -220,7 +223,12 @@ export class LocalReplayRunner {
         result.status = 'running';
         publish();
         try {
-          await executeStep(page, options.steps[result.index], options.environmentVariables);
+          await executeStep(
+            page,
+            options.steps[result.index],
+            options.environmentVariables,
+            expect,
+          );
           result.status = 'passed';
           result.durationMs = Date.now() - stepStarted;
           result.pageUrl = page.url();

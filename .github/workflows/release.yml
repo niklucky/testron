@@ -64,9 +64,13 @@ jobs:
         # stable across versions.
         run: |
           mkdir -p dist
-          built=$(find apps/desktop/out/make -name '*.zip' -type f | head -n 1)
+          # Scoped to this target's own directory: `out/make` accumulates the
+          # artifacts of every earlier build, which matters the moment anyone
+          # runs this locally.
+          made=apps/desktop/out/make/zip/${{ matrix.platform }}/${{ matrix.arch }}
+          built=$(find "$made" -name '*.zip' -type f | head -n 1)
           if [ -z "$built" ]; then
-            echo "No distributable was produced for ${{ matrix.platform }}/${{ matrix.arch }}." >&2
+            echo "No distributable was produced in $made." >&2
             exit 1
           fi
           mv "$built" "dist/${{ matrix.asset }}"

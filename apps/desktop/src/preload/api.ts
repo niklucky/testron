@@ -1,6 +1,7 @@
 import type { RecordingSnapshot } from '../main/recording/session';
 import type { LibrarySnapshot } from '../main/persistence/repository';
 import type { ReplaySnapshot } from '../main/replay/runner';
+import type { BrowserInstallationStatus } from '../main/replay/browser-installer';
 import type { RecordPanelEvent, RecordPanelState } from './record';
 import type { AppCommand, SessionMenuId, VerifyAssertion } from './app-command';
 
@@ -12,6 +13,7 @@ export interface AppSnapshot extends RecordingSnapshot {
   library: LibrarySnapshot;
   replay: ReplaySnapshot;
   replayHistory: ReplaySnapshot[];
+  browserInstallation: BrowserInstallationStatus;
 }
 
 export interface TestronApi {
