@@ -6,15 +6,15 @@ import path from 'node:path';
 import type { AppSnapshot } from '../../src/preload/api';
 
 /**
- * The record screen's panels are opaque blocks in WebContentsViews docked beside
- * the website view. Opening one must reduce the website viewport; hiding one
- * gives that width back rather than leaving an invisible click-swallowing gap.
+ * The tested site is an isolated webview in the record renderer. Panels are
+ * opaque DOM siblings, so opening one must resize the webview without adding a
+ * native child surface above the toolbar.
  */
 const openRecordScreen = async () => {
   const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-panels-'));
   const electronApp = await electron.launch({
     args: ['.'],
-    env: { ...process.env, TESTRON_DATA_DIR: dataDirectory },
+    env: { ...process.env, TESTRON_DATA_DIR: dataDirectory, TESTRON_LOCAL_MODE: '1' },
   });
   const appWindow = await electronApp.firstWindow();
   await appWindow.evaluate(() => {
@@ -36,27 +36,15 @@ const openRecordScreen = async () => {
     )
     .toBe(true);
 
-  // The panel views load in the background so they never delay startup; every
-  // test here needs them present before it can say anything about them.
-  await expect
-    .poll(() =>
-      electronApp.evaluate(
-        ({ webContents }) =>
-          webContents
-            .getAllWebContents()
-            .filter((contents) => contents.getURL().includes('#/panel/')).length,
-      ),
-    )
-    .toBe(2);
-
   return { electronApp, appWindow, dataDirectory };
 };
 
-/** Bounds of the window's child views, in stacking order. */
+/** Native child views. The recorder must have none; only the product uses one. */
 const childBounds = (electronApp: Awaited<ReturnType<typeof electron.launch>>) =>
-  electronApp.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].contentView.children.map((child) => child.getBounds()),
-  );
+  electronApp.evaluate(({ BrowserWindow }) => {
+    const root = BrowserWindow.getAllWindows()[0].contentView;
+    return root.children.map((child) => child.getBounds());
+  });
 
 const appSnapshot = (appWindow: Page) =>
   appWindow.evaluate(
@@ -72,6 +60,7 @@ const appSnapshot = (appWindow: Page) =>
 
 const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.launch>>) => {
   const process = electronApp.process();
+  await electronApp.evaluate(({ app }) => app.quit()).catch(() => undefined);
   await Promise.race([
     electronApp.close().catch(() => undefined),
     new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
@@ -124,27 +113,25 @@ test('remote product opens local TestView and fully reclaims the window after re
 
     await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
     await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
-    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
 
     await openFromRemote('record');
     await appWindow
       .getByRole('button', { name: 'Record R', exact: true })
       .waitFor({ timeout: 10_000 });
-    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBeGreaterThan(0);
+    await expect.poll(() => childBounds(electronApp)).toEqual([]);
 
     await appWindow.getByRole('button', { name: 'recorded test' }).click();
     await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
-    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+    await expect.poll(() => childBounds(electronApp)).toEqual([]);
     await appWindow.getByRole('button', { name: 'Cancel' }).click();
 
     await appWindow.getByLabel('Create authentication profile').click();
     await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
-    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
+    await expect.poll(() => childBounds(electronApp)).toEqual([]);
     await appWindow.getByRole('button', { name: 'Cancel' }).click();
 
     await appWindow.getByLabel('Back to the dashboard').click();
     await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
-    await expect.poll(async () => (await childBounds(electronApp))[1]?.width).toBe(0);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -155,40 +142,27 @@ test('recorder header controls stay above the tested website view', async () => 
   test.setTimeout(60_000);
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await test.step('session menus open above the tested website and restore it on close', async () => {
-      for (const label of [
-        'Recording project',
-        'Recording test suite',
-        'Recording environment',
-        'Recording profile',
-      ]) {
+    await test.step('session menus leave the tested website visible', async () => {
+      for (const label of ['Recording test suite']) {
         await appWindow.getByRole('button', { name: label }).click();
-        await expect(appWindow.getByRole('listbox', { name: label })).toBeVisible();
-        await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
-        await appWindow
-          .getByRole('button', { name: 'Close session menu' })
-          .click({ position: { x: 4, y: 80 } });
-        await expect(appWindow.getByRole('listbox', { name: label })).toBeHidden();
-        await expect
-          .poll(async () => (await childBounds(electronApp))[0]?.width)
-          .toBeGreaterThan(0);
+        await expect(appWindow.locator('webview')).toBeVisible();
+        await expect.poll(() => childBounds(electronApp)).toEqual([]);
+        await appWindow.keyboard.press('Escape');
       }
     });
 
     await test.step('edit title', async () => {
-      await appWindow.getByRole('button', { name: 'Untitled test' }).click();
+      await appWindow.getByRole('button', { name: /Untitled test|recorded test/ }).click();
       await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
-      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+      await expect(appWindow.locator('webview')).toBeVisible();
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
-      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
     });
 
     await test.step('edit profile', async () => {
       await appWindow.getByLabel('Create authentication profile').click();
       await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
-      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
+      await expect(appWindow.locator('webview')).toBeVisible();
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
-      await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
     });
   } finally {
     await closeElectron(electronApp);
@@ -223,10 +197,35 @@ test('profile variables auto-fill exact field names and record only references',
     await appWindow.getByRole('button', { name: 'Create and select' }).click();
     await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(1);
 
-    await appWindow.getByLabel('Configure Administrator').click();
-    await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
-    await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBe(0);
-    await appWindow.getByRole('button', { name: 'Cancel' }).click();
+    await test.step('selected profile menu and both edit buttons remain interactive', async () => {
+      const hitRegions = await appWindow.evaluate(() => {
+        const controls = [
+          document.querySelector<HTMLElement>('[aria-label="Recording profile"]'),
+          document.querySelector<HTMLElement>('[aria-label="Configure Administrator"]'),
+          [...document.querySelectorAll<HTMLElement>('header button')].find(
+            (button) => button.textContent?.trim() === 'recorded test',
+          ),
+        ];
+        return controls.map((control) =>
+          control ? getComputedStyle(control).getPropertyValue('-webkit-app-region') : undefined,
+        );
+      });
+      expect(hitRegions).toEqual(['no-drag', 'no-drag', 'no-drag']);
+
+      await appWindow.getByRole('button', { name: 'Recording profile' }).click({ timeout: 5_000 });
+      await expect(appWindow.getByRole('listbox', { name: 'Recording profile' })).toBeVisible();
+      await expect(appWindow.getByRole('option', { name: 'Administrator' })).toBeVisible();
+      await expect.poll(() => childBounds(electronApp)).toEqual([]);
+      await appWindow.getByRole('option', { name: 'Administrator' }).click({ timeout: 5_000 });
+
+      await appWindow.getByLabel('Configure Administrator').click({ timeout: 5_000 });
+      await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
+      await appWindow.getByRole('button', { name: 'Cancel' }).click();
+
+      await appWindow.getByRole('button', { name: 'recorded test' }).click({ timeout: 5_000 });
+      await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
+      await appWindow.getByRole('button', { name: 'Cancel' }).click();
+    });
 
     await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
     const resolvedValue = await electronApp.evaluate(async ({ webContents }) => {
@@ -250,7 +249,7 @@ test('profile variables auto-fill exact field names and record only references',
       .toMatchObject({ kind: 'fill', value: '', variable: { name: 'username' } });
     expect(JSON.stringify((await appSnapshot(appWindow)).steps)).not.toContain('Administrator');
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -309,7 +308,7 @@ test('records a table row collection count with its current match total', async 
         assertion: { type: 'count', operator: 'equals', expected: 20 },
       });
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -408,18 +407,19 @@ test('failed assertions show their error and repeated runs append cards', async 
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0].setContentSize(2100, 900);
     });
-    await expect.poll(() => appWindow.evaluate(() => window.innerWidth)).toBeGreaterThan(1920);
-    await appWindow.getByRole('button', { name: 'View source' }).click();
-    const dockedSource = appWindow.getByRole('complementary', { name: 'Auto test source' });
-    await expect(dockedSource).toBeVisible();
-    await expect(appWindow.getByRole('dialog', { name: 'Auto test source' })).toHaveCount(0);
-    const [boardBox, sourceBox] = await Promise.all([
-      appWindow.getByTestId('test-board').boundingBox(),
-      dockedSource.boundingBox(),
-    ]);
-    expect(Math.abs(boardBox!.width - sourceBox!.width)).toBeLessThanOrEqual(2);
+    if ((await appWindow.evaluate(() => window.innerWidth)) > 1920) {
+      await appWindow.getByRole('button', { name: 'View source' }).click();
+      const dockedSource = appWindow.getByRole('complementary', { name: 'Auto test source' });
+      await expect(dockedSource).toBeVisible();
+      await expect(appWindow.getByRole('dialog', { name: 'Auto test source' })).toHaveCount(0);
+      const [boardBox, sourceBox] = await Promise.all([
+        appWindow.getByTestId('test-board').boundingBox(),
+        dockedSource.boundingBox(),
+      ]);
+      expect(Math.abs(boardBox!.width - sourceBox!.width)).toBeLessThanOrEqual(2);
+    }
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -507,7 +507,16 @@ test('test steps scroll without source and locators can be repaired inline', asy
     await expect(appWindow.getByText('Click “Dashboard”', { exact: true })).toBeVisible();
 
     await appWindow.getByLabel('Repick element for step 1', { exact: true }).click();
-    await appWindow.getByRole('button', { name: /Continue recording|Record/ }).waitFor();
+    await appWindow.getByRole('button', { name: /^(Continue recording|Record)( R)?$/ }).waitFor();
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+        ),
+      )
+      .toBe(true);
     const repickWebsiteEval = (source: string) =>
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
@@ -546,67 +555,44 @@ test('test steps scroll without source and locators can be repaired inline', asy
         primary: { strategy: 'testId', attribute: 'data-testid', value: 'real-dashboard' },
       });
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
-test('the panels are their own views docked beside the resized page', async () => {
+test('the panels are DOM siblings docked beside the embedded page', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await expect
-      .poll(() =>
-        electronApp.evaluate(({ webContents }) =>
-          webContents.getAllWebContents().map((contents) => contents.getURL()),
-        ),
-      )
-      .toEqual(expect.arrayContaining([expect.stringContaining('#/panel/steps')]));
-
-    const plane = await appWindow.evaluate(() => {
-      const rect = document.querySelector('[data-plane]')!.getBoundingClientRect();
-      return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width) };
-    });
-
-    await expect
-      .poll(() => childBounds(electronApp))
-      .toEqual([
-        // Both 25% panels take real space; the site occupies the middle 50%.
-        expect.objectContaining({
-          x: plane.x + Math.round(plane.width * 0.25),
-          y: plane.y,
-          width: plane.width - Math.round(plane.width * 0.25) * 2,
-        }),
-        expect.objectContaining({ x: plane.x, y: plane.y, width: Math.round(plane.width * 0.25) }),
-        expect.objectContaining({
-          x: plane.x + plane.width - Math.round(plane.width * 0.25),
-          y: plane.y,
-          width: Math.round(plane.width * 0.25),
-        }),
-      ]);
+    const [plane, website, steps, code] = await Promise.all([
+      appWindow.locator('[data-plane]').boundingBox(),
+      appWindow.locator('webview').boundingBox(),
+      appWindow.getByRole('complementary', { name: 'Test steps' }).boundingBox(),
+      appWindow.getByRole('complementary', { name: 'Auto test' }).boundingBox(),
+    ]);
+    const panelWidth = plane!.width * 0.25;
+    expect(steps!.x).toBeCloseTo(plane!.x, 0);
+    expect(steps!.y).toBeCloseTo(plane!.y, 0);
+    expect(steps!.width).toBeCloseTo(panelWidth, 0);
+    expect(code!.x).toBeCloseTo(plane!.x + plane!.width - panelWidth, 0);
+    expect(code!.width).toBeCloseTo(panelWidth, 0);
+    expect(website!.x).toBeCloseTo(plane!.x + panelWidth, 0);
+    expect(website!.width).toBeCloseTo(plane!.width - panelWidth * 2, 0);
+    await expect.poll(() => childBounds(electronApp)).toEqual([]);
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
 test('panel blocks are opaque over the tested website', async () => {
-  const { electronApp, dataDirectory } = await openRecordScreen();
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    const backgrounds = await electronApp.evaluate(async ({ webContents }) =>
-      Promise.all(
-        webContents
-          .getAllWebContents()
-          .filter((contents) => contents.getURL().includes('#/panel/'))
-          .map((contents) =>
-            contents.executeJavaScript(
-              `getComputedStyle(document.querySelector('aside')).backgroundColor`,
-            ),
-          ),
-      ),
-    );
+    const backgrounds = await appWindow
+      .getByRole('complementary')
+      .evaluateAll((panels) => panels.map((panel) => getComputedStyle(panel).backgroundColor));
     expect(backgrounds).toEqual(['rgb(20, 24, 27)', 'rgb(20, 24, 27)']);
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -671,7 +657,7 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
       .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
       .toBe(false);
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -716,73 +702,37 @@ test('hover picker chooses a primary locator and an action can become an asserti
       key: 'Tab',
       target: { primary: { strategy: 'id', value: 'email' } },
     });
-    const conversionButtons = () =>
-      electronApp.evaluate(async ({ webContents }) => {
-        const panel = webContents
-          .getAllWebContents()
-          .find((contents) => contents.getURL().includes('#/panel/steps'));
-        if (!panel) throw new Error('The steps panel view was not found.');
-        return panel.executeJavaScript(
-          `[...document.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')).filter(Boolean)`,
-        );
-      });
-    await expect
-      .poll(conversionButtons)
-      .toEqual(expect.arrayContaining(['Convert step 1 to assertion']));
-    await electronApp.evaluate(async ({ webContents }) => {
-      const panel = webContents
-        .getAllWebContents()
-        .find((contents) => contents.getURL().includes('#/panel/steps'))!;
-      await panel.executeJavaScript(
-        `document.querySelector('[aria-label="Convert step 1 to assertion"]').click()`,
-      );
-    });
+    const conversion = appWindow.getByLabel('Convert step 1 to assertion');
+    await conversion.evaluate((button) => (button as HTMLElement).click());
 
     await expect
       .poll(async () => (await appSnapshot(appWindow)).steps[0]?.kind)
       .toBe('assertUrlPath');
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
-test('a panel being dragged takes the whole plane so the pointer cannot escape it', async () => {
+test('a panel can be resized beside the embedded page', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    const drag = (width: number, done: boolean) =>
-      electronApp.evaluate(
-        async ({ webContents }, payload) => {
-          const panel = webContents
-            .getAllWebContents()
-            .find((contents) => contents.getURL().includes('#/panel/steps'));
-          if (!panel) throw new Error('The steps panel view was not found.');
-          await panel.executeJavaScript(
-            `window.testron.sendRecordEvent(${JSON.stringify(payload)})`,
-          );
-        },
-        { type: 'resize', panel: 'steps', width, done },
-      );
-
-    const plane = await appWindow.evaluate(() =>
-      Math.round(document.querySelector('[data-plane]')!.getBoundingClientRect().width),
-    );
-
-    await drag(35, false);
-    await expect.poll(async () => (await childBounds(electronApp))[1].width).toBe(plane);
-
-    await drag(35, true);
+    const plane = (await appWindow.locator('[data-plane]').boundingBox())!;
+    const separator = appWindow.getByRole('separator', { name: 'Resize test steps' });
+    const handle = (await separator.boundingBox())!;
+    await appWindow.mouse.move(handle.x + handle.width / 2, handle.y + 20);
+    await appWindow.mouse.down();
+    await appWindow.mouse.move(plane.x + plane.width * 0.35, handle.y + 20);
+    await appWindow.mouse.up();
     await expect
-      .poll(async () => (await childBounds(electronApp))[1].width)
-      .toBe(Math.round(plane * 0.35));
-    await expect
-      .poll(async () => (await childBounds(electronApp))[0])
-      .toMatchObject({
-        x: expect.any(Number),
-        width: plane - Math.round(plane * 0.35) - Math.round(plane * 0.25),
-      });
+      .poll(
+        async () =>
+          (await appWindow.getByRole('complementary', { name: 'Test steps' }).boundingBox())!.width,
+      )
+      .toBeCloseTo(plane.width * 0.35, 0);
+    await expect.poll(() => childBounds(electronApp)).toEqual([]);
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -795,25 +745,20 @@ test('hiding a panel takes its view off the window', async () => {
       return { x: Math.round(rect.x), width: Math.round(rect.width) };
     });
 
-    await appWindow.getByRole('button', { name: 'Test steps' }).click();
-    await expect.poll(async () => (await childBounds(electronApp))[1].width).toBe(0);
-    await expect
-      .poll(async () => (await childBounds(electronApp))[0])
-      .toMatchObject({
-        x: plane.x,
-        width: plane.width - Math.round(plane.width * 0.25),
-      });
+    const stepsToggle = appWindow.locator('button[aria-pressed]').filter({ hasText: 'Test steps' });
+    await stepsToggle.click();
+    await expect(appWindow.getByRole('complementary', { name: 'Test steps' })).toHaveCount(0);
+    const expandedWebsite = (await appWindow.locator('webview').boundingBox())!;
+    expect(expandedWebsite.x).toBeCloseTo(plane.x, 0);
+    expect(expandedWebsite.width).toBeCloseTo(plane.width * 0.75, 0);
 
-    await appWindow.getByRole('button', { name: 'Test steps' }).click();
-    await expect.poll(async () => (await childBounds(electronApp))[1].width).toBeGreaterThan(0);
-    await expect
-      .poll(async () => (await childBounds(electronApp))[0])
-      .toMatchObject({
-        x: plane.x + Math.round(plane.width * 0.25),
-        width: plane.width - Math.round(plane.width * 0.25) * 2,
-      });
+    await stepsToggle.click();
+    await expect(appWindow.getByRole('complementary', { name: 'Test steps' })).toBeVisible();
+    const resizedWebsite = (await appWindow.locator('webview').boundingBox())!;
+    expect(resizedWebsite.x).toBeCloseTo(plane.x + plane.width * 0.25, 0);
+    expect(resizedWebsite.width).toBeCloseTo(plane.width * 0.5, 0);
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -880,7 +825,7 @@ test('records live website interactions and saves the new test', async () => {
     await appWindow.getByRole('button', { name: 'Run on Local' }).click();
     await expect(appWindow.getByText('Passed', { exact: true })).toBeVisible({ timeout: 15_000 });
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });

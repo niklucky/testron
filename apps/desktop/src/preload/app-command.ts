@@ -18,6 +18,9 @@ import { verifyAssertionSchema } from './verify-assertion';
 export { verifyAssertionSchema } from './verify-assertion';
 export type { VerifyAssertion } from './verify-assertion';
 
+export const sessionMenuIdSchema = z.enum(['project', 'suite', 'environment', 'profile']);
+export type SessionMenuId = z.infer<typeof sessionMenuIdSchema>;
+
 /**
  * Desktop IPC is a separate compatibility boundary from the server protocol.
  * Its resource fields reuse protocol invariants, while its command envelope
@@ -202,6 +205,16 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   authRegisterInputSchema.extend({ type: z.literal('register-server') }),
   z.object({ type: z.literal('logout-server') }),
   z.object({ type: z.literal('sync-now') }),
+  z.object({
+    type: z.literal('show-session-menu'),
+    menu: sessionMenuIdSchema,
+    items: z
+      .array(z.object({ id: z.string().max(200), name: z.string().min(1).max(200) }))
+      .max(200),
+    selectedId: z.string().max(200),
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+  }),
   z.object({ type: z.literal('set-record-layout'), layout: recordLayoutSchema }),
   z.object({ type: z.literal('publish-record-state'), state: recordPanelStateSchema }),
 ]);

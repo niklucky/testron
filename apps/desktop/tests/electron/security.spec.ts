@@ -19,12 +19,19 @@ const appSnapshot = (appWindow: Page) =>
 
 const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.launch>>) => {
   const process = electronApp.process();
+  await electronApp.evaluate(({ app }) => app.quit()).catch(() => undefined);
   await Promise.race([
     electronApp.close().catch(() => undefined),
     new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
   ]);
   if (process.exitCode === null) process.kill('SIGTERM');
 };
+
+const launchLocal = (dataDirectory: string) =>
+  electron.launch({
+    args: ['.'],
+    env: { ...process.env, TESTRON_DATA_DIR: dataDirectory, TESTRON_LOCAL_MODE: '1' },
+  });
 
 const openRecorder = async (appWindow: Page) => {
   await appWindow.evaluate(() => {
@@ -39,19 +46,17 @@ const openRecorder = async (appWindow: Page) => {
 };
 
 test('does not preload the local fixture before a target is selected', async () => {
-  const electronApp = await electron.launch({ args: ['.'] });
+  const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-security-empty-'));
+  const electronApp = await launchLocal(dataDirectory);
   try {
     await electronApp.firstWindow();
     await expect
       .poll(() =>
-        electronApp.evaluate(
-          ({ webContents }) =>
-            webContents
-              .getAllWebContents()
-              .filter((contents) => contents.getURL().includes('#/panel/')).length,
+        electronApp.evaluate(({ webContents }) =>
+          webContents.getAllWebContents().filter((contents) => contents.getType() === 'webview'),
         ),
       )
-      .toBe(2);
+      .toEqual([]);
     await expect
       .poll(() =>
         electronApp.evaluate(({ webContents }) =>
@@ -62,12 +67,14 @@ test('does not preload the local fixture before a target is selected', async () 
       )
       .toBe(false);
   } finally {
-    await electronApp.close();
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
 test('the tested website has no privileged renderer surface', async () => {
-  const electronApp = await electron.launch({ args: ['.'] });
+  const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-security-surface-'));
+  const electronApp = await launchLocal(dataDirectory);
   try {
     const appWindow = await electronApp.firstWindow();
     await openRecorder(appWindow);
@@ -105,6 +112,9 @@ test('the tested website has no privileged renderer surface', async () => {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
     });
     expect(result.surface).toEqual({
       requireType: 'undefined',
@@ -113,12 +123,14 @@ test('the tested website has no privileged renderer surface', async () => {
       electronType: 'undefined',
     });
   } finally {
-    await electronApp.close();
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
 test('records the controlled login-like flow through the Electron pipeline', async () => {
-  const electronApp = await electron.launch({ args: ['.'] });
+  const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-security-record-'));
+  const electronApp = await launchLocal(dataDirectory);
   try {
     const appWindow = await electronApp.firstWindow();
     await openRecorder(appWindow);
@@ -185,7 +197,8 @@ test('records the controlled login-like flow through the Electron pipeline', asy
     expect(snapshot.descriptions.join('\n')).toContain('Click button “Continue”');
     expect(snapshot.source).toContain("page.getByRole('button', { name: 'Continue' }).click()");
   } finally {
-    await electronApp.close();
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
 
@@ -195,7 +208,7 @@ test('restores a created project, environment, test, and its steps after restart
   const launch = () =>
     electron.launch({
       args: ['.'],
-      env: { ...process.env, TESTRON_DATA_DIR: dataDirectory },
+      env: { ...process.env, TESTRON_DATA_DIR: dataDirectory, TESTRON_LOCAL_MODE: '1' },
     });
   let electronApp = await launch();
   try {

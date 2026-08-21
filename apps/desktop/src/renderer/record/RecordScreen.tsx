@@ -1,6 +1,6 @@
 import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
@@ -56,6 +56,11 @@ const parkedRecordLayout = (): RecordLayout => ({
   resizing: null,
 });
 
+const TestedWebsite = 'webview' as unknown as ComponentType<{
+  src: string;
+  className: string;
+}>;
+
 /**
  * Recording a test.
  *
@@ -67,17 +72,14 @@ const parkedRecordLayout = (): RecordLayout => ({
  * spec can never drift. Selecting in either lights up the other and points at
  * the element on the page.
  *
- * The screen runs in two hosts. In the packaged app the page is a
- * WebContentsView and the panels are two more, stacked above it: this
- * component then owns the state and *publishes* it, and the plane below is
- * left empty for the native views to fill. Opened in a plain browser — which
- * is how the design is worked on — there are no views, so the same panels and
- * a stand-in page render inline. `hosted` is the only thing that differs.
+ * In Electron the tested site is an isolated webview inside this renderer's
+ * DOM. In a plain browser, where webview is unavailable, a stand-in page is
+ * rendered instead. The panels always live in this document so menus and
+ * dialogs participate in the same hit-testing and stacking tree.
  *
  */
 export const RecordScreen = () => {
   const { t } = useTranslation();
-  /** True in Electron, where the page and the panels are native views. */
   const hosted = typeof window.testron !== 'undefined';
   const { theme } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
@@ -92,7 +94,6 @@ export const RecordScreen = () => {
   const [finishing, setFinishing] = useState<'from-recording' | 'from-pause'>();
   const [configuringProfile, setConfiguringProfile] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
   const addressRef = useRef<HTMLInputElement>(null);
@@ -125,9 +126,11 @@ export const RecordScreen = () => {
 
   useEffect(() => {
     const unsubscribe = window.testron?.onSnapshot(setSnapshot);
+    const unsubscribeTargetUrl = window.testron?.onTargetUrl(setUrl);
     window.testron?.command({ type: 'request-snapshot' });
     return () => {
       unsubscribe?.();
+      unsubscribeTargetUrl?.();
       window.testron?.command({
         type: 'set-record-layout',
         layout: parkedRecordLayout(),
@@ -283,7 +286,7 @@ export const RecordScreen = () => {
   const togglePanel = (panel: PanelId) =>
     setPanels((current) => ({ ...current, [panel]: !current[panel] }));
 
-  /** These actions also receive shortcuts forwarded from the native panel views. */
+  /** These actions also receive shortcuts forwarded from the tested page. */
   const recordHotkeyActions: RecordHotkeyActions = {
     focusAddress: () => addressRef.current?.select(),
     toggleRecording: () => {
@@ -342,7 +345,7 @@ export const RecordScreen = () => {
    */
   const layout = (): RecordLayout => {
     const rect =
-      finishing || configuringProfile || editingTitle || sessionMenuOpen
+      finishing || configuringProfile || editingTitle
         ? undefined
         : planeRef.current?.getBoundingClientRect();
     return {
@@ -407,7 +410,6 @@ export const RecordScreen = () => {
     finishing,
     configuringProfile,
     editingTitle,
-    sessionMenuOpen,
   ]);
 
   // The plane moves when the window does, and the panels have to follow.
@@ -513,11 +515,6 @@ export const RecordScreen = () => {
           window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
           setConfiguringProfile(true);
         }}
-        onMenuOpenChange={(open) => {
-          if (open)
-            window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
-          setSessionMenuOpen(open);
-        }}
         test={name}
         onTestEdit={() => {
           window.testron?.command({ type: 'set-record-layout', layout: parkedRecordLayout() });
@@ -556,13 +553,13 @@ export const RecordScreen = () => {
         onPanel={togglePanel}
       />
 
-      {/* The browser plane is divided into three blocks: optional steps, the
-          resized website, and optional generated code. In Electron this outer
-          rectangle is measured for the three native views; in the browser
-          study the same insets are applied directly. */}
+      {/* The browser plane is divided into optional steps, the isolated tested
+          site, and optional generated code — all in one DOM stacking tree. */}
       <div ref={planeRef} data-plane className="relative min-h-0 flex-1">
-        {!hosted && (
-          <div className="absolute inset-y-0" style={websiteInset}>
+        <div className="absolute inset-y-0" style={websiteInset}>
+          {hosted ? (
+            <TestedWebsite src={url} className="h-full w-full" />
+          ) : (
             <TargetPage
               state={pageState}
               active={selected?.spot}
@@ -570,10 +567,10 @@ export const RecordScreen = () => {
               tag={selected?.locator}
               recording={status === 'recording'}
             />
-          </div>
-        )}
+          )}
+        </div>
 
-        {status === 'recording' && !hosted && (
+        {status === 'recording' && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-y-0 z-30"
@@ -584,13 +581,16 @@ export const RecordScreen = () => {
           />
         )}
 
-        {!hosted && panels.steps && (
+        {panels.steps && (
           <GlassPanel
             side="left"
             title={t('test_steps')}
             subtitle={t('message_2', { value1: steps.length, value2: clock(elapsed) })}
             width={widths.steps}
-            onResize={(width) => setWidths((current) => ({ ...current, steps: width }))}
+            onResize={(width, phase) => {
+              setWidths((current) => ({ ...current, steps: width }));
+              setResizing(phase === 'end' ? null : 'steps');
+            }}
             onClose={() => togglePanel('steps')}
             action={
               mode === 'assert' ? (
@@ -618,13 +618,16 @@ export const RecordScreen = () => {
           </GlassPanel>
         )}
 
-        {!hosted && panels.code && (
+        {panels.code && (
           <GlassPanel
             side="right"
             title={t('auto_test')}
             subtitle={context.file.split('/').at(-1)}
             width={widths.code}
-            onResize={(width) => setWidths((current) => ({ ...current, code: width }))}
+            onResize={(width, phase) => {
+              setWidths((current) => ({ ...current, code: width }));
+              setResizing(phase === 'end' ? null : 'code');
+            }}
             onClose={() => togglePanel('code')}
             action={
               <IconButton icon="copy" size="sm" label={t('copy_the_spec')} onClick={copySource} />
@@ -632,6 +635,14 @@ export const RecordScreen = () => {
           >
             <CodePanel lines={lines} selectedId={selectedId} onSelectStep={setSelectedId} />
           </GlassPanel>
+        )}
+
+        {resizing && (
+          <div
+            aria-hidden
+            className="absolute inset-0 z-10 cursor-col-resize"
+            data-resize-shield={resizing}
+          />
         )}
 
         {finishing && (

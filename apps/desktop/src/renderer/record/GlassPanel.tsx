@@ -11,8 +11,7 @@ export type ResizePhase = 'start' | 'move' | 'end';
 /**
  * An opaque panel docked beside the recorded page. The site is resized into
  * the remaining centre space, so forms and text are never hidden underneath.
- * The frame is host-agnostic: inline in the browser study and a dedicated
- * WebContentsView in Electron.
+ * The panel remains in the record renderer beside the isolated tested page.
  */
 export const GlassPanel = ({
   side,
@@ -74,8 +73,8 @@ export const GlassPanel = ({
         role="separator"
         aria-label={t('resize', { value1: title.toLowerCase() })}
         aria-orientation="vertical"
-        className={`absolute inset-y-0 w-1.5 cursor-col-resize hover:bg-accent/40 ${
-          side === 'left' ? '-right-[3px]' : '-left-[3px]'
+        className={`absolute inset-y-0 z-10 w-1.5 cursor-col-resize hover:bg-accent/40 ${
+          side === 'left' ? 'right-0' : 'left-0'
         }`}
         onPointerDown={(event) => {
           dragging.current = true;

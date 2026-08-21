@@ -7,9 +7,19 @@ const launch = async (name: string) => {
   const dataDirectory = mkdtempSync(path.join(tmpdir(), `testron-${name}-`));
   const electronApp = await electron.launch({
     args: ['.'],
-    env: { ...process.env, TESTRON_DATA_DIR: dataDirectory },
+    env: { ...process.env, TESTRON_DATA_DIR: dataDirectory, TESTRON_LOCAL_MODE: '1' },
   });
   return { electronApp, appWindow: await electronApp.firstWindow(), dataDirectory };
+};
+
+const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.launch>>) => {
+  const process = electronApp.process();
+  await electronApp.evaluate(({ app }) => app.quit()).catch(() => undefined);
+  await Promise.race([
+    electronApp.close().catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+  if (process.exitCode === null) process.kill('SIGTERM');
 };
 
 test('record screen hotkeys control recording and ignore ordinary keys in the address', async () => {
@@ -41,6 +51,7 @@ test('record screen hotkeys control recording and ignore ordinary keys in the ad
     await appWindow.getByLabel('Address').press('Escape');
     await appWindow.keyboard.press('R');
     await expect(appWindow.getByRole('button', { name: /Pause/ })).toBeVisible();
+    const addressBounds = (await appWindow.getByLabel('Address').boundingBox())!;
 
     const sendWebsiteKey = (keyCode: string, typeCharacter = false) =>
       electronApp.evaluate(
@@ -99,12 +110,20 @@ test('record screen hotkeys control recording and ignore ordinary keys in the ad
       'true',
     );
 
-    await appWindow.getByLabel('Address').click();
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window.focus();
+      window.webContents.focus();
+    });
+    await appWindow.mouse.click(
+      addressBounds.x + addressBounds.width / 2,
+      addressBounds.y + addressBounds.height / 2,
+    );
     await appWindow.getByLabel('Address').press('Escape');
     await appWindow.keyboard.press('R');
     await expect(appWindow.getByRole('button', { name: /Resume/ })).toBeVisible();
   } finally {
-    await electronApp.close().catch(() => undefined);
+    await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });

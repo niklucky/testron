@@ -7,12 +7,8 @@ import type { CaptureMode, SpotId } from './types';
 /**
  * The page under test.
  *
- * In the packaged app this rectangle belongs to a WebContentsView showing the
- * real site (see main/main.ts — the view is already sized to sit under the
- * toolbar). Until the recorder is wired to this screen, a stand-in page in the
- * screenshot tokens keeps the layout honest: same proportions, same places for
- * the recorder to point at, and it follows the theme instead of punching a
- * hole in the window.
+ * In the packaged app this rectangle contains the isolated tested-site
+ * webview. In a regular browser, a stand-in page keeps the layout useful.
  */
 
 export type PageState = {

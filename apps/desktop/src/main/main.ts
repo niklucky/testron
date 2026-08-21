@@ -9,7 +9,9 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   safeStorage,
+  type WebContents,
   WebContentsView,
 } from 'electron';
 import { z } from 'zod';
@@ -46,12 +48,7 @@ import {
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
-import {
-  recordPanelEventSchema,
-  recordShortcutKeySchema,
-  type PanelId,
-  type RecordLayout,
-} from '../preload/record';
+import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
@@ -74,15 +71,8 @@ const APP_ICON_PATH = path.join(
   'assets/brand/testron-app-icon-18-glass-t-gradient.png',
 );
 
-const PANEL_IDS = ['steps', 'code'] as const;
-const PANEL_ROUTES: Record<PanelId, string> = { steps: 'panel/steps', code: 'panel/code' };
 const OFF_WINDOW = { x: 0, y: 0, width: 0, height: 0 } as const;
 
-const idleRecordLayout = (): RecordLayout => ({
-  plane: null,
-  panels: { steps: { visible: false, width: 25 }, code: { visible: false, width: 25 } },
-  resizing: null,
-});
 const recorderControlSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('set-assertion'),
@@ -111,8 +101,7 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
 
 let mainWindow: BrowserWindow | undefined;
 let remoteView: WebContentsView | undefined;
-let websiteView: WebContentsView | undefined;
-let panelViews = new Map<PanelId, WebContentsView>();
+let websiteContents: WebContents | undefined;
 let repository: TestronRepository | undefined;
 let tokenStore: SecureTokenStore | undefined;
 let serverClient: DesktopServerClient | undefined;
@@ -167,6 +156,7 @@ const createWindow = async (): Promise<void> => {
     webPreferences: {
       ...APP_RENDERER_WEB_PREFERENCES,
       preload: path.join(__dirname, 'app.js'),
+      webviewTag: true,
     },
   });
 
@@ -197,97 +187,24 @@ const createWindow = async (): Promise<void> => {
         event.preventDefault();
       }
     });
-    mainWindow.contentView.addChildView(remoteView);
-  }
-
-  websiteView = new WebContentsView({
-    webPreferences: {
-      ...TESTED_WEBSITE_WEB_PREFERENCES,
-      preload: path.join(__dirname, 'recorder.js'),
-    },
-  });
-  mainWindow.contentView.addChildView(websiteView);
-
-  /**
-   * The step and spec panels are views of their own, added after the website
-   * view so they composite above it, and painted on a transparent background
-   * so the page shows through their tint.
-   *
-   * They are app renderers — same preload, same origin, same sandbox as the
-   * main window — reached at their own hash routes. They talk to the record
-   * screen only through the relay below.
-   */
-  for (const id of PANEL_IDS) {
-    const view = new WebContentsView({
-      webPreferences: {
-        ...APP_RENDERER_WEB_PREFERENCES,
-        preload: path.join(__dirname, 'app.js'),
-      },
-    });
-    view.setBackgroundColor('#00000000');
-    view.setBounds(OFF_WINDOW);
-    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    mainWindow.contentView.addChildView(view);
-    panelViews.set(id, view);
   }
 
   let productVisible = Boolean(remoteView);
-  let recordLayout = idleRecordLayout();
+  let remoteAttached = false;
+  let sessionMenu: Menu | undefined;
 
-  /**
-   * One arithmetic pass over the whole stack. The record screen measures the
-   * rectangle it wants the page to fill and sends it here; the panels are cut
-   * out of that same rectangle, so the three views can never disagree about
-   * where the browser plane is.
-   */
+  const setRemoteAttached = (attached: boolean): void => {
+    if (!mainWindow || !remoteView || attached === remoteAttached) return;
+    if (attached) mainWindow.contentView.addChildView(remoteView);
+    else mainWindow.contentView.removeChildView(remoteView);
+    remoteAttached = attached;
+  };
+
+  /** The remote product view is attached only while it owns the full window. */
   const layout = (): void => {
     const [width, height] = mainWindow?.getContentSize() ?? [0, 0];
-    // A stale RecordScreen can still publish once after the remote product is
-    // shown. Product mode always wins so a tested-site view can never cover it.
-    const plane = productVisible ? null : recordLayout.plane;
-
+    setRemoteAttached(productVisible);
     remoteView?.setBounds(productVisible ? { x: 0, y: 0, width, height } : OFF_WINDOW);
-
-    if (plane) {
-      const stepsWidth = recordLayout.panels.steps.visible
-        ? Math.round((plane.width * recordLayout.panels.steps.width) / 100)
-        : 0;
-      const codeWidth = recordLayout.panels.code.visible
-        ? Math.round((plane.width * recordLayout.panels.code.width) / 100)
-        : 0;
-      websiteView?.setBounds({
-        x: plane.x + stepsWidth,
-        y: plane.y,
-        width: Math.min(
-          Math.max(0, plane.width - stepsWidth - codeWidth),
-          Math.max(0, width - plane.x - stepsWidth),
-        ),
-        height: Math.min(plane.height, Math.max(0, height - plane.y)),
-      });
-    } else {
-      websiteView?.setBounds(OFF_WINDOW);
-    }
-
-    for (const [id, view] of panelViews) {
-      const panel = recordLayout.panels[id];
-      if (!plane || !panel.visible) {
-        view.setBounds(OFF_WINDOW);
-        continue;
-      }
-      // Mid-drag the panel owns the whole plane: the pointer stays inside one
-      // view, and the transparent remainder shields the page from stray clicks.
-      if (recordLayout.resizing === id) {
-        view.setBounds(plane);
-        continue;
-      }
-      const panelWidth = Math.round((plane.width * panel.width) / 100);
-      view.setBounds({
-        x: id === 'steps' ? plane.x : plane.x + plane.width - panelWidth,
-        y: plane.y,
-        width: panelWidth,
-        height: plane.height,
-      });
-    }
   };
   layout();
   mainWindow.on('resize', layout);
@@ -708,8 +625,8 @@ const createWindow = async (): Promise<void> => {
   const applyContext = (): void => {
     const { selectedTest, environment } = selectedContext();
     session.setGenerationContext(selectedTest?.title ?? 'recorded test');
-    if (websiteView && !websiteView.webContents.isDestroyed()) {
-      websiteView.webContents.send(RECORDER_CONFIG_CHANNEL, {
+    if (websiteContents && !websiteContents.isDestroyed()) {
+      websiteContents.send(RECORDER_CONFIG_CHANNEL, {
         testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
         captureMode: session.snapshot().captureMode,
         recording: session.snapshot().recording,
@@ -726,49 +643,57 @@ const createWindow = async (): Promise<void> => {
     if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
   }
 
-  websiteView.webContents.setWindowOpenHandler(({ url, disposition }) => {
-    session.warn(`Blocked ${disposition} popup to ${url}. Popups are not recorded yet.`);
-    return { action: 'deny' };
-  });
-  websiteView.webContents.on('will-navigate', (event, url) => {
+  const configureWebsiteContents = (contents: WebContents): void => {
+    websiteContents = contents;
+    contents.setWindowOpenHandler(({ url, disposition }) => {
+      session.warn(`Blocked ${disposition} popup to ${url}. Popups are not recorded yet.`);
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (event, target) => {
+      try {
+        safeUrl(target);
+      } catch {
+        event.preventDefault();
+        session.warn(`Blocked non-HTTP(S) navigation: ${target}`);
+      }
+    });
+    const didNavigate = (target: string) => {
+      session.navigated(target);
+      applyContext();
+      sendSnapshot(session.snapshot());
+    };
+    contents.on('did-navigate', (_event, target) => didNavigate(target));
+    contents.on('did-navigate-in-page', (_event, target, isMainFrame) => {
+      if (isMainFrame) didNavigate(target);
+    });
+    contents.on('did-fail-load', (_event, code, description, target, isMainFrame) => {
+      if (isMainFrame)
+        session.warn(`Could not load ${target || 'the tested page'} (${code}): ${description}`);
+    });
+    contents.once('destroyed', () => {
+      if (websiteContents === contents) websiteContents = undefined;
+    });
+    applyContext();
+  };
+
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     try {
-      safeUrl(url);
+      safeUrl(params.src);
     } catch {
       event.preventDefault();
-      session.warn(`Blocked non-HTTP(S) navigation: ${url}`);
+      return;
     }
-  });
-  websiteView.webContents.on('did-navigate', (_event, url) => {
-    session.navigated(url);
-    const { environment } = selectedContext();
-    websiteView?.webContents.send(RECORDER_CONFIG_CHANNEL, {
-      testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
-      captureMode: session.snapshot().captureMode,
-      recording: session.snapshot().recording,
-      assertion: verifyAssertion,
-      repicking: repickIndex !== undefined,
-      profileVariables: allProfileVariables()
-        .filter((variable) => variable.profileId === selectedProfileId)
-        .map(({ name, value }) => ({ name, value })),
+    Object.assign(webPreferences, TESTED_WEBSITE_WEB_PREFERENCES, {
+      preload: path.join(__dirname, 'recorder.js'),
+      webviewTag: false,
     });
   });
-  websiteView.webContents.on(
-    'did-fail-load',
-    (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
-      if (isMainFrame) {
-        session.warn(
-          `Could not load ${validatedUrl || 'the tested page'} (${errorCode}): ${errorDescription}`,
-        );
-      }
-    },
-  );
+  mainWindow.webContents.on('did-attach-webview', (_event, contents) => {
+    configureWebsiteContents(contents);
+  });
 
   ipcMain.on(RECORDER_CHANNEL, (event, payload: unknown) => {
-    if (
-      event.sender !== websiteView?.webContents ||
-      event.senderFrame !== websiteView.webContents.mainFrame
-    )
-      return;
+    if (event.sender !== websiteContents || event.senderFrame !== websiteContents.mainFrame) return;
     const control = recorderControlSchema.safeParse(payload);
     if (control.success) {
       if (control.data.kind === 'shortcut') {
@@ -805,14 +730,12 @@ const createWindow = async (): Promise<void> => {
     const command: AppCommand = parsed.data;
     switch (command.type) {
       case 'show-product':
-        recordLayout = idleRecordLayout();
         productVisible = Boolean(remoteView);
         if (remoteView && !isWebappLocation(remoteView.webContents.getURL()))
           void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
         layout();
         break;
       case 'reload-product':
-        recordLayout = idleRecordLayout();
         productVisible = Boolean(remoteView);
         if (remoteView) {
           if (isWebappLocation(remoteView.webContents.getURL()))
@@ -1068,22 +991,19 @@ const createWindow = async (): Promise<void> => {
       }
       case 'navigate':
         try {
-          void websiteView?.webContents.loadURL(safeUrl(command.url));
+          mainWindow.webContents.send(APP_CHANNELS.targetUrl, safeUrl(command.url));
         } catch (error) {
           session.warn(error instanceof Error ? error.message : 'Invalid URL.');
         }
         break;
       case 'browser-navigation':
-        if (!websiteView) break;
-        if (command.action === 'back' && websiteView.webContents.navigationHistory.canGoBack())
-          websiteView.webContents.navigationHistory.goBack();
-        else if (
-          command.action === 'forward' &&
-          websiteView.webContents.navigationHistory.canGoForward()
-        )
-          websiteView.webContents.navigationHistory.goForward();
-        else if (command.action === 'reload') websiteView.webContents.reload();
-        else if (command.action === 'stop') websiteView.webContents.stop();
+        if (!websiteContents) break;
+        if (command.action === 'back' && websiteContents.navigationHistory.canGoBack())
+          websiteContents.navigationHistory.goBack();
+        else if (command.action === 'forward' && websiteContents.navigationHistory.canGoForward())
+          websiteContents.navigationHistory.goForward();
+        else if (command.action === 'reload') websiteContents.reload();
+        else if (command.action === 'stop') websiteContents.stop();
         break;
       case 'create-project': {
         if (serverClient && serverState.authentication === 'signedIn') {
@@ -1837,17 +1757,10 @@ const createWindow = async (): Promise<void> => {
         runner.cancel();
         break;
       case 'set-record-layout':
-        // RecordScreen remains mounted underneath the remote WebContentsView.
-        // Ignore its late layout effects while the product owns the window.
-        if (productVisible) break;
-        recordLayout = command.layout;
-        layout();
+        // The tested page and panels are DOM children of RecordScreen now.
         break;
       case 'publish-record-state':
-        for (const view of panelViews.values()) {
-          if (!view.webContents.isDestroyed())
-            view.webContents.send(RECORD_CHANNELS.state, command.state);
-        }
+        // Panels now render in the record renderer and share its state.
         break;
       case 'clear-auth-state': {
         const { environment } = selectedContext();
@@ -1939,13 +1852,41 @@ const createWindow = async (): Promise<void> => {
       case 'sync-now':
         void synchronize(true);
         break;
+      case 'show-session-menu': {
+        sessionMenu?.closePopup(mainWindow);
+        const menu = Menu.buildFromTemplate(
+          command.items.map((item) => ({
+            label: item.name,
+            type: 'radio' as const,
+            checked: item.id === command.selectedId,
+            click: () =>
+              mainWindow?.webContents.send(APP_CHANNELS.sessionMenuSelection, {
+                menu: command.menu,
+                id: item.id,
+              }),
+          })),
+        );
+        sessionMenu = menu;
+        menu.popup({
+          window: mainWindow,
+          x: command.x,
+          y: command.y,
+          callback: () => {
+            if (sessionMenu === menu) sessionMenu = undefined;
+          },
+        });
+        break;
+      }
     }
     if (
       ![
         'request-snapshot',
+        'navigate',
+        'browser-navigation',
         'copy-source',
         'export-source',
         'run-test',
+        'show-session-menu',
         'set-record-layout',
         'publish-record-state',
       ].includes(command.type)
@@ -1964,7 +1905,6 @@ const createWindow = async (): Promise<void> => {
     const command = parsed.data;
 
     if (command.type === 'show-product') {
-      recordLayout = idleRecordLayout();
       productVisible = true;
       if (!isWebappLocation(remoteView.webContents.getURL()))
         void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
@@ -2026,13 +1966,14 @@ const createWindow = async (): Promise<void> => {
           session.load(selectedTest.title, stepsFor(selectedTest.id));
         }
         productVisible = false;
-        recordLayout = idleRecordLayout();
+        layout();
         await loadAppRenderer(mainWindow!.webContents, command.route);
         applyContext();
         sendSnapshot(session.snapshot());
         layout();
       } catch (error) {
         productVisible = false;
+        layout();
         session.warn(error instanceof Error ? error.message : String(error));
         await loadAppRenderer(mainWindow!.webContents, 'recovery');
         layout();
@@ -2040,28 +1981,20 @@ const createWindow = async (): Promise<void> => {
     })();
   });
 
-  // Panels are not trusted to command the app — they report what the user did
-  // in them, and the record screen decides what that means.
-  ipcMain.on(RECORD_CHANNELS.event, (event, payload: unknown) => {
-    const fromPanel = [...panelViews.values()].some((view) => view.webContents === event.sender);
-    if (!fromPanel) return;
-    const parsed = recordPanelEventSchema.safeParse(payload);
-    if (!parsed.success) return;
-    if (mainWindow && !mainWindow.isDestroyed())
-      mainWindow.webContents.send(RECORD_CHANNELS.event, parsed.data);
-  });
-
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.on('close', () => {
+    sessionMenu?.closePopup(mainWindow);
+    if (remoteView && !remoteView.webContents.isDestroyed()) remoteView.webContents.close();
+  });
   mainWindow.on('closed', () => {
+    sessionMenu = undefined;
     loginAttempt += 1;
     if (syncRetry) clearTimeout(syncRetry);
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
     ipcMain.removeAllListeners(REMOTE_APP_CHANNELS.command);
     ipcMain.removeAllListeners(RECORD_CHANNELS.event);
-    for (const view of panelViews.values()) view.webContents.close();
-    panelViews = new Map();
-    websiteView = undefined;
+    websiteContents = undefined;
     remoteView = undefined;
     mainWindow = undefined;
   });
@@ -2079,16 +2012,6 @@ const createWindow = async (): Promise<void> => {
       layout();
     });
   }
-
-  // The panels load alongside everything else rather than ahead of it: they
-  // are off-window until the record screen asks for them, and a panel that
-  // arrives late announces itself and is sent the current state.
-  for (const [id, view] of panelViews) {
-    void loadAppRenderer(view.webContents, PANEL_ROUTES[id]).catch(() => undefined);
-  }
-  // WebContentsView starts on about:blank. Keep it there until a recorder
-  // screen explicitly navigates to the selected environment; the local
-  // fixture is test data, not an application startup page.
 };
 
 app.whenReady().then(async () => {

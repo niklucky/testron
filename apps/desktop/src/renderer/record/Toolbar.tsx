@@ -1,6 +1,7 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useState, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
+import type { SessionMenuId } from '../../preload/app-command';
 import type { VerifyAssertion } from '../../preload/api';
 import { Badge, Button, Icon, IconButton, Kbd, PulseDot } from '../design';
 import { clock } from './codegen';
@@ -34,7 +35,6 @@ export const SessionBar = ({
   profileId,
   onProfile,
   onConfigureProfile,
-  onMenuOpenChange,
   test,
   onTestEdit,
 }: {
@@ -59,37 +59,14 @@ export const SessionBar = ({
   profileId?: string;
   onProfile: (id: string) => void;
   onConfigureProfile: () => void;
-  onMenuOpenChange: (open: boolean) => void;
   test: string;
   onTestEdit: () => void;
 }) => {
   const { t } = useTranslation();
-  const [openMenu, setOpenMenu] = useState<'project' | 'suite' | 'environment' | 'profile'>();
-  const setMenu = (menu: typeof openMenu) => {
-    onMenuOpenChange(Boolean(menu));
-    setOpenMenu(menu);
-  };
-
-  useEffect(() => {
-    if (!openMenu) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenu(undefined);
-    };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [openMenu]);
 
   return (
     <>
-      <header
-        className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-plane px-3"
-        onKeyDownCapture={(event) => {
-          if (event.key === 'Escape' && openMenu) {
-            event.preventDefault();
-            setMenu(undefined);
-          }
-        }}
-      >
+      <header className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-plane px-3">
         <div className="desktop-window-drag h-full w-[74px] shrink-0" />
 
         <div className="desktop-window-controls flex min-w-0 items-center gap-1.5">
@@ -100,60 +77,44 @@ export const SessionBar = ({
             onClick={onBack}
           />
           <SessionMenu
+            menu="project"
             aria-label={t('recording_project')}
-            open={openMenu === 'project'}
             value={projectId ?? ''}
             label={projects.find((entry) => entry.id === projectId)?.name ?? project}
             options={projects}
-            onOpen={() => setMenu(openMenu === 'project' ? undefined : 'project')}
-            onSelect={(id) => {
-              onProject(id);
-              setMenu(undefined);
-            }}
+            onSelect={onProject}
           />
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <SessionMenu
+            menu="suite"
             aria-label={t('recording_test_suite')}
-            open={openMenu === 'suite'}
             value={suiteId ?? ''}
             label={
               suites.find((entry) => entry.id === suiteId)?.name ??
               (suites.length ? t('choose_test_suite') : suite)
             }
             options={[{ id: '', name: t('choose_test_suite') }, ...suites]}
-            onOpen={() => setMenu(openMenu === 'suite' ? undefined : 'suite')}
-            onSelect={(id) => {
-              onSuite(id);
-              setMenu(undefined);
-            }}
+            onSelect={onSuite}
           />
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <SessionMenu
+            menu="environment"
             aria-label={t('recording_environment')}
-            open={openMenu === 'environment'}
             value={environmentId ?? ''}
             label={environments.find((entry) => entry.id === environmentId)?.name ?? environment}
             options={environments}
             icon={<Icon name="grid" size={13} />}
-            onOpen={() => setMenu(openMenu === 'environment' ? undefined : 'environment')}
-            onSelect={(id) => {
-              onEnvironment(id);
-              setMenu(undefined);
-            }}
+            onSelect={onEnvironment}
           />
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
           <SessionMenu
+            menu="profile"
             aria-label={t('recording_profile')}
-            open={openMenu === 'profile'}
             value={profileId ?? ''}
             label={profiles.find((entry) => entry.id === profileId)?.name ?? t('no_profile')}
-            options={[{ id: '', name: t('no_profile') }, ...profiles]}
+            options={profiles}
             prefix={t('profile')}
-            onOpen={() => setMenu(openMenu === 'profile' ? undefined : 'profile')}
-            onSelect={(id) => {
-              onProfile(id);
-              setMenu(undefined);
-            }}
+            onSelect={onProfile}
           />
           <IconButton
             icon="pencil"
@@ -191,79 +152,123 @@ export const SessionBar = ({
           )}
         </div>
       </header>
-      {openMenu && (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="Close session menu"
-          className="desktop-window-controls fixed inset-0 z-40 cursor-default"
-          onClick={() => setMenu(undefined)}
-        />
-      )}
     </>
   );
 };
 
+/** Electron owns the popup so it can composite above the tested-site view. */
 const SessionMenu = ({
+  menu,
   'aria-label': ariaLabel,
-  open,
   value,
   label,
   options,
   prefix,
   icon,
-  onOpen,
   onSelect,
 }: {
+  menu: SessionMenuId;
   'aria-label': string;
-  open: boolean;
   value: string;
   label: string;
   options: Array<{ id: string; name: string }>;
   prefix?: string;
   icon?: ReactNode;
-  onOpen: () => void;
   onSelect: (id: string) => void;
-}) => (
-  <div className="relative">
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      aria-haspopup="listbox"
-      aria-expanded={open}
-      className="desktop-window-controls flex max-w-44 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-ink-2 hover:bg-raised"
-      onClick={onOpen}
-    >
+}) => {
+  const hosted = typeof window.testron !== 'undefined';
+  const useDomMenu = !hosted || (menu === 'profile' && options.length === 1);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside, true);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside, true);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (useDomMenu) return;
+    return window.testron?.onSessionMenuSelect((selection) => {
+      if (selection.menu === menu) onSelect(selection.id);
+    });
+  }, [menu, onSelect, useDomMenu]);
+
+  const contents = (
+    <>
       {icon}
       {prefix && <span className="text-ink-3">{prefix}</span>}
       <span className="truncate">{label}</span>
       <Icon name="caret" size={12} className="shrink-0 text-ink-3" />
-    </button>
-    {open && (
-      <div
-        role="listbox"
+    </>
+  );
+
+  return (
+    <div ref={menuRef} className="desktop-window-controls relative min-w-0 max-w-44">
+      <button
+        type="button"
         aria-label={ariaLabel}
-        className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-full overflow-hidden rounded-lg border border-line bg-surface p-1 shadow-xl"
+        aria-haspopup="menu"
+        aria-expanded={useDomMenu ? open : undefined}
+        disabled={options.length === 0}
+        className="desktop-window-controls flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-ink-2 hover:bg-raised"
+        onClick={(event) => {
+          if (useDomMenu) {
+            setOpen((current) => !current);
+            return;
+          }
+          const rect = event.currentTarget.getBoundingClientRect();
+          window.testron.command({
+            type: 'show-session-menu',
+            menu,
+            items: options,
+            selectedId: value,
+            x: Math.round(rect.left),
+            y: Math.round(rect.bottom + 4),
+          });
+        }}
       >
-        {options.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            role="option"
-            aria-selected={option.id === value}
-            className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm hover:bg-raised ${
-              option.id === value ? 'text-accent' : 'text-ink-2'
-            }`}
-            onClick={() => onSelect(option.id)}
-          >
-            <span className="w-3">{option.id === value ? '✓' : ''}</span>
-            {option.name}
-          </button>
-        ))}
-      </div>
-    )}
-  </div>
-);
+        {contents}
+      </button>
+      {useDomMenu && open && (
+        <div
+          role="listbox"
+          aria-label={ariaLabel}
+          className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-full overflow-hidden rounded-lg border border-line bg-surface p-1 shadow-xl"
+        >
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="option"
+              aria-selected={option.id === value}
+              className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-1.5 text-left text-sm hover:bg-raised ${
+                option.id === value ? 'text-accent' : 'text-ink-2'
+              }`}
+              onClick={() => {
+                onSelect(option.id);
+                setOpen(false);
+              }}
+            >
+              <span className="w-3">{option.id === value ? '✓' : ''}</span>
+              {option.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * Row two: the browser, then the recorder, then the panels — left to right in

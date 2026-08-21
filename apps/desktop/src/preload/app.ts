@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import { APP_CHANNELS, RECORD_CHANNELS } from '../main/security';
 import type { AppCommand, AppSnapshot, TestronApi } from './api';
+import type { SessionMenuId } from './app-command';
 import type { RecordPanelEvent, RecordPanelState } from './record';
 
 const api: TestronApi = {
@@ -13,6 +14,21 @@ const api: TestronApi = {
       listener(snapshot);
     ipcRenderer.on(APP_CHANNELS.snapshot, handler);
     return () => ipcRenderer.removeListener(APP_CHANNELS.snapshot, handler);
+  },
+  onSessionMenuSelect(
+    listener: (selection: { menu: SessionMenuId; id: string }) => void,
+  ): () => void {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      selection: { menu: SessionMenuId; id: string },
+    ) => listener(selection);
+    ipcRenderer.on(APP_CHANNELS.sessionMenuSelection, handler);
+    return () => ipcRenderer.removeListener(APP_CHANNELS.sessionMenuSelection, handler);
+  },
+  onTargetUrl(listener: (url: string) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url);
+    ipcRenderer.on(APP_CHANNELS.targetUrl, handler);
+    return () => ipcRenderer.removeListener(APP_CHANNELS.targetUrl, handler);
   },
   onRecordState(listener: (state: RecordPanelState) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, state: RecordPanelState) => listener(state);
