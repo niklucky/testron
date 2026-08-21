@@ -191,9 +191,9 @@ export const Overview = ({
   );
 
   return (
-    <div className="min-h-0 overflow-y-auto">
-      <div className="w-full p-5">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="min-h-0 overflow-hidden">
+      <div className="flex h-full min-h-0 w-full flex-col p-5">
+        <div className="flex shrink-0 flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.02em]">{t('project_overview')}</h1>
             <p className="mt-1 text-ink-3">
@@ -220,7 +220,7 @@ export const Overview = ({
           </div>
         </div>
 
-        <section className="mt-4 grid grid-cols-6 gap-3 max-[1150px]:grid-cols-4 max-[820px]:grid-cols-2">
+        <section className="mt-4 grid shrink-0 grid-cols-6 gap-3 max-[1150px]:grid-cols-4 max-[820px]:grid-cols-2">
           <StatCard
             icon="test"
             label={t('total_tests')}
@@ -275,13 +275,13 @@ export const Overview = ({
         </section>
 
         {dataStatus === 'live' && shownTotals.tests === 0 && runs === 0 && (
-          <Panel className="mt-3">
+          <Panel className="mt-3 shrink-0">
             <EmptyState>{t('this_project_has_no_tests_or_runs_yet')}</EmptyState>
           </Panel>
         )}
 
-        <section className="mt-3 grid grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] gap-3 max-[1240px]:grid-cols-1">
-          <Panel className="flex min-h-0 flex-col">
+        <section className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden max-[1240px]:grid-cols-1 max-[1240px]:grid-rows-[repeat(2,minmax(0,1fr))]">
+          <Panel className="flex min-h-0 flex-col overflow-hidden">
             <PanelHeader
               title={t('test_suites')}
               subtitle={t('of_suites', { value1: rows.length, value2: suites.length })}
@@ -316,129 +316,136 @@ export const Overview = ({
               <span />
             </div>
 
-            {rows.map((suite) => {
-              const counts = tally(suite);
-              const expanded = expandedSuiteIds.includes(suite.id);
-              const contentId = `overview-suite-${suite.id}`;
-              return (
-                <div key={suite.id} className="border-b border-line-soft last:border-b-0">
-                  <div
-                    className={`grid w-full ${columns} px-4 py-2.5 text-left transition-colors hover:bg-raised`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <StatusDot
-                        tone={
-                          counts.failed > 0 ? 'critical' : counts.skipped > 0 ? 'neutral' : 'good'
-                        }
-                        label={
-                          counts.failed > 0
-                            ? t('failing_count', { count: counts.failed })
-                            : counts.skipped > 0
-                              ? t('some_tests_skipped')
-                              : t('all_passing')
-                        }
-                      />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {rows.map((suite) => {
+                const counts = tally(suite);
+                const expanded = expandedSuiteIds.includes(suite.id);
+                const contentId = `overview-suite-${suite.id}`;
+                return (
+                  <div key={suite.id} className="border-b border-line-soft last:border-b-0">
+                    <div
+                      className={`grid w-full ${columns} px-4 py-2.5 text-left transition-colors hover:bg-raised`}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <StatusDot
+                          tone={
+                            counts.failed > 0 ? 'critical' : counts.skipped > 0 ? 'neutral' : 'good'
+                          }
+                          label={
+                            counts.failed > 0
+                              ? t('failing_count', { count: counts.failed })
+                              : counts.skipped > 0
+                                ? t('some_tests_skipped')
+                                : t('all_passing')
+                          }
+                        />
+                        <button
+                          type="button"
+                          aria-label={t('edit_test_suite', { value1: suite.name })}
+                          className="min-w-0 truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          onClick={() => onEditSuite(suite)}
+                        >
+                          {suite.name}
+                        </button>
+                        {counts.failed > 0 && (
+                          <Badge tone="critical">
+                            {counts.failed} {t('failing')}
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="ui-mono text-ink-2">{suite.tests.length}</span>
+                      <span className="flex items-center gap-2">
+                        <SplitBar
+                          segments={healthSplits(counts)}
+                          className="w-full max-w-[120px] flex-1"
+                        />
+                        <span className="ui-mono shrink-0 text-ink-2">
+                          {passRateOf(suite).toFixed(0)}%
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-ink-3">
+                        <Icon name="clock" size={12} />
+                        {suite.lastRunMinutesAgo === null
+                          ? t('never_2')
+                          : t('ago_value', { value: age(suite.lastRunMinutesAgo) })}
+                      </span>
+                      <span className="truncate text-ink-3">{suite.owner}</span>
                       <button
                         type="button"
-                        aria-label={t('edit_test_suite', { value1: suite.name })}
-                        className="min-w-0 truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                        onClick={() => onEditSuite(suite)}
+                        aria-label={t('test_suite_2', {
+                          value1: expanded ? t('collapse') : t('expand'),
+                          value2: suite.name,
+                        })}
+                        aria-expanded={expanded}
+                        aria-controls={contentId}
+                        className="grid h-6 w-6 place-items-center justify-self-end rounded text-ink-3 transition-colors hover:bg-raised hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                        onClick={() => onToggleSuite(suite.id)}
                       >
-                        {suite.name}
+                        <Icon
+                          name="chevron"
+                          size={14}
+                          className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        />
                       </button>
-                      {counts.failed > 0 && (
-                        <Badge tone="critical">
-                          {counts.failed} {t('failing')}
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="ui-mono text-ink-2">{suite.tests.length}</span>
-                    <span className="flex items-center gap-2">
-                      <SplitBar
-                        segments={healthSplits(counts)}
-                        className="w-full max-w-[120px] flex-1"
-                      />
-                      <span className="ui-mono shrink-0 text-ink-2">
-                        {passRateOf(suite).toFixed(0)}%
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-1.5 text-ink-3">
-                      <Icon name="clock" size={12} />
-                      {suite.lastRunMinutesAgo === null
-                        ? t('never_2')
-                        : t('ago_value', { value: age(suite.lastRunMinutesAgo) })}
-                    </span>
-                    <span className="truncate text-ink-3">{suite.owner}</span>
-                    <button
-                      type="button"
-                      aria-label={t('test_suite_2', {
-                        value1: expanded ? t('collapse') : t('expand'),
-                        value2: suite.name,
-                      })}
-                      aria-expanded={expanded}
-                      aria-controls={contentId}
-                      className="grid h-6 w-6 place-items-center justify-self-end rounded text-ink-3 transition-colors hover:bg-raised hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
-                      onClick={() => onToggleSuite(suite.id)}
-                    >
-                      <Icon
-                        name="chevron"
-                        size={14}
-                        className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
-                      />
-                    </button>
-                  </div>
-
-                  {expanded && (
-                    <div id={contentId} className="border-t border-line-soft bg-plane/45 px-4 py-2">
-                      {suite.tests.length === 0 ? (
-                        <EmptyState className="py-5">{t('no_tests_in_this_suite_yet')}</EmptyState>
-                      ) : (
-                        <ul
-                          className="space-y-0.5"
-                          aria-label={t('tests_4', { value1: suite.name })}
-                        >
-                          {suite.tests.map((test) => {
-                            const verdict = verdictTone[test.status];
-                            return (
-                              <li key={test.id}>
-                                <button
-                                  type="button"
-                                  className="grid w-full grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-accent"
-                                  onClick={() => onOpenTest(test)}
-                                >
-                                  <span className="flex min-w-0 items-center gap-2">
-                                    <StatusDot tone={verdict.tone} label={verdict.label} />
-                                    <span className="truncate font-medium text-ink-2">
-                                      {test.name}
-                                    </span>
-                                  </span>
-                                  <span className="text-ink-3">{t(verdict.label)}</span>
-                                  <span className="ui-mono text-right text-ink-3">
-                                    {test.seconds === undefined
-                                      ? t('never_run')
-                                      : ms(test.seconds * 1000)}
-                                  </span>
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
 
-            {rows.length === 0 && (
-              <EmptyState>
-                {t('no_suites_match')}
-                {query}”.
-              </EmptyState>
-            )}
+                    {expanded && (
+                      <div
+                        id={contentId}
+                        className="border-t border-line-soft bg-plane/45 px-4 py-2"
+                      >
+                        {suite.tests.length === 0 ? (
+                          <EmptyState className="py-5">
+                            {t('no_tests_in_this_suite_yet')}
+                          </EmptyState>
+                        ) : (
+                          <ul
+                            className="space-y-0.5"
+                            aria-label={t('tests_4', { value1: suite.name })}
+                          >
+                            {suite.tests.map((test) => {
+                              const verdict = verdictTone[test.status];
+                              return (
+                                <li key={test.id}>
+                                  <button
+                                    type="button"
+                                    className="grid w-full grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-accent"
+                                    onClick={() => onOpenTest(test)}
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <StatusDot tone={verdict.tone} label={verdict.label} />
+                                      <span className="truncate font-medium text-ink-2">
+                                        {test.name}
+                                      </span>
+                                    </span>
+                                    <span className="text-ink-3">{t(verdict.label)}</span>
+                                    <span className="ui-mono text-right text-ink-3">
+                                      {test.seconds === undefined
+                                        ? t('never_run')
+                                        : ms(test.seconds * 1000)}
+                                    </span>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {rows.length === 0 && (
+                <EmptyState>
+                  {t('no_suites_match')}
+                  {query}”.
+                </EmptyState>
+              )}
+            </div>
           </Panel>
 
-          <Panel className="flex flex-col">
+          <Panel className="flex min-h-0 flex-col overflow-hidden">
             <PanelHeader
               title={t('recent_activity')}
               subtitle={

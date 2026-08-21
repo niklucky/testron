@@ -19,3 +19,19 @@
     line-height: 1.5;
   }
 }
+
+/* Dashboard metric cards intentionally keep their denser hierarchy. */
+.ui-stat-label {
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.ui-stat-value {
+  font-size: 28px;
+  line-height: 32px;
+}
+
+.ui-stat-trend {
+  font-size: 11px;
+  line-height: 16px;
+}

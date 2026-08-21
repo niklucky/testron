@@ -26,15 +26,15 @@ export const StatCard = ({
   className?: string;
 }) => (
   <Panel className={`p-4 ${className}`}>
-    <p className="flex items-center gap-2 text-ink-3">
+    <p className="ui-stat-label flex items-center gap-2 text-ink-3">
       <Icon name={icon} size={14} />
       {label}
     </p>
     <p className="mt-2 flex items-baseline gap-2">
-      <strong className="font-semibold tabular-nums">{value}</strong>
+      <strong className="ui-stat-value font-semibold tabular-nums">{value}</strong>
       {delta}
     </p>
-    {foot && <p className="mt-2 text-ink-3">{foot}</p>}
+    {foot && <p className="ui-stat-label mt-2 text-ink-3">{foot}</p>}
   </Panel>
 );
 
@@ -58,7 +58,7 @@ export const Trend = ({
   const tone: Tone = up === !goodDown ? 'good' : 'critical';
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-1.5 py-px font-semibold tabular-nums"
+      className="ui-stat-trend inline-flex items-center gap-1 rounded-full px-1.5 py-px font-semibold tabular-nums"
       style={toneStyle(tone)}
     >
       <Icon name={up ? 'arrowUp' : 'arrowDown'} size={10} />
