@@ -7,7 +7,7 @@ deterministic Playwright TypeScript.
 
 - `apps/desktop` — Electron application, renderer, local persistence, and replay.
 - `apps/server` — PostgreSQL/Drizzle canonical persistence and typed tRPC API.
-- `apps/web` — the public site at testron.dev; static, deployed to GitHub Pages.
+- `apps/web` — the public site at testron.dev; a static build served by nginx.
 - `packages/domain` — platform-independent schemas and test behavior.
 - `packages/protocol` — shared Zod client/server contracts.
 - `packages/test-fixtures` — controlled websites used by recorder and replay tests.

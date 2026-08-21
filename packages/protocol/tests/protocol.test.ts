@@ -42,6 +42,7 @@ const revision = {
     stepSchemaVersion: 1,
     title: 'empty test',
     environmentId: ids.environment,
+    prerequisites: [],
     steps: [],
   },
   createdAt: '2026-01-01T00:00:00.000Z',

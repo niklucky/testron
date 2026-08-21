@@ -262,6 +262,7 @@ const createWindow = async (): Promise<void> => {
           environmentId: snapshot.currentRevision.content.environmentId,
           testSuiteId: snapshot.test.testSuiteId,
           title: snapshot.test.title,
+          prerequisites: snapshot.currentRevision.content.prerequisites,
           createdAt: snapshot.test.createdAt,
           updatedAt: snapshot.currentRevision.createdAt,
         }))
@@ -275,6 +276,7 @@ const createWindow = async (): Promise<void> => {
       environmentId: snapshot.currentRevision.content.environmentId,
       testSuiteId: snapshot.test.testSuiteId,
       title: snapshot.test.title,
+      prerequisites: snapshot.currentRevision.content.prerequisites,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
     }));
@@ -483,6 +485,7 @@ const createWindow = async (): Promise<void> => {
     title: string,
     environmentId: string,
     steps: readonly Step[],
+    prerequisites?: readonly string[],
   ) => void = () => undefined;
   const session = new RecordingSession(sendSnapshot, (steps) => {
     if (localMode && selectedTestId) {
@@ -538,7 +541,7 @@ const createWindow = async (): Promise<void> => {
       });
   };
   let testSaveQueue = Promise.resolve();
-  queueTestRevision = (testId, title, environmentId, steps) => {
+  queueTestRevision = (testId, title, environmentId, steps, prerequisites) => {
     const queuedSteps = structuredClone(steps);
     testSaveQueue = testSaveQueue
       .then(async () => {
@@ -556,6 +559,7 @@ const createWindow = async (): Promise<void> => {
                 stepSchemaVersion: 1,
                 title,
                 environmentId,
+                prerequisites: prerequisites ?? canonical.currentRevision.content.prerequisites,
                 steps: reconcileRevisionSteps(canonical.currentRevision.content.steps, queuedSteps),
               },
             }),
@@ -1558,6 +1562,26 @@ const createWindow = async (): Promise<void> => {
           steps,
         );
         if (selectedTestId === test.test.id) session.setGenerationContext(command.title);
+        break;
+      }
+      case 'replace-prerequisites': {
+        const test = remoteTest(command.testId);
+        if (!test) {
+          if (localMode && store.listTests().some((candidate) => candidate.id === command.testId))
+            store.replacePrerequisites(command.testId, command.prerequisites);
+          break;
+        }
+        const steps =
+          selectedTestId === test.test.id
+            ? session.snapshot().steps
+            : test.currentRevision.content.steps.map(({ payload }) => payload);
+        queueTestRevision(
+          test.test.id,
+          test.test.title,
+          test.currentRevision.content.environmentId,
+          steps,
+          command.prerequisites,
+        );
         break;
       }
       case 'delete-test': {

@@ -67,6 +67,7 @@ const snapshot: AppSnapshot = {
         projectId: 'project',
         environmentId: 'environment',
         title: 'sign in',
+        prerequisites: ['Signed in as an administrator'],
         createdAt: '2026-08-16T10:00:00.000Z',
         updatedAt: '2026-08-16T10:05:00.000Z',
       },
@@ -99,6 +100,7 @@ describe('live test board', () => {
       file: 'tests/sign-in.spec.ts',
     });
     expect(board.steps.map((step) => step.kind)).toEqual(['fill', 'click']);
+    expect(board.prerequisites).toEqual(['Signed in as an administrator']);
     expect(board.assertions).toMatchObject([{ afterStep: 1, label: 'Welcome', kind: 'visible' }]);
     expect(board.runs).toMatchObject([
       {

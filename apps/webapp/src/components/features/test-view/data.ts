@@ -23,22 +23,7 @@ export const board: TestBoard = {
     createdBy: 'Nikita S.',
   },
 
-  prerequisites: [
-    {
-      id: 'p1',
-      kind: 'data',
-      title: 'Basket with two items',
-      detail: 'Seeded through the fixtures API before the run starts.',
-      value: 'fixtures/basket-two-items.json',
-    },
-    {
-      id: 'p2',
-      kind: 'flag',
-      title: 'Express delivery enabled',
-      detail: 'Without it the delivery select has one option and step 4 fails.',
-      value: 'checkout.express = on',
-    },
-  ],
+  prerequisites: ['Basket with two items', 'Express delivery enabled'],
 
   // The recorded take, minus the two steps that are assertions — those are
   // the fourth column.

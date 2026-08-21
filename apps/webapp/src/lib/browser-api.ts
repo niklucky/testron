@@ -41,6 +41,7 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
       environmentId: currentRevision.content.environmentId,
       testSuiteId: test.testSuiteId,
       title: test.title,
+      prerequisites: currentRevision.content.prerequisites,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
     })),
@@ -51,6 +52,7 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
       environmentId: currentRevision.content.environmentId,
       testSuiteId: test.testSuiteId,
       title: test.title,
+      prerequisites: currentRevision.content.prerequisites,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
     })),
@@ -294,6 +296,26 @@ const command = (input: AppCommand): void => {
           if (selectedTestId === testId) selectedTestId = undefined;
           await refresh();
           goToDashboard();
+        });
+      break;
+    }
+    case 'replace-prerequisites': {
+      const testId = value<string>(input, 'testId');
+      const current = workspace?.tests.find((item) => item.test.id === testId);
+      if (!current) break;
+      void trpcClient.test.saveRevision
+        .mutate({
+          meta,
+          testId,
+          baseRevision: current.test.currentRevision,
+          content: {
+            ...current.currentRevision.content,
+            prerequisites: value(input, 'prerequisites'),
+          },
+        })
+        .then(async (result) => {
+          if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+          await refresh();
         });
       break;
     }

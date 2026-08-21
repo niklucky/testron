@@ -36,12 +36,17 @@ describe('TestronRepository', () => {
         metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
       },
     ]);
+    repository.replacePrerequisites(test.id, ['Signed in as an administrator', 'Feature enabled']);
     repository.close();
 
     const reopened = new TestronRepository(databasePath);
     expect(reopened.listProjects()).toEqual([project]);
     expect(reopened.listEnvironments()).toEqual([environment]);
-    expect(reopened.listTests()[0]).toMatchObject({ id: test.id, title: test.title });
+    expect(reopened.listTests()[0]).toMatchObject({
+      id: test.id,
+      title: test.title,
+      prerequisites: ['Signed in as an administrator', 'Feature enabled'],
+    });
     expect(reopened.loadSteps(test.id)).toHaveLength(1);
     reopened.close();
   });

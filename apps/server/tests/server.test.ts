@@ -78,6 +78,7 @@ const content = (environmentId: string, title: string): TestRevisionContent => (
   stepSchemaVersion: 1,
   title,
   environmentId,
+  prerequisites: [],
   steps: [
     {
       id: randomUUID(),

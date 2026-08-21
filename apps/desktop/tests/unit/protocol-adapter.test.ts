@@ -18,6 +18,7 @@ describe('desktop protocol adapter', () => {
         projectId: id('2'),
         environmentId: id('3'),
         title: 'sign in',
+        prerequisites: [],
         createdAt: now,
         updatedAt: now,
       },
@@ -62,6 +63,7 @@ describe('desktop protocol adapter', () => {
           stepSchemaVersion: 1,
           title: 'checkout',
           environmentId: id('16'),
+          prerequisites: [],
           steps: [
             {
               id: id('17'),

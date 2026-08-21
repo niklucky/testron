@@ -49,6 +49,8 @@ Add these environment variables:
 - `VPS_USER`: SSH user; defaults to `github` when empty.
 - `VPS_DEPLOY_PATH`: deployment directory; defaults to `/opt/testron` when
   empty.
+- `VPS_WEB_PATH`: public site directory; defaults to `/var/www/testron.dev`
+  when empty.
 - `TESTRON_PUBLIC_URL`: public HTTPS server URL, for example
   `https://api.testron.example`.
 - `RESEND_FROM_EMAIL`: required when `RESEND_API_KEY` is set. Use a sender on a
@@ -86,22 +88,54 @@ ssh -L 4401:127.0.0.1:4401 github@your-vps
 
 ## Public site (testron.dev)
 
-`apps/web` is a static Vite build published to GitHub Pages by
-`.github/workflows/web.yml`. The workflow runs on pushes to `main` that touch
-`apps/web`, `packages/ui`, the lockfile, or the workflow itself, so ordinary
-application commits do not redeploy the site. It can also be run manually from
-the Actions tab.
+`apps/web` is a static Vite build. `.github/workflows/web.yml` builds it and
+ships `apps/web/dist` to the VPS over the same SSH credentials the server
+deployment uses. It runs on pushes to `main` that touch `apps/web`,
+`packages/ui`, the lockfile, or the workflow itself, so ordinary application
+commits do not redeploy the site, and it can be run manually from the Actions
+tab.
 
-One-time setup in the repository settings:
+Each commit is unpacked into `releases/<sha>` and published by moving the
+`current` symlink onto it, so nginx never serves a half-written directory. The
+five newest releases are kept; rolling back is a symlink swap on the VPS:
 
-- **Pages → Build and deployment → Source**: `GitHub Actions`.
-- **Pages → Custom domain**: `testron.dev`, with **Enforce HTTPS** enabled. The
-  domain is also committed as `apps/web/public/CNAME`, which keeps it set across
-  deployments.
-- DNS for the apex: four `A` records to GitHub's Pages addresses
-  (`185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153`),
-  or `ALIAS`/`ANAME` to `niklucky.github.io` where the provider supports it.
-  `app.testron.dev` stays a separate record pointing at the VPS.
+```sh
+ln -sfn /var/www/testron.dev/releases/<sha> /var/www/testron.dev/current.new
+mv -T /var/www/testron.dev/current.new /var/www/testron.dev/current
+```
+
+Prepare the site directory once, owned by the deployment user:
+
+```sh
+sudo install -d -o github -g github /var/www/testron.dev/releases
+```
+
+The path defaults to `/var/www/testron.dev` and is overridden with the
+`VPS_WEB_PATH` repository variable. Serve it from nginx as a plain static root —
+no proxy, since the site has no server side:
+
+```nginx
+server {
+    server_name testron.dev;
+    root /var/www/testron.dev/current;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Asset file names carry a content hash; index.html must never be cached.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+}
+```
+
+`testron.dev` and `app.testron.dev` both resolve to the VPS; the apex serves
+these files and the subdomain proxies to `127.0.0.1:4400` as above.
 
 The site reads the newest release tag from the public GitHub API purely to
 display it. Download links do not depend on that request.

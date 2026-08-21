@@ -8,7 +8,6 @@ import {
   allEnvironments,
   assertionLabels,
   assertionNeedsValue,
-  prerequisiteLabels,
   type Assertion,
   type AssertionKind,
   type Prerequisite,
@@ -138,11 +137,7 @@ export const PrerequisiteCard = ({
     <Card className="group">
       <div className="flex items-start gap-2">
         <span className="min-w-0 flex-1">
-          <Badge size="sm" className="mb-1">
-            {prerequisiteLabels[prerequisite.kind]}
-          </Badge>
-          <span className="block truncate text-ink">{prerequisite.title}</span>
-          <span className="ui-mono mt-1 block truncate text-ink-3">{prerequisite.value}</span>
+          <span className="block whitespace-pre-wrap break-words text-ink">{prerequisite}</span>
         </span>
         <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
           <IconButton icon="pencil" size="sm" label={t('edit_prerequisite')} onClick={onEdit} />

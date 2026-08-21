@@ -56,6 +56,7 @@ export interface TestRecord {
   environmentId: string;
   testSuiteId?: string | null;
   title: string;
+  prerequisites: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -269,6 +270,7 @@ export class TestronRepository {
         environmentId: String(row.environment_id),
         testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
         title: String(row.title),
+        prerequisites: this.getDraft(String(row.id))?.content.prerequisites ?? [],
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
       }));
@@ -392,6 +394,7 @@ export class TestronRepository {
       environmentId,
       testSuiteId: testSuiteId ?? null,
       title: title.trim(),
+      prerequisites: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -438,6 +441,19 @@ export class TestronRepository {
         localUpdatedAt: now,
         syncStatus: draft.testId ? 'pending' : 'local',
       });
+  }
+
+  replacePrerequisites(testId: string, prerequisites: readonly string[]): void {
+    const draft = this.getDraft(testId);
+    if (!draft) throw new Error('The test draft was not found.');
+    const now = new Date().toISOString();
+    this.database.prepare('UPDATE tests SET updated_at = ? WHERE id = ?').run(now, testId);
+    this.writeDraft(testId, {
+      ...draft,
+      content: { ...draft.content, prerequisites: [...prerequisites] },
+      localUpdatedAt: now,
+      syncStatus: draft.testId ? 'pending' : 'local',
+    });
   }
 
   loadSteps(testId: string): Step[] {
@@ -643,6 +659,7 @@ export class TestronRepository {
         projectId: project.id,
         environmentId: environment.id,
         title: revision.content.title,
+        prerequisites: revision.content.prerequisites,
         createdAt: snapshot.test.createdAt,
         updatedAt: revision.createdAt,
       };
@@ -695,6 +712,7 @@ export class TestronRepository {
           stepSchemaVersion: 1,
           title: test.title,
           environmentId: test.environmentId,
+          prerequisites: test.prerequisites,
           steps: this.loadSteps(test.id).map((payload) => ({ id: randomUUID(), payload })),
         },
         localCreatedAt: test.createdAt,

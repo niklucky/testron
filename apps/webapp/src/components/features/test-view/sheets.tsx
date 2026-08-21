@@ -4,9 +4,8 @@ import { useState, type ReactNode } from 'react';
 import { Badge, Button, IconButton, Kbd } from '../../ui/design';
 import { sourceText, type CodeLine } from '../record/codegen';
 import { CodePanel } from '../record/CodePanel';
-import { InlineSelect } from './InlineField';
 import { displayTestViewShortcut } from './hotkeys';
-import { prerequisiteLabels, type Prerequisite, type PrerequisiteKind } from './types';
+import type { Prerequisite } from './types';
 
 /** The shell every dialog on this screen shares. */
 const Sheet = ({
@@ -203,7 +202,7 @@ export const SourceSheet = ({
   );
 };
 
-/** Editing one prerequisite. Small enough to be inline, structured enough not to be. */
+/** Add or edit one string prerequisite. */
 export const PrerequisiteSheet = ({
   prerequisite,
   onSave,
@@ -224,53 +223,29 @@ export const PrerequisiteSheet = ({
       subtitle={t('satisfied_before_the_first_step_runs')}
       onClose={onClose}
     >
-      <div className="space-y-3 px-4 py-4">
+      <div className="px-4 py-4">
         <label className="block">
-          <span className="text-ink-3">{t('kind')}</span>
-          <div className="mt-1.5">
-            <InlineSelect
-              label={t('prerequisite_kind')}
-              value={draft.kind}
-              options={Object.entries(prerequisiteLabels).map(([id, label]) => ({
-                id: id as PrerequisiteKind,
-                label,
-              }))}
-              onChange={(kind) => setDraft({ ...draft, kind })}
-            />
-          </div>
-        </label>
-
-        <label className="block">
-          <span className="text-ink-3">{t('title')}</span>
+          <span className="text-ink-3">{t('prerequisite')}</span>
           <input
+            autoFocus
             className={field}
-            value={draft.title}
-            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-ink-3">{t('how_it_is_satisfied')}</span>
-          <input
-            className={`${field} ui-mono`}
-            value={draft.value}
-            onChange={(event) => setDraft({ ...draft, value: event.target.value })}
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-ink-3">{t('why_it_matters')}</span>
-          <textarea
-            rows={3}
-            className="mt-1.5 w-full resize-none rounded-md border border-line bg-plane p-2.5 outline-none focus:border-accent"
-            value={draft.detail}
-            onChange={(event) => setDraft({ ...draft, detail: event.target.value })}
+            value={draft}
+            maxLength={1000}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && draft.trim()) onSave(draft.trim());
+            }}
           />
         </label>
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-line-soft px-4 py-3">
-        <Button variant="primary" icon="check" onClick={() => onSave(draft)}>
+        <Button
+          variant="primary"
+          icon="check"
+          disabled={!draft.trim()}
+          onClick={() => onSave(draft.trim())}
+        >
           {t('save')}
         </Button>
         <Button variant="ghost" onClick={onClose}>

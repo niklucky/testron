@@ -182,6 +182,7 @@ export const testRevisionContentSchema = z
     stepSchemaVersion: stepSchemaVersionSchema,
     title: testTitleSchema,
     environmentId: entityIdSchema,
+    prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
     steps: z.array(revisionStepSchema).max(10_000),
   })
   .strict()

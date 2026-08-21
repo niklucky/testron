@@ -480,8 +480,7 @@ export const Dashboard = ({
         <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 [-webkit-app-region:no-drag] text-sm">
           <PulseDot label={t('runs_in_flight')} />
           <span className="text-ink-2">
-            {t('now_running')}: {' '}
-            {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}
+            {t('now_running')}: {liveOverview?.runsInFlight ?? library?.runsInFlight ?? 0}
           </span>
         </div>
 

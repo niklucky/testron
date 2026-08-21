@@ -141,7 +141,7 @@ export const liveTestBoard = (
       updatedAt: displayDate(selectedTest?.updatedAt),
       createdBy: 'Local workspace',
     },
-    prerequisites: [],
+    prerequisites: selectedTest?.prerequisites ?? [],
     steps,
     assertions,
     runs: [...localRuns, ...serverRuns].sort((a, b) => a.minutesAgo - b.minutesAgo),

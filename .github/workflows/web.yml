@@ -1,7 +1,7 @@
 name: Web
 
-# The public site at testron.dev. It is built and published only when something
-# it is made of changes, so ordinary application commits do not redeploy it.
+# The public site at testron.dev. It is built and shipped only when something it
+# is made of changes, so ordinary application commits do not redeploy it.
 on:
   push:
     branches: [main]
@@ -16,12 +16,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: web
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment: production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      VPS_HOST: ${{ vars.VPS_HOST }}
+      VPS_PORT: ${{ vars.VPS_PORT || '22' }}
+      VPS_USER: ${{ vars.VPS_USER || 'github' }}
+      VPS_WEB_PATH: ${{ vars.VPS_WEB_PATH || '/var/www/testron.dev' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -36,23 +44,33 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build site
         run: pnpm --filter @testron/web build
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: apps/web/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload build
+        # The bundle travels as a tar stream, so the VPS needs nothing beyond
+        # ssh and tar. Each commit lands in its own directory; nginx is not
+        # looking at it yet.
+        run: |
+          SSH_TARGET="$VPS_USER@$VPS_HOST"
+          RELEASE="$VPS_WEB_PATH/releases/$GITHUB_SHA"
+          ssh -p "$VPS_PORT" "$SSH_TARGET" "rm -rf '$RELEASE' && mkdir -p '$RELEASE'"
+          tar czf - -C apps/web/dist . |
+            ssh -p "$VPS_PORT" "$SSH_TARGET" "tar xzf - -C '$RELEASE'"
+      - name: Publish release
+        # `mv -T` replaces the symlink in one step, so no request is ever served
+        # from a half-written directory. The five newest releases stay on disk;
+        # rolling back is a symlink swap.
+        run: |
+          SSH_TARGET="$VPS_USER@$VPS_HOST"
+          ssh -p "$VPS_PORT" "$SSH_TARGET" "
+            set -e
+            ln -sfn '$VPS_WEB_PATH/releases/$GITHUB_SHA' '$VPS_WEB_PATH/current.new'
+            mv -T '$VPS_WEB_PATH/current.new' '$VPS_WEB_PATH/current'
+            cd '$VPS_WEB_PATH/releases'
+            ls -1dt */ | tail -n +6 | xargs -r rm -rf
+          "

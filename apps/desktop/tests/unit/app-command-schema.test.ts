@@ -117,6 +117,27 @@ describe('desktop application command schema', () => {
     );
   });
 
+  it('validates prerequisite replacement', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'replace-prerequisites',
+        testId: id,
+        prerequisites: ['  Signed in  ', 'Feature enabled'],
+      }),
+    ).toEqual({
+      type: 'replace-prerequisites',
+      testId: id,
+      prerequisites: ['Signed in', 'Feature enabled'],
+    });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'replace-prerequisites',
+        testId: id,
+        prerequisites: [''],
+      }).success,
+    ).toBe(false);
+  });
+
   it('validates server-backed test moves', () => {
     expect(
       appCommandSchema.parse({

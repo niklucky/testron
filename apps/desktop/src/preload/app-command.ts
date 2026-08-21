@@ -189,6 +189,11 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({ type: z.literal('rename-test'), testId: entityIdSchema, title: testTitleSchema }),
+  z.object({
+    type: z.literal('replace-prerequisites'),
+    testId: entityIdSchema,
+    prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100),
+  }),
   z.object({ type: z.literal('delete-test'), testId: entityIdSchema }),
   z.object({
     type: z.literal('move-test'),

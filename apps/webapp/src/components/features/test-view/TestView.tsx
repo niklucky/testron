@@ -10,10 +10,18 @@ import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
-import { AssertionCard, DetailCard, RunCard, StepArrow, StepCard } from './columns';
+import {
+  AssertionCard,
+  DetailCard,
+  PrerequisiteCard,
+  PrerequisitesEmpty,
+  RunCard,
+  StepArrow,
+  StepCard,
+} from './columns';
 import { liveTestBoard } from './live';
 import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotkeys';
-import { DeleteSheet, MoveSheet, SourceSheet } from './sheets';
+import { DeleteSheet, MoveSheet, PrerequisiteSheet, SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
 import type { Assertion, AssertionKind, Run, TestDetail } from './types';
 import { goToDashboard, goToRecorder } from '../../../lib/navigation';
@@ -56,6 +64,10 @@ export const TestView = () => {
   const [newTestOpen, setNewTestOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [prerequisiteEdit, setPrerequisiteEdit] = useState<{
+    index: number | null;
+    value: string;
+  }>();
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -298,6 +310,16 @@ export const TestView = () => {
 
   const lastVerdict = runs[0]?.verdict;
 
+  const replacePrerequisites = (next: string[], message: string) => {
+    if (!selectedTestId) return;
+    window.testron?.command({
+      type: 'replace-prerequisites',
+      testId: selectedTestId,
+      prerequisites: next,
+    });
+    setLog(message);
+  };
+
   if (loaded && !selectedTestId) {
     return (
       <>
@@ -518,9 +540,23 @@ export const TestView = () => {
               icon="clipboard"
               title={t('prerequisites')}
               count={prerequisites.length}
-              hint="Not configured for this test."
+              onAdd={() => setPrerequisiteEdit({ index: null, value: '' })}
+              addLabel={t('add')}
             >
-              <EmptyLane>{t('prerequisites_are_not_persisted_for_this_test_yet')}</EmptyLane>
+              {prerequisites.map((prerequisite, index) => (
+                <PrerequisiteCard
+                  key={`${index}-${prerequisite}`}
+                  prerequisite={prerequisite}
+                  onEdit={() => setPrerequisiteEdit({ index, value: prerequisite })}
+                  onDelete={() => {
+                    replacePrerequisites(
+                      prerequisites.filter((_, candidate) => candidate !== index),
+                      'Prerequisite deleted',
+                    );
+                  }}
+                />
+              ))}
+              {prerequisites.length === 0 && <PrerequisitesEmpty />}
             </Lane>
             <Flow />
 
@@ -690,6 +726,24 @@ export const TestView = () => {
             setLog('Moving test…');
           }}
           onClose={() => setMoveOpen(false)}
+        />
+      )}
+
+      {prerequisiteEdit && (
+        <PrerequisiteSheet
+          key={`${prerequisiteEdit.index}-${prerequisiteEdit.value}`}
+          prerequisite={prerequisiteEdit.value}
+          onSave={(value) => {
+            const next = [...prerequisites];
+            if (prerequisiteEdit.index === null) next.push(value);
+            else next[prerequisiteEdit.index] = value;
+            replacePrerequisites(
+              next,
+              prerequisiteEdit.index === null ? 'Prerequisite added' : 'Prerequisite saved',
+            );
+            setPrerequisiteEdit(undefined);
+          }}
+          onClose={() => setPrerequisiteEdit(undefined)}
         />
       )}
 

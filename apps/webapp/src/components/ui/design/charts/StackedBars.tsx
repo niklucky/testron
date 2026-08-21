@@ -45,7 +45,9 @@ export const StackedBars = ({
             className="absolute inset-x-0 flex items-center gap-2"
             style={{ top: `${(1 - tick / scale) * 100}%` }}
           >
-            <span className={`ui-mono shrink-0 text-right text-sm text-ink-3 ${compact ? 'w-5 ' : 'w-7'}`}>
+            <span
+              className={`ui-mono shrink-0 text-right text-sm text-ink-3 ${compact ? 'w-5 ' : 'w-7'}`}
+            >
               {tick}
             </span>
             <span className="h-px flex-1 bg-line-soft" />

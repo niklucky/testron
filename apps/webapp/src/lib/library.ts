@@ -41,6 +41,7 @@ export interface TestRecord {
   environmentId: string;
   testSuiteId?: string | null;
   title: string;
+  prerequisites: string[];
   createdAt: string;
   updatedAt: string;
 }

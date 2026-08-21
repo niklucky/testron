@@ -8,16 +8,7 @@ import type { RecordedStep } from '../record/types';
  * recorded are the same object at two moments in its life.
  */
 
-export type PrerequisiteKind = 'auth' | 'data' | 'flag' | 'state';
-
-export type Prerequisite = {
-  id: string;
-  kind: PrerequisiteKind;
-  title: string;
-  detail: string;
-  /** How it is satisfied at run time — a fixture name, a flag value, a path. */
-  value: string;
-};
+export type Prerequisite = string;
 
 export type AssertionKind =
   | 'visible'
@@ -112,10 +103,3 @@ export const assertionNeedsValue = (kind: AssertionKind) =>
   kind === 'countExactly' ||
   kind === 'countAtLeast' ||
   kind === 'urlPath';
-
-export const prerequisiteLabels: Record<PrerequisiteKind, string> = {
-  auth: 'Signed-in state',
-  data: 'Seeded data',
-  flag: 'Feature flag',
-  state: 'App state',
-};
