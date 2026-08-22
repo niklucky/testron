@@ -676,7 +676,7 @@ export const RecordScreen = () => {
               window.testron?.command({ type: 'save-recording', title: name, baseUrl: url });
               setFinishing(undefined);
               setLog(`Saved · ${steps.length} steps → test view`);
-              window.location.hash = '#/test';
+              window.testron?.command({ type: 'show-product' });
             }}
           />
         )}

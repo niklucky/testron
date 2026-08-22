@@ -1,5 +1,7 @@
 import type { Step } from '@testron/domain/steps/schema';
 import type {
+  DesktopRunRequest,
+  DesktopRuntimeState,
   ProjectActivity,
   ProjectInvitation,
   ProjectMember,
@@ -146,7 +148,7 @@ declare global {
       platform: 'desktop';
       setLocale(locale: 'en' | 'ru'): void;
       openLocal(request: {
-        route: 'record' | 'test' | 'run' | 'recovery';
+        route: 'record' | 'recovery';
         projectId?: string;
         environmentId?: string;
         testId?: string;
@@ -154,6 +156,12 @@ declare global {
       showProduct(): void;
       login(email: string, password: string): void;
       register(name: string, email: string, password: string): void;
+      requestRuntimeState(): void;
+      runTest(request: DesktopRunRequest): void;
+      cancelRun(): void;
+      installBrowser(): void;
+      cancelBrowserInstall(): void;
+      onRuntimeState(listener: (state: DesktopRuntimeState) => void): () => void;
     };
   }
 }

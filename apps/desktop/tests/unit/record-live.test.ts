@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Step } from '@testron/domain/steps/schema';
-import ru from '../../src/renderer/locales/ru.json';
+import { ru } from '@testron/i18n';
 import { sentence } from '../../src/renderer/record/codegen';
 import { presentRecordedSteps, presentSource } from '../../src/renderer/record/live';
 

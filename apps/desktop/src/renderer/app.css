@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 
-@import './design/tokens.css';
-@import './design/base.css';
-@import '../../../../packages/ui/typography.css';
+@import '@testron/ui/tokens.css';
+@import '@testron/ui/base.css';
+@import '@testron/ui/typography.css';
 
 .desktop-window-drag {
   -webkit-app-region: drag;
