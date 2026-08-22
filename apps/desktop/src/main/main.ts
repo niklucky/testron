@@ -87,6 +87,7 @@ const recorderControlSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
 const remoteAppCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set-locale'), locale: z.enum(['en', 'ru']) }),
   z.object({
     type: z.literal('open-local'),
     route: z.enum(['record', 'test', 'run', 'recovery']),
@@ -199,6 +200,7 @@ const createWindow = async (): Promise<void> => {
   }
 
   let productVisible = Boolean(remoteView);
+  let desktopLocale: 'en' | 'ru' = 'en';
   let remoteAttached = false;
   let sessionMenu: Menu | undefined;
 
@@ -223,18 +225,19 @@ const createWindow = async (): Promise<void> => {
     route?: string,
     theme?: 'dark' | 'light',
   ): Promise<void> => {
-    const query = theme ? `?theme=${theme}` : '';
+    const query = new URLSearchParams({ locale: desktopLocale });
+    if (theme) query.set('theme', theme);
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
       await contents.loadURL(
         route
-          ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}${query}#/${route}`
-          : `${MAIN_WINDOW_VITE_DEV_SERVER_URL}${query}`,
+          ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}?${query}#/${route}`
+          : `${MAIN_WINDOW_VITE_DEV_SERVER_URL}?${query}`,
       );
       return;
     }
     const file = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
     await contents.loadFile(file, {
-      ...(theme ? { query: { theme } } : {}),
+      query: Object.fromEntries(query),
       ...(route ? { hash: `/${route}` } : {}),
     });
   };
@@ -2043,6 +2046,13 @@ const createWindow = async (): Promise<void> => {
     const parsed = remoteAppCommandSchema.safeParse(payload);
     if (!parsed.success) return;
     const command = parsed.data;
+
+    if (command.type === 'set-locale') {
+      desktopLocale = command.locale;
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send(APP_CHANNELS.locale, desktopLocale);
+      return;
+    }
 
     if (command.type === 'show-product') {
       productVisible = true;

@@ -18,6 +18,7 @@ export interface AppSnapshot extends RecordingSnapshot {
 
 export interface TestronApi {
   command(command: AppCommand): void;
+  onLocale(listener: (locale: 'en' | 'ru') => void): () => void;
   onSnapshot(listener: (snapshot: AppSnapshot) => void): () => void;
   onSessionMenuSelect(
     listener: (selection: { menu: SessionMenuId; id: string }) => void,

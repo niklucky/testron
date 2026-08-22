@@ -96,6 +96,20 @@ test('remote product opens local TestView and fully reclaims the window after re
           `window.testronDesktop.openLocal(${JSON.stringify({ route: nextRoute })})`,
         );
       }, route);
+    const setRemoteLocale = (locale: 'en' | 'ru') =>
+      electronApp.evaluate(async ({ BrowserWindow, webContents }, nextLocale) => {
+        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+        const remote = webContents
+          .getAllWebContents()
+          .find(
+            (contents) =>
+              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+          );
+        if (!remote) throw new Error('Remote product WebContentsView was not found.');
+        await remote.executeJavaScript(
+          `window.testronDesktop.setLocale(${JSON.stringify(nextLocale)})`,
+        );
+      }, locale);
 
     await expect
       .poll(() =>
@@ -107,8 +121,12 @@ test('remote product opens local TestView and fully reclaims the window after re
       )
       .toBe(true);
 
+    await setRemoteLocale('ru');
     await openFromRemote('test');
     await expect(appWindow).toHaveURL(/#\/test$/);
+    await expect(appWindow.getByText('Тест не выбран')).toBeVisible();
+
+    await setRemoteLocale('en');
     await expect(appWindow.getByText('No test selected')).toBeVisible();
 
     await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
@@ -164,6 +182,52 @@ test('recorder header controls stay above the tested website view', async () => 
       await expect(appWindow.locator('webview')).toBeVisible();
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
     });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('test steps switch between tester summaries and developer locators', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.evaluate(() =>
+      window.testron.command({
+        type: 'replace-steps',
+        steps: [
+          {
+            version: 1,
+            kind: 'click',
+            target: {
+              primary: { strategy: 'role', role: 'textbox', name: 'Work email' },
+              alternatives: [{ strategy: 'testId', attribute: 'data-testid', value: 'email' }],
+            },
+            metadata: { recordedAt: '2026-08-22T10:00:00.000Z' },
+          },
+        ],
+      }),
+    );
+
+    const stepsPanel = appWindow.getByRole('complementary', { name: 'Test steps' });
+    const summary = stepsPanel.getByText('Click “Work email”', { exact: true });
+    await expect(summary).toBeVisible();
+    const locatorButton = stepsPanel.locator('button[aria-expanded]').filter({
+      hasText: "getByRole('textbox', { name: 'Work email' })",
+    });
+    await expect(locatorButton).toHaveCount(0);
+
+    await stepsPanel.getByRole('button', { name: 'Developer', exact: true }).click();
+    await expect(locatorButton).toBeVisible();
+
+    await stepsPanel.getByRole('button', { name: 'Tester', exact: true }).click();
+    await expect(locatorButton).toHaveCount(0);
+    const testerRow = summary.locator('xpath=ancestor::*[@role="button"][1]');
+    const details = testerRow.getByRole('tooltip');
+    await expect(details).toBeHidden();
+    await testerRow.hover();
+    await expect(details).toContainText("getByRole('textbox', { name: 'Work email' })");
+    await expect(details).toContainText("getByTestId('email')");
+    await expect(details).toBeVisible();
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -436,7 +500,7 @@ test('test steps scroll without source and locators can be repaired inline', asy
           type: 'create-environment',
           projectId: id,
           name: 'Local',
-          baseUrl: 'http://127.0.0.1:4174/',
+          baseUrl: 'http://127.0.0.1:4174/welcome',
           testIdAttribute: 'data-testid',
         }),
       projectId,
@@ -494,6 +558,23 @@ test('test steps scroll without source and locators can be repaired inline', asy
       true,
     );
 
+    const firstSummary = lane.getByText('Click “div > div > button:nth-child(1)”', { exact: true });
+    await expect(firstSummary).toBeVisible();
+    await expect(appWindow.getByLabel('Step 1 locator — click to edit')).toHaveCount(0);
+    const firstCard = firstSummary.locator(
+      'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " group/step ")][1]',
+    );
+    const testerDetails = firstCard.getByRole('tooltip');
+    await expect(testerDetails).toBeHidden();
+    await firstCard.hover();
+    await expect(testerDetails).toContainText("locator('div > div > button:nth-child(1)')");
+    await expect(testerDetails).toContainText("getByRole('menuitem', { name: 'Dashboard' })");
+    await expect(testerDetails).toBeVisible();
+
+    await appWindow
+      .getByRole('group', { name: 'Step view' })
+      .getByRole('button', { name: 'Developer', exact: true })
+      .click();
     await appWindow.getByLabel('Step 1 locator — click to edit').click();
     const locatorInput = appWindow.getByLabel('Step 1 locator');
     await locatorInput.fill("getByRole('menuitem', { name: 'Dashboard' })");
@@ -506,14 +587,35 @@ test('test steps scroll without source and locators can be repaired inline', asy
       .toEqual({ strategy: 'role', role: 'menuitem', name: 'Dashboard' });
     await expect(appWindow.getByText('Click “Dashboard”', { exact: true })).toBeVisible();
 
+    await appWindow.evaluate(() => {
+      const observed = [] as string[];
+      (window as typeof window & { observedRecordSources?: string[] }).observedRecordSources =
+        observed;
+      new MutationObserver(() => {
+        const source = document.querySelector('webview')?.getAttribute('src');
+        if (source) observed.push(source);
+      }).observe(document.body, { childList: true, subtree: true, attributes: true });
+    });
     await appWindow.getByLabel('Repick element for step 1', { exact: true }).click();
     await appWindow.getByRole('button', { name: /^(Continue recording|Record)( R)?$/ }).waitFor();
+    await expect
+      .poll(() => appWindow.locator('webview').getAttribute('src'))
+      .toBe('http://127.0.0.1:4174/welcome');
+    const observedSources = await appWindow.evaluate(
+      () =>
+        (window as typeof window & { observedRecordSources?: string[] }).observedRecordSources ??
+        [],
+    );
+    expect(observedSources.length).toBeGreaterThan(0);
+    expect(observedSources.every((source) => source === 'http://127.0.0.1:4174/welcome')).toBe(
+      true,
+    );
     await expect
       .poll(() =>
         electronApp.evaluate(({ webContents }) =>
           webContents
             .getAllWebContents()
-            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/welcome'),
         ),
       )
       .toBe(true);
@@ -521,7 +623,7 @@ test('test steps scroll without source and locators can be repaired inline', asy
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
           .getAllWebContents()
-          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/welcome');
         if (!website) throw new Error('Fixture WebContentsView was not found.');
         return website.executeJavaScript(script);
       }, source);

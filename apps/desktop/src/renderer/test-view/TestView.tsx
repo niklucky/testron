@@ -5,10 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Step } from '@testron/domain/steps/schema';
 import type { AppSnapshot } from '../../preload/api';
 import { NewTestForm } from '../dashboard/NewTestForm';
-import { Badge, Button, Icon, IconButton, PulseDot, StatusDot } from '../design';
+import { Badge, Button, Icon, IconButton, PulseDot, SegmentedControl, StatusDot } from '../design';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
-import type { RecordedStep } from '../record/types';
+import type { RecordedStep, StepViewMode } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
 import { BrowserInstallModal } from './BrowserInstallModal';
 import {
@@ -64,6 +64,7 @@ export const TestView = () => {
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
+  const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -570,6 +571,19 @@ export const TestView = () => {
               hint={t('assertions_hint', { count: assertions.length })}
               width={360}
               contentTestId="steps-lane-scroll"
+              action={
+                <SegmentedControl
+                  label="step_view"
+                  items={[
+                    { id: 'tester', label: 'tester', icon: 'list' },
+                    { id: 'developer', label: 'developer', icon: 'code' },
+                  ]}
+                  value={stepViewMode}
+                  onChange={setStepViewMode}
+                  variant="pill"
+                  iconOnly
+                />
+              }
             >
               {steps.map((step, index) => {
                 const branch = assertionsFor(board, index);
@@ -581,6 +595,7 @@ export const TestView = () => {
                       step={step}
                       index={index}
                       locatorEditable
+                      viewMode={stepViewMode}
                       failed={result?.status === 'failed'}
                       running={result?.status === 'running'}
                       passed={result?.status === 'passed'}
@@ -625,6 +640,7 @@ export const TestView = () => {
                             kinds={allowedKinds}
                             subjectEditable={false}
                             locatorEditable
+                            viewMode={stepViewMode}
                             status={assertionResult?.status}
                             error={assertionResult?.error}
                             canMoveUp={index > 0}
