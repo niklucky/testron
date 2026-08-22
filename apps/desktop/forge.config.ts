@@ -10,15 +10,39 @@ const desktopDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workspaceDirectory = path.resolve(desktopDirectory, '../..');
 const brandDirectory = path.join(desktopDirectory, 'assets/brand');
 const appIcon = path.join(brandDirectory, 'testron-app-icon');
+const macosSigningEnabled = process.env.MACOS_SIGNING_ENABLED === 'true';
 
 const runtimePackages = ['@playwright/test', 'playwright', 'playwright-core'] as const;
+
+const requiredEnvironmentVariable = (name: string): string => {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} must be set when macOS signing is enabled.`);
+  return value;
+};
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
       unpack: '**/node_modules/{@playwright/test,playwright,playwright-core}/**',
     },
+    appBundleId: 'dev.testron.desktop',
     icon: appIcon,
+    ...(macosSigningEnabled
+      ? {
+          // @electron/osx-sign discovers the Developer ID Application identity
+          // imported into the CI runner's temporary keychain.
+          osxSign: {
+            keychain: requiredEnvironmentVariable('MACOS_KEYCHAIN_PATH'),
+          },
+          // Electron Packager submits with notarytool and staples the accepted
+          // ticket to the app before Forge creates the distributable ZIP.
+          osxNotarize: {
+            appleId: requiredEnvironmentVariable('APPLE_ID'),
+            appleIdPassword: requiredEnvironmentVariable('APPLE_APP_SPECIFIC_PASSWORD'),
+            teamId: requiredEnvironmentVariable('APPLE_TEAM_ID'),
+          },
+        }
+      : {}),
   },
   makers: [new MakerZIP({}, ['darwin', 'win32', 'linux'])],
   hooks: {
