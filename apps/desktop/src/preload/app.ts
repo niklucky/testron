@@ -9,6 +9,11 @@ const api: TestronApi = {
   command(command: AppCommand): void {
     ipcRenderer.send(APP_CHANNELS.command, command);
   },
+  onLocale(listener: (locale: 'en' | 'ru') => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, locale: 'en' | 'ru') => listener(locale);
+    ipcRenderer.on(APP_CHANNELS.locale, handler);
+    return () => ipcRenderer.removeListener(APP_CHANNELS.locale, handler);
+  },
   onSnapshot(listener: (snapshot: AppSnapshot) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: AppSnapshot) =>
       listener(snapshot);

@@ -30,10 +30,11 @@ describe('Electron trust zones', () => {
     expect(RECORDER_CHANNEL).toBe('testron:recorder-candidate');
     expect(Object.values(APP_CHANNELS)).toEqual([
       'testron:app-command',
+      'testron:locale',
       'testron:snapshot',
       'testron:session-menu-selection',
       'testron:target-url',
     ]);
-    expect(new Set([RECORDER_CHANNEL, ...Object.values(APP_CHANNELS)]).size).toBe(5);
+    expect(new Set([RECORDER_CHANNEL, ...Object.values(APP_CHANNELS)]).size).toBe(6);
   });
 });

@@ -15,6 +15,7 @@ import { GlassPanel } from './GlassPanel';
 import { recordPanelShortcutIds, recordShortcuts } from './hotkeys';
 import { StepsPanel } from './StepsPanel';
 import type { RecordedStep } from './types';
+import type { StepViewMode } from './types';
 
 /**
  * What a panel view runs.
@@ -32,6 +33,7 @@ import type { RecordedStep } from './types';
 export const PanelHost = ({ panel }: { panel: PanelId }) => {
   const { t } = useTranslation();
   const [state, setState] = useState<RecordPanelState>();
+  const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
 
   const send = (event: RecordPanelEvent) => window.testron?.sendRecordEvent(event);
 
@@ -114,6 +116,8 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
             selectedId={state?.selectedId}
             expandedId={state?.expandedId}
             repickingId={state?.repickingId}
+            viewMode={stepViewMode}
+            onViewModeChange={setStepViewMode}
             onSelect={(id) => send({ type: 'select', id })}
             onExpand={(id) => send({ type: 'expand', id })}
             onUseAlternative={(id, locator) => send({ type: 'use-alternative', id, locator })}

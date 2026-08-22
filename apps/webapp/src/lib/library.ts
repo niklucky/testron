@@ -144,6 +144,7 @@ declare global {
     testron?: TestronApi;
     testronDesktop?: {
       platform: 'desktop';
+      setLocale(locale: 'en' | 'ru'): void;
       openLocal(request: {
         route: 'record' | 'test' | 'run' | 'recovery';
         projectId?: string;

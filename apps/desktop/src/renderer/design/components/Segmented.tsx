@@ -18,6 +18,7 @@ export const SegmentedControl = <T extends string>({
   variant = 'soft',
   label,
   className = '',
+  iconOnly = false,
 }: {
   items: SegmentedItem<T>[];
   value: T;
@@ -25,6 +26,8 @@ export const SegmentedControl = <T extends string>({
   variant?: 'solid' | 'soft' | 'pill';
   label: string;
   className?: string;
+  /** Keep translated labels accessible while drawing only each item's icon. */
+  iconOnly?: boolean;
 }) => {
   const { t } = useTranslation();
   const pill = variant === 'pill';
@@ -43,8 +46,16 @@ export const SegmentedControl = <T extends string>({
             key={item.id}
             type="button"
             aria-pressed={on}
+            aria-label={iconOnly ? t(item.label) : undefined}
+            title={iconOnly ? t(item.label) : undefined}
             className={`flex items-center gap-1.5 whitespace-nowrap font-medium transition-colors ${
-              pill ? 'h-6 rounded-full px-2.5 ' : 'h-7 rounded px-3 '
+              iconOnly
+                ? pill
+                  ? 'h-6 w-6 justify-center rounded-full '
+                  : 'h-7 w-7 justify-center rounded '
+                : pill
+                  ? 'h-6 rounded-full px-2.5 '
+                  : 'h-7 rounded px-3 '
             } ${
               on
                 ? pill
@@ -57,7 +68,7 @@ export const SegmentedControl = <T extends string>({
             onClick={() => onChange(item.id)}
           >
             {item.icon && <Icon name={item.icon} size={13} />}
-            {t(item.label)}
+            {!iconOnly && t(item.label)}
           </button>
         );
       })}

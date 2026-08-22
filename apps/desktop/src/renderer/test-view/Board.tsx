@@ -16,6 +16,7 @@ export const Lane = ({
   hint,
   onAdd,
   addLabel,
+  action,
   contentTestId,
   children,
   width = 300,
@@ -27,6 +28,7 @@ export const Lane = ({
   hint?: string;
   onAdd?: () => void;
   addLabel?: string;
+  action?: ReactNode;
   contentTestId?: string;
   children: ReactNode;
   width?: number;
@@ -36,12 +38,13 @@ export const Lane = ({
       <Icon name={icon} size={13} className="text-ink-3" />
       <SectionLabel>{title}</SectionLabel>
       {count !== undefined && <span className="ui-mono text-ink-3">{count}</span>}
+      {action && <div className="ml-auto">{action}</div>}
       {onAdd && (
         <IconButton
           icon="plus"
           size="sm"
           label={addLabel ?? `Add to ${title.toLowerCase()}`}
-          className="ml-auto"
+          className={action ? '' : 'ml-auto'}
           onClick={onAdd}
         />
       )}

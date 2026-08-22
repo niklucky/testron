@@ -1,5 +1,6 @@
 export const APP_CHANNELS = {
   command: 'testron:app-command',
+  locale: 'testron:locale',
   snapshot: 'testron:snapshot',
   sessionMenuSelection: 'testron:session-menu-selection',
   targetUrl: 'testron:target-url',

@@ -1,7 +1,7 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { Badge, Icon, IconButton, Meter, StatusDot, toneFill } from '../design';
 import { sentence } from '../record/codegen';
-import { stepStyle, type RecordedStep } from '../record/types';
+import { stepStyle, type RecordedStep, type StepViewMode } from '../record/types';
 import { Card, EmptyLane, Meta, Step as StepArrow } from './Board';
 import { Chip, InlineSelect, InlineText } from './InlineField';
 import {
@@ -172,6 +172,7 @@ export const StepCard = ({
   onAddAssertion,
   onDelete,
   locatorEditable = true,
+  viewMode = 'developer',
 }: {
   step: RecordedStep;
   index: number;
@@ -184,12 +185,13 @@ export const StepCard = ({
   onAddAssertion: () => void;
   onDelete: () => void;
   locatorEditable?: boolean;
+  viewMode?: StepViewMode;
 }) => {
   const { t } = useTranslation();
   const style = stepStyle[step.kind];
   return (
     <Card
-      className="group"
+      className="group group/step relative"
       tone={failed ? 'var(--ui-critical)' : running ? 'var(--ui-accent)' : undefined}
     >
       <div className="flex items-start gap-2">
@@ -197,12 +199,12 @@ export const StepCard = ({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-ink">
             <Icon name={style.icon} size={13} className="shrink-0 text-ink-3" />
-            <span className="truncate">{sentence(step)}</span>
+            <span className="truncate">{sentence(step, t)}</span>
           </span>
 
           {/* The two parts a person actually edits: what it types, and what it
               aims at. Everything else about a step is generated. */}
-          {step.value !== undefined && !step.secret && (
+          {viewMode === 'developer' && step.value !== undefined && !step.secret && (
             <span className="mt-1 flex items-center gap-1 text-ink-3">
               {t('value_2')}
               <InlineText
@@ -214,7 +216,7 @@ export const StepCard = ({
               />
             </span>
           )}
-          {step.locator && locatorEditable && (
+          {viewMode === 'developer' && step.locator && locatorEditable && (
             <>
               <InlineText
                 label={t('step_locator', { value1: index + 1 })}
@@ -243,10 +245,10 @@ export const StepCard = ({
               )}
             </>
           )}
-          {step.locator && !locatorEditable && (
+          {viewMode === 'developer' && step.locator && !locatorEditable && (
             <span className="ui-mono mt-1 block truncate text-ink-3">{step.locator}</span>
           )}
-          {step.secret && (
+          {viewMode === 'developer' && step.secret && (
             <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
               {step.secret}
             </Badge>
@@ -273,7 +275,7 @@ export const StepCard = ({
           )}
         </span>
         <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-          {step.locator && onRepick && (
+          {viewMode === 'developer' && step.locator && onRepick && (
             <IconButton
               icon="focus"
               size="sm"
@@ -297,6 +299,9 @@ export const StepCard = ({
           />
         </span>
       </div>
+      {viewMode === 'tester' && step.locator && (
+        <TechnicalDetails locator={step.locator} alternatives={step.alternatives} />
+      )}
     </Card>
   );
 };
@@ -325,6 +330,7 @@ export const AssertionCard = ({
   kinds,
   status,
   error,
+  viewMode = 'developer',
 }: {
   assertion: Assertion;
   canMoveUp: boolean;
@@ -337,11 +343,33 @@ export const AssertionCard = ({
   kinds?: AssertionKind[];
   status?: 'pending' | 'running' | 'passed' | 'failed';
   error?: string;
+  viewMode?: StepViewMode;
 }) => {
   const { t } = useTranslation();
+  const displayedAssertion: RecordedStep =
+    assertion.kind === 'urlPath'
+      ? {
+          id: assertion.id,
+          kind: 'assertUrl',
+          label: assertion.label,
+          locator: assertion.locator,
+          alternatives: [],
+          value: assertion.expected,
+          at: 0,
+        }
+      : {
+          id: assertion.id,
+          kind: 'assert',
+          label: assertion.label,
+          locator: assertion.locator,
+          alternatives: [],
+          assertion: assertion.kind,
+          value: assertion.expected,
+          at: 0,
+        };
   return (
     <Card
-      className="group"
+      className="group group/assertion relative"
       tone={
         status === 'failed'
           ? 'var(--ui-critical)'
@@ -354,7 +382,9 @@ export const AssertionCard = ({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <Icon name="eye" size={13} className="shrink-0 text-good" />
-            {subjectEditable ? (
+            {viewMode === 'tester' ? (
+              <span className="truncate">{sentence(displayedAssertion, t)}</span>
+            ) : subjectEditable ? (
               <InlineText
                 label={t('assertion_subject')}
                 value={assertion.label}
@@ -366,33 +396,35 @@ export const AssertionCard = ({
             )}
           </span>
 
-          <span className="mt-1 flex flex-wrap items-center gap-1 text-ink-3">
-            <InlineSelect
-              label={t('assertion')}
-              value={assertion.kind}
-              options={(kinds ?? (Object.keys(assertionLabels) as AssertionKind[])).map((id) => ({
-                id,
-                label: assertionLabels[id],
-              }))}
-              onChange={(kind) => onAssertion({ ...assertion, kind })}
-              className=""
-            />
-            {assertionNeedsValue(assertion.kind) && (
-              <InlineText
-                label={
-                  assertion.kind === 'countExactly' || assertion.kind === 'countAtLeast'
-                    ? t('expected_count')
-                    : t('expected_value')
-                }
-                mono
-                value={assertion.expected}
-                onChange={(expected) => onAssertion({ ...assertion, expected })}
-                className="text-ink-2"
+          {viewMode === 'developer' && (
+            <span className="mt-1 flex flex-wrap items-center gap-1 text-ink-3">
+              <InlineSelect
+                label={t('assertion')}
+                value={assertion.kind}
+                options={(kinds ?? (Object.keys(assertionLabels) as AssertionKind[])).map((id) => ({
+                  id,
+                  label: assertionLabels[id],
+                }))}
+                onChange={(kind) => onAssertion({ ...assertion, kind })}
+                className=""
               />
-            )}
-          </span>
+              {assertionNeedsValue(assertion.kind) && (
+                <InlineText
+                  label={
+                    assertion.kind === 'countExactly' || assertion.kind === 'countAtLeast'
+                      ? t('expected_count')
+                      : t('expected_value')
+                  }
+                  mono
+                  value={assertion.expected}
+                  onChange={(expected) => onAssertion({ ...assertion, expected })}
+                  className="text-ink-2"
+                />
+              )}
+            </span>
+          )}
 
-          {assertion.locator && locatorEditable && (
+          {viewMode === 'developer' && assertion.locator && locatorEditable && (
             <InlineText
               label={t('assertion_locator')}
               mono
@@ -401,7 +433,7 @@ export const AssertionCard = ({
               className="mt-1 text-ink-3"
             />
           )}
-          {assertion.locator && !locatorEditable && (
+          {viewMode === 'developer' && assertion.locator && !locatorEditable && (
             <span className="ui-mono mt-1 block truncate text-ink-3">{assertion.locator}</span>
           )}
           {status === 'failed' && (
@@ -443,7 +475,41 @@ export const AssertionCard = ({
           <IconButton icon="trash" size="sm" label={t('delete_assertion')} onClick={onDelete} />
         </span>
       </div>
+      {viewMode === 'tester' && assertion.locator && (
+        <TechnicalDetails locator={assertion.locator} group="assertion" />
+      )}
     </Card>
+  );
+};
+
+const TechnicalDetails = ({
+  locator,
+  alternatives = [],
+  group = 'step',
+}: {
+  locator: string;
+  alternatives?: string[];
+  group?: 'step' | 'assertion';
+}) => {
+  const { t } = useTranslation();
+  return (
+    <span
+      role="tooltip"
+      className={`pointer-events-none invisible absolute top-full right-2 left-2 z-20 mt-1 rounded-md border border-line bg-plane px-2 py-1.5 text-ink-2 opacity-0 shadow-lg transition-opacity ${
+        group === 'step'
+          ? 'group-hover/step:visible group-hover/step:opacity-100'
+          : 'group-hover/assertion:visible group-hover/assertion:opacity-100'
+      }`}
+    >
+      <span className="ui-mono block break-all">
+        {t('locator')} {locator}
+      </span>
+      {alternatives.length > 0 && (
+        <span className="ui-mono mt-1 block break-all text-ink-3">
+          {t('alternative_locators')}: {alternatives.join(', ')}
+        </span>
+      )}
+    </span>
   );
 };
 

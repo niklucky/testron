@@ -133,7 +133,7 @@ export const Waterfall = ({
                       result.status === 'skipped' ? 'text-ink-3' : 'text-ink'
                     }`}
                   >
-                    {step ? sentence(step) : `Step ${result.index + 1}`}
+                    {step ? sentence(step, t) : `Step ${result.index + 1}`}
                   </span>
                 </span>
 

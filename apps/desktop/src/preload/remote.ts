@@ -11,6 +11,7 @@ export type LocalSurfaceRequest = {
 
 export interface TestronDesktopHost {
   platform: 'desktop';
+  setLocale(locale: 'en' | 'ru'): void;
   openLocal(request: LocalSurfaceRequest): void;
   showProduct(): void;
   login(email: string, password: string): void;
@@ -19,6 +20,8 @@ export interface TestronDesktopHost {
 
 const host: TestronDesktopHost = {
   platform: 'desktop',
+  setLocale: (locale) =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'set-locale', locale }),
   openLocal: (request) =>
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, {
       type: 'open-local',

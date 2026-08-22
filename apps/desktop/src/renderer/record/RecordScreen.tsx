@@ -23,7 +23,7 @@ import { replacePrimaryLocator } from './locator-edit';
 import { StepsPanel } from './StepsPanel';
 import { TargetPage, type PageState } from './TargetPage';
 import { BrowserBar, SessionBar } from './Toolbar';
-import type { CaptureMode, PanelId, RecordStatus } from './types';
+import type { CaptureMode, PanelId, RecordStatus, StepViewMode } from './types';
 
 const EMPTY_SNAPSHOT: AppSnapshot = {
   title: 'Untitled test',
@@ -89,10 +89,14 @@ export const RecordScreen = () => {
   const { theme } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [elapsed, setElapsed] = useState(0);
-  const [url, setUrl] = useState('http://127.0.0.1:4174');
+  // Do not mount the webview until the snapshot or an explicit navigation
+  // supplies a target. A fixture fallback here can finish loading after the
+  // selected environment URL and incorrectly win the navigation race.
+  const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [expandedId, setExpandedId] = useState<string>();
+  const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
   const [panels, setPanels] = useState<Record<PanelId, boolean>>({ steps: true, code: true });
   const [widths, setWidths] = useState<Record<PanelId, number>>({ steps: 25, code: 25 });
   /** Set while the finish sheet is open, so "keep recording" picks the take back up. */
@@ -563,7 +567,9 @@ export const RecordScreen = () => {
       <div ref={planeRef} data-plane className="relative min-h-0 flex-1">
         <div className="absolute inset-y-0" style={websiteInset}>
           {hosted ? (
-            <TestedWebsite src={url} className="h-full w-full" />
+            url ? (
+              <TestedWebsite src={url} className="h-full w-full" />
+            ) : null
           ) : (
             <TargetPage
               state={pageState}
@@ -611,6 +617,8 @@ export const RecordScreen = () => {
               selectedId={selectedId}
               expandedId={expandedId}
               repickingId={repickingId}
+              viewMode={stepViewMode}
+              onViewModeChange={setStepViewMode}
               onSelect={setSelectedId}
               onExpand={(id) => setExpandedId((current) => (current === id ? undefined : id))}
               onUseAlternative={useAlternative}

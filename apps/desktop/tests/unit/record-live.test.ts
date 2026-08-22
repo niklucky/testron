@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Step } from '@testron/domain/steps/schema';
+import ru from '../../src/renderer/locales/ru.json';
+import { sentence } from '../../src/renderer/record/codegen';
 import { presentRecordedSteps, presentSource } from '../../src/renderer/record/live';
 
 const at = '2026-08-16T10:00:00.000Z';
@@ -131,5 +133,40 @@ describe('live record presentation', () => {
     ]);
 
     expect(displayed).toMatchObject([{ kind: 'assert', assertion: 'countAtLeast', value: '20' }]);
+  });
+
+  it('localizes manual step descriptions without changing their recorded values', () => {
+    const displayed = presentRecordedSteps([
+      {
+        version: 1,
+        kind: 'fill',
+        target: {
+          primary: { strategy: 'label', text: 'Email' },
+          alternatives: [],
+        },
+        value: 'qa@example.test',
+        metadata: { recordedAt: at },
+      },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target: {
+          primary: { strategy: 'role', role: 'status', name: 'Signed in' },
+          alternatives: [],
+        },
+        assertion: { type: 'visible' },
+        metadata: { recordedAt: '2026-08-16T10:00:01.000Z' },
+      },
+    ]);
+    const translate = (key: string, values: Record<string, string | number> = {}) =>
+      Object.entries(values).reduce(
+        (text, [name, value]) => text.replaceAll(`{{${name}}}`, String(value)),
+        (ru as Record<string, string>)[key] ?? key,
+      );
+
+    expect(displayed.map((step) => sentence(step, translate))).toEqual([
+      'Ввести «qa@example.test» в поле «Email»',
+      'Проверить, что «Signed in» виден',
+    ]);
   });
 });

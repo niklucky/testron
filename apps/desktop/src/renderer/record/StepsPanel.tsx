@@ -1,10 +1,10 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState } from 'react';
 
-import { Badge, Icon, IconButton, Kbd, PulseDot } from '../design';
+import { Badge, Icon, IconButton, Kbd, PulseDot, SegmentedControl } from '../design';
 import { clock, sentence } from './codegen';
 import { displayRecordShortcut } from './hotkeys';
-import { stepStyle, type RecordedStep, type RecordStatus } from './types';
+import { stepStyle, type RecordedStep, type RecordStatus, type StepViewMode } from './types';
 
 /**
  * The manual reading of the take: what a person would do, in order, in words
@@ -19,6 +19,8 @@ export const StepsPanel = ({
   selectedId,
   expandedId,
   repickingId,
+  viewMode,
+  onViewModeChange,
   onSelect,
   onExpand,
   onUseAlternative,
@@ -34,6 +36,8 @@ export const StepsPanel = ({
   /** The step whose alternative locators are open. */
   expandedId?: string;
   repickingId?: string;
+  viewMode: StepViewMode;
+  onViewModeChange: (mode: StepViewMode) => void;
   onSelect: (id: string) => void;
   onExpand: (id: string) => void;
   onUseAlternative: (id: string, locator: string) => void;
@@ -46,6 +50,20 @@ export const StepsPanel = ({
   const { t } = useTranslation();
   return (
     <div className="pb-4">
+      <div className="sticky top-0 z-10 flex justify-center border-b border-line-soft bg-surface/95 px-3 py-2 backdrop-blur">
+        <SegmentedControl
+          label="step_view"
+          items={[
+            { id: 'tester', label: 'tester', icon: 'list' },
+            { id: 'developer', label: 'developer', icon: 'code' },
+          ]}
+          value={viewMode}
+          onChange={onViewModeChange}
+          variant="pill"
+          iconOnly
+        />
+      </div>
+
       {steps.length === 0 && (
         <p className="px-4 py-10 text-center leading-6 text-ink-3">
           {t('press')} <Kbd>{displayRecordShortcut('record')}</Kbd> {t('and_drive_the_page')}
@@ -68,7 +86,7 @@ export const StepsPanel = ({
                 aria-current={on}
                 onClick={() => onSelect(step.id)}
                 onKeyDown={(event) => event.key === 'Enter' && onSelect(step.id)}
-                className={`group grid cursor-default grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-2 border-l-2 px-3 py-2 ${
+                className={`group group/step relative grid cursor-default grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-2 border-l-2 px-3 py-2 ${
                   repicking
                     ? 'border-warning bg-warning/10'
                     : on
@@ -85,10 +103,10 @@ export const StepsPanel = ({
                       size={13}
                       className={step.kind.startsWith('assert') ? 'text-good' : 'text-ink-3'}
                     />
-                    <span className="truncate">{sentence(step)}</span>
+                    <span className="truncate">{sentence(step, t)}</span>
                   </span>
 
-                  {step.locator && (
+                  {viewMode === 'developer' && step.locator && (
                     <button
                       type="button"
                       aria-expanded={open}
@@ -105,7 +123,8 @@ export const StepsPanel = ({
                     </button>
                   )}
 
-                  {open &&
+                  {viewMode === 'developer' &&
+                    open &&
                     step.alternatives.map((alternative) => (
                       <button
                         key={alternative}
@@ -120,11 +139,11 @@ export const StepsPanel = ({
                       </button>
                     ))}
 
-                  {open && step.locator && (
+                  {viewMode === 'developer' && open && step.locator && (
                     <LocatorEditor id={step.id} locator={step.locator} onSave={onEditLocator} />
                   )}
 
-                  {step.warning && (
+                  {viewMode === 'developer' && step.warning && (
                     <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
                       {step.secret ? t('secret') : t('locator_2')}
                     </Badge>
@@ -133,7 +152,7 @@ export const StepsPanel = ({
 
                 <span className="flex items-center gap-1 pt-[2px]">
                   <span className="ui-mono text-ink-3 group-hover:hidden">{clock(step.at)}</span>
-                  {step.locator && (
+                  {viewMode === 'developer' && step.locator && (
                     <IconButton
                       icon={repicking ? 'close' : 'focus'}
                       size="sm"
@@ -172,6 +191,22 @@ export const StepsPanel = ({
                     }}
                   />
                 </span>
+
+                {viewMode === 'tester' && step.locator && (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none invisible absolute top-full right-3 left-8 z-20 mt-1 rounded-md border border-line bg-plane px-2 py-1.5 text-ink-2 opacity-0 shadow-lg transition-opacity group-hover/step:visible group-hover/step:opacity-100"
+                  >
+                    <span className="ui-mono block break-all">
+                      {t('locator')} {step.locator}
+                    </span>
+                    {step.alternatives.length > 0 && (
+                      <span className="ui-mono mt-1 block break-all text-ink-3">
+                        {t('alternative_locators')}: {step.alternatives.join(', ')}
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
             </li>
           );
