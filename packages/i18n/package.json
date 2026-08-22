@@ -1,0 +1,18 @@
+{
+  "name": "@testron/i18n",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./en": "./src/en.json",
+    "./ru": "./src/ru.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.10"
+  }
+}

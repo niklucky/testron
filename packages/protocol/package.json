@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./compatibility": "./src/compatibility.ts",
+    "./desktop": "./src/desktop.ts",
     "./errors": "./src/errors.ts",
     "./operations": "./src/operations.ts",
     "./resources": "./src/resources.ts",

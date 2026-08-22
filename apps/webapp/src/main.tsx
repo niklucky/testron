@@ -1,12 +1,11 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
+import { en, ru } from '@testron/i18n';
 import { SlangProvider, useTranslation } from '@warpunit/slang-react';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { queryClient } from './lib/trpc';
-import en from './locales/en.json';
-import ru from './locales/ru.json';
 import { router } from './router';
 import './styles/app.css';
 

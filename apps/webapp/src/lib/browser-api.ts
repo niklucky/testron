@@ -343,12 +343,15 @@ const command = (input: AppCommand): void => {
       break;
     }
     case 'run-test':
-      window.testronDesktop?.openLocal({
-        route: 'test',
-        projectId: selectedProjectId,
-        environmentId: selectedEnvironmentId,
-        testId: selectedTestId,
-      });
+      if (window.testronDesktop && selectedProjectId && selectedTestId)
+        window.testronDesktop.runTest({
+          projectId: selectedProjectId,
+          environmentId: selectedEnvironmentId,
+          testId: selectedTestId,
+          environmentVariables: value(input, 'environmentVariables'),
+          timeoutMs: value(input, 'timeoutMs'),
+          reuseAuthState: value(input, 'reuseAuthState'),
+        });
       break;
     case 'lookup-invitee':
       void trpcClient.invitation.lookup

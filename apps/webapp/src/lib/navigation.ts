@@ -19,14 +19,6 @@ export const goToRuns = () => {
   );
 };
 export const goToTest = (testId: string, targetProjectId = projectId()) => {
-  if (window.testronDesktop) {
-    window.testronDesktop.openLocal({
-      route: 'test',
-      projectId: targetProjectId,
-      testId,
-    });
-    return;
-  }
   void import('../router').then(({ router }) =>
     router.navigate({
       to: '/projects/$projectId/tests/$testId',

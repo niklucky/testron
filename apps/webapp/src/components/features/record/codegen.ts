@@ -9,51 +9,146 @@ import type { RecordedStep } from './types';
 
 const quote = (value: string) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
-/** The pseudo-code line: verb, quoted subject, and the value if there is one. */
-export const sentence = (step: RecordedStep): string => {
+type Translate = (key: string, values?: Record<string, string | number>) => string;
+
+const translated = (
+  translate: Translate | undefined,
+  key: string,
+  fallback: string,
+  values?: Record<string, string | number>,
+) => (translate ? translate(key, values) : fallback);
+
+/** The manual-test line: verb, quoted subject, and the value if there is one. */
+export const sentence = (step: RecordedStep, translate?: Translate): string => {
   switch (step.kind) {
     case 'navigate':
-      return `Open ${step.url}`;
+      return translated(translate, 'step_open_url', `Open ${step.url}`, { value1: step.url ?? '' });
     case 'click':
-      return `Click “${step.label}”`;
+      return translated(translate, 'step_click_target', `Click “${step.label}”`, {
+        value1: step.label,
+      });
     case 'fill':
       return step.secret
-        ? `Fill “${step.label}” with {{${step.secret}}}`
-        : `Fill “${step.label}” with “${step.value ?? ''}”`;
+        ? translated(
+            translate,
+            'step_fill_target_with_variable',
+            `Fill “${step.label}” with {{${step.secret}}}`,
+            { value1: step.label, value2: `{{${step.secret}}}` },
+          )
+        : translated(
+            translate,
+            'step_fill_target_with_value',
+            `Fill “${step.label}” with “${step.value ?? ''}”`,
+            { value1: step.label, value2: step.value ?? '' },
+          );
     case 'select':
-      return `Select “${step.value ?? ''}” in “${step.label}”`;
+      return translated(
+        translate,
+        'step_select_value_in_target',
+        `Select “${step.value ?? ''}” in “${step.label}”`,
+        { value1: step.value ?? '', value2: step.label },
+      );
     case 'check':
-      return `Check “${step.label}”`;
+      return translated(translate, 'step_check_target', `Check “${step.label}”`, {
+        value1: step.label,
+      });
     case 'uncheck':
-      return `Uncheck “${step.label}”`;
+      return translated(translate, 'step_uncheck_target', `Uncheck “${step.label}”`, {
+        value1: step.label,
+      });
     case 'press':
-      return `Press ${step.value ?? 'Enter'} in “${step.label}”`;
+      return translated(
+        translate,
+        'step_press_key_in_target',
+        `Press ${step.value ?? 'Enter'} in “${step.label}”`,
+        { value1: step.value ?? 'Enter', value2: step.label },
+      );
     case 'assertUrl':
-      return `Expect the page to be at ${step.value ?? '/'}`;
+      return translated(
+        translate,
+        'step_expect_page_at_path',
+        `Expect the page to be at ${step.value ?? '/'}`,
+        { value1: step.value ?? '/' },
+      );
     case 'assert':
       switch (step.assertion) {
         case 'textContains':
-          return `Expect “${step.label}” to contain “${step.value ?? ''}”`;
+          return translated(
+            translate,
+            'step_expect_target_to_contain',
+            `Expect “${step.label}” to contain “${step.value ?? ''}”`,
+            { value1: step.label, value2: step.value ?? '' },
+          );
         case 'textEquals':
-          return `Expect “${step.label}” to read “${step.value ?? ''}”`;
+          return translated(
+            translate,
+            'step_expect_target_to_read',
+            `Expect “${step.label}” to read “${step.value ?? ''}”`,
+            { value1: step.label, value2: step.value ?? '' },
+          );
         case 'value':
-          return `Expect “${step.label}” to hold “${step.value ?? ''}”`;
+          return translated(
+            translate,
+            'step_expect_target_to_hold',
+            `Expect “${step.label}” to hold “${step.value ?? ''}”`,
+            { value1: step.label, value2: step.value ?? '' },
+          );
         case 'enabled':
-          return `Expect “${step.label}” to be enabled`;
+          return translated(
+            translate,
+            'step_expect_target_enabled',
+            `Expect “${step.label}” to be enabled`,
+            { value1: step.label },
+          );
         case 'disabled':
-          return `Expect “${step.label}” to be disabled`;
+          return translated(
+            translate,
+            'step_expect_target_disabled',
+            `Expect “${step.label}” to be disabled`,
+            { value1: step.label },
+          );
         case 'checked':
-          return `Expect “${step.label}” to be checked`;
+          return translated(
+            translate,
+            'step_expect_target_checked',
+            `Expect “${step.label}” to be checked`,
+            { value1: step.label },
+          );
         case 'unchecked':
-          return `Expect “${step.label}” to be unchecked`;
+          return translated(
+            translate,
+            'step_expect_target_unchecked',
+            `Expect “${step.label}” to be unchecked`,
+            { value1: step.label },
+          );
         case 'countExactly':
-          return `Expect “${step.label}” to have exactly ${step.value ?? '0'} matches`;
+          return translated(
+            translate,
+            'step_expect_target_exact_count',
+            `Expect “${step.label}” to have exactly ${step.value ?? '0'} matches`,
+            { value1: step.label, value2: step.value ?? '0' },
+          );
         case 'countAtLeast':
-          return `Expect “${step.label}” to have at least ${step.value ?? '0'} matches`;
+          return translated(
+            translate,
+            'step_expect_target_min_count',
+            `Expect “${step.label}” to have at least ${step.value ?? '0'} matches`,
+            { value1: step.label, value2: step.value ?? '0' },
+          );
         case 'hidden':
-          return `Expect “${step.label}” to be hidden`;
+          return translated(
+            translate,
+            'step_expect_target_hidden',
+            `Expect “${step.label}” to be hidden`,
+            { value1: step.label },
+          );
         default:
-          return `Expect “${step.label}” to be visible`;
+          return translated(
+            translate,
+            'step_expect_target_visible',
+            `Expect “${step.label}” to be visible`,
+            { value1: step.label },
+          );
       }
   }
 };
