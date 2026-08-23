@@ -793,6 +793,18 @@ const createWindow = async (): Promise<void> => {
           void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
         layout();
         break;
+      case 'show-selected-test': {
+        productVisible = Boolean(remoteView);
+        if (remoteView && selectedProjectId && selectedTestId) {
+          const target = new URL(webappUrl);
+          target.pathname = `/projects/${encodeURIComponent(selectedProjectId)}/tests/${encodeURIComponent(selectedTestId)}`;
+          target.search = '';
+          target.hash = '';
+          void remoteView.webContents.loadURL(target.toString()).catch(() => undefined);
+        }
+        layout();
+        break;
+      }
       case 'reload-product':
         productVisible = Boolean(remoteView);
         if (remoteView) {

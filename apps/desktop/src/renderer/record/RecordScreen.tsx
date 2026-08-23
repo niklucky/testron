@@ -676,7 +676,7 @@ export const RecordScreen = () => {
               window.testron?.command({ type: 'save-recording', title: name, baseUrl: url });
               setFinishing(undefined);
               setLog(`Saved · ${steps.length} steps → test view`);
-              window.testron?.command({ type: 'show-product' });
+              window.testron?.command({ type: 'show-selected-test' });
             }}
           />
         )}
@@ -780,9 +780,9 @@ const FinishSheet = ({
       <section
         role="dialog"
         aria-label={t('finish_recording')}
-        className="w-[420px] rounded-xl border border-line bg-surface p-5 shadow-2xl"
+        className="w-[420px] rounded-xl border border-line bg-surface p-5 text-sm shadow-2xl"
       >
-        <h2 className="text-lg font-semibold">{t('finish_recording')}</h2>
+        <h2 className="text-base font-semibold">{t('finish_recording')}</h2>
         <p className="mt-1 text-ink-3">
           {steps} {t('steps_over')} {clock(elapsed)} {t('in_2')} {environment}. The spec is saved
           next to the suite and opens in the test view.
