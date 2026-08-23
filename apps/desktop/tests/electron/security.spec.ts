@@ -235,7 +235,7 @@ test('restores a created project, environment, test, and its steps after restart
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'sign in successfully',
         }),
       { projectId, environmentId },

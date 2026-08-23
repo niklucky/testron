@@ -15,6 +15,9 @@ export const RECORD_CHANNELS = {
 export const RECORDER_CHANNEL = 'testron:recorder-candidate' as const;
 export const RECORDER_CONFIG_CHANNEL = 'testron:recorder-config' as const;
 
+/** In-memory browser session used only by websites under test. */
+export const TESTED_WEBSITE_PARTITION = 'testron-tested-website' as const;
+
 export const REMOTE_APP_CHANNELS = {
   command: 'testron:remote-command',
   runtimeState: 'testron:remote-runtime-state',

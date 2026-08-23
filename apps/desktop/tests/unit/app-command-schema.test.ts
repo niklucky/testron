@@ -23,7 +23,7 @@ describe('desktop application command schema', () => {
       appCommandSchema.safeParse({
         type: 'create-test',
         projectId: id,
-        environmentId: id,
+        environmentIds: [id],
         title: 'x'.repeat(201),
       }).success,
     ).toBe(false);
@@ -145,7 +145,7 @@ describe('desktop application command schema', () => {
         testId: id,
         projectId: id,
         testSuiteId: id,
-        environmentId: id,
+        environmentIds: [id],
       }),
     ).toMatchObject({ type: 'move-test', testSuiteId: id });
     expect(
@@ -154,7 +154,7 @@ describe('desktop application command schema', () => {
         testId: id,
         projectId: id,
         testSuiteId: 'not-an-id',
-        environmentId: id,
+        environmentIds: [id],
       }).success,
     ).toBe(false);
   });
@@ -164,6 +164,7 @@ describe('desktop application command schema', () => {
       appCommandSchema.parse({
         type: 'update-profile',
         profileId: id,
+        environmentId: id,
         baseRevision: 1,
         name: 'Administrator',
         authenticationType: 'credentials',
@@ -177,6 +178,7 @@ describe('desktop application command schema', () => {
       appCommandSchema.safeParse({
         type: 'update-profile',
         profileId: id,
+        environmentId: id,
         baseRevision: 1,
         name: 'Administrator',
         authenticationType: 'credentials',

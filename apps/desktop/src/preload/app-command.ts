@@ -140,7 +140,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('create-test'),
     projectId: entityIdSchema,
-    environmentId: entityIdSchema,
+    environmentIds: z.array(entityIdSchema).min(1).max(100),
     title: testTitleSchema,
   }),
   z.object({ type: z.literal('select-project'), projectId: entityIdSchema }),
@@ -150,7 +150,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('create-profile'),
     environmentId: entityIdSchema,
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.literal('credentials'),
+    authenticationType: z.enum(['credentials', 'cookies']),
     variables: z
       .array(
         z.object({
@@ -170,9 +170,10 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update-profile'),
     profileId: entityIdSchema,
+    environmentId: entityIdSchema,
     baseRevision: z.number().int().positive(),
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.literal('credentials'),
+    authenticationType: z.enum(['credentials', 'cookies']),
     variables: z
       .array(
         z.object({
@@ -189,7 +190,12 @@ export const appCommandSchema = z.discriminatedUnion('type', [
       ),
   }),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
-  z.object({ type: z.literal('rename-test'), testId: entityIdSchema, title: testTitleSchema }),
+  z.object({
+    type: z.literal('rename-test'),
+    testId: entityIdSchema,
+    title: testTitleSchema,
+    environmentIds: z.array(entityIdSchema).min(1).max(100).optional(),
+  }),
   z.object({
     type: z.literal('replace-prerequisites'),
     testId: entityIdSchema,
@@ -201,7 +207,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     testId: entityIdSchema,
     projectId: entityIdSchema,
     testSuiteId: entityIdSchema,
-    environmentId: entityIdSchema,
+    environmentIds: z.array(entityIdSchema).min(1).max(100),
   }),
   z.object({ type: z.literal('prepare-new-test'), title: testTitleSchema }),
   z.object({ type: z.literal('save-recording'), title: testTitleSchema, baseUrl: httpUrlSchema }),

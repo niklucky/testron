@@ -21,7 +21,7 @@ const openRecordScreen = async () => {
     window.location.hash = '#/record';
   });
   await appWindow
-    .getByRole('button', { name: /^(Record|Continue recording)R$/ })
+    .getByRole('button', { name: /^(Record|Continue recording)\s*R$/ })
     .waitFor({ timeout: 10_000 });
   await appWindow.evaluate(() =>
     window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
@@ -124,7 +124,7 @@ test('remote product opens the local recorder and fully reclaims the window', as
     await setRemoteLocale('en');
     await openFromRemote('record');
     await appWindow
-      .getByRole('button', { name: /^(Record|Continue recording)R$/ })
+      .getByRole('button', { name: /^(Record|Continue recording)\s*R$/ })
       .waitFor({ timeout: 10_000 });
     await expect.poll(() => childBounds(electronApp)).toEqual([]);
 
@@ -172,6 +172,75 @@ test('recorder header controls stay above the tested website view', async () => 
       await expect(appWindow.locator('webview')).toBeVisible();
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
     });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('starting a new test resets only the tested website session', async () => {
+  test.setTimeout(60_000);
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    const usesDefaultSession = await electronApp.evaluate(
+      async ({ BrowserWindow, session, webContents }) => {
+        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+        const target = webContents
+          .getAllWebContents()
+          .find(
+            (contents) =>
+              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+          );
+        if (!target) throw new Error('Tested website webContents was not found.');
+
+        await session.defaultSession.cookies.set({
+          url: 'http://127.0.0.1:4174/',
+          name: 'testron-product-session',
+          value: 'keep',
+        });
+        await target.executeJavaScript(`
+          localStorage.setItem('login-state', 'authenticated');
+          sessionStorage.setItem('login-state', 'authenticated');
+          document.cookie = 'target-session=authenticated; path=/';
+        `);
+        return target.session === session.defaultSession;
+      },
+    );
+    expect(usesDefaultSession).toBe(false);
+
+    await appWindow.evaluate(() =>
+      window.testron.command({ type: 'prepare-new-test', title: 'Failed login' }),
+    );
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ BrowserWindow, webContents }) => {
+          const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+          const target = webContents
+            .getAllWebContents()
+            .find(
+              (contents) =>
+                contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+            );
+          if (!target || target.isLoading()) return null;
+          try {
+            return await target.executeJavaScript(
+              `[localStorage.getItem('login-state'), sessionStorage.getItem('login-state'), document.cookie]`,
+            );
+          } catch {
+            return null;
+          }
+        }),
+      )
+      .toEqual([null, null, '']);
+
+    const productCookies = await electronApp.evaluate(({ session }) =>
+      session.defaultSession.cookies.get({
+        url: 'http://127.0.0.1:4174/',
+        name: 'testron-product-session',
+      }),
+    );
+    expect(productCookies).toHaveLength(1);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -394,7 +463,7 @@ test.skip('failed assertions show their error and repeated runs append cards', a
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'visible heading fails hidden assertion',
         });
       },
@@ -506,7 +575,7 @@ test.skip('test steps scroll without source and locators can be repaired inline'
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'Editable menu',
         }),
       { projectId, environmentId },

@@ -101,7 +101,7 @@ export const ProjectSettings = ({
   if (!project) return null;
 
   const environmentProfiles = library.profiles.filter(
-    (profile) => profile.environmentId === selectedEnvironment?.id,
+    (profile) => profile.projectId === project.id,
   );
   const editingProfile = environmentProfiles.find((profile) => profile.id === editingProfileId);
 
@@ -372,7 +372,13 @@ export const ProjectSettings = ({
                               <span className="min-w-0 flex-1 truncate font-medium">
                                 {profile.name}
                               </span>
-                              <span className="text-ink-3">{t('login_password')}</span>
+                              <span className="text-ink-3">
+                                {profile.environmentIds.includes(selectedEnvironment.id)
+                                  ? profile.authenticationType === 'cookies'
+                                    ? 'Cookies'
+                                    : t('login_password')
+                                  : 'Configure'}
+                              </span>
                               <IconButton
                                 icon="pencil"
                                 size="sm"
@@ -425,30 +431,42 @@ export const ProjectSettings = ({
             editingProfile
               ? {
                   name: editingProfile.name,
+                  authenticationType: editingProfile.authenticationType,
                   variables: library.profileVariables
-                    .filter((variable) => variable.profileId === editingProfile.id)
+                    .filter(
+                      (variable) =>
+                        variable.profileId === editingProfile.id &&
+                        (variable.environmentId === selectedEnvironment.id ||
+                          !editingProfile.environmentIds.includes(selectedEnvironment.id)),
+                    )
+                    .filter(
+                      (variable, index, variables) =>
+                        variables.findIndex((candidate) => candidate.name === variable.name) ===
+                        index,
+                    )
                     .map(({ name, sensitive }) => ({ name, sensitive })),
                 }
               : undefined
           }
           disabled={editingProfileId !== 'new' && !editingProfile?.revision}
           onCancel={() => setEditingProfileId(undefined)}
-          onSave={(name, variables) => {
+          onSave={(name, authenticationType, variables) => {
             if (editingProfileId === 'new')
               window.testron?.command({
                 type: 'create-profile',
                 environmentId: selectedEnvironment.id,
                 name,
-                authenticationType: 'credentials',
+                authenticationType,
                 variables,
               });
             else if (editingProfile?.revision)
               window.testron?.command({
                 type: 'update-profile',
                 profileId: editingProfile.id,
+                environmentId: selectedEnvironment.id,
                 baseRevision: editingProfile.revision,
                 name,
-                authenticationType: 'credentials',
+                authenticationType,
                 variables,
               });
             setEditingProfileId(undefined);

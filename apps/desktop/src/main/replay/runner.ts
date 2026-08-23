@@ -43,6 +43,7 @@ export interface ReplayOptions {
   artifactsDirectory: string;
   authStatePath?: string;
   saveAuthStatePath?: string;
+  cookies?: Array<{ name: string; value: string; url: string }>;
   onProgress: (snapshot: ReplaySnapshot) => void;
 }
 
@@ -209,6 +210,7 @@ export class LocalReplayRunner {
       this.context = await browser.newContext(
         options.authStatePath ? { storageState: options.authStatePath } : undefined,
       );
+      if (options.cookies?.length) await this.context.addCookies(options.cookies);
       this.context.setDefaultTimeout(options.timeoutMs);
       await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();

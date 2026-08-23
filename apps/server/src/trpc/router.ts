@@ -214,7 +214,13 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
               ...workspace,
               profiles: workspace.profiles.map((profile) => ({
                 ...profile,
-                variables: profile.variables.map(({ name, sensitive }) => ({ name, sensitive })),
+                environments: profile.environments.map((environment) => ({
+                  ...environment,
+                  variables: environment.variables.map(({ name, sensitive }) => ({
+                    name,
+                    sensitive,
+                  })),
+                })),
               })),
             };
           }),

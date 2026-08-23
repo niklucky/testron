@@ -128,9 +128,9 @@ export const profiles = pgTable(
   'profiles',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    environmentId: uuid('environment_id')
+    projectId: uuid('project_id')
       .notNull()
-      .references(() => environments.id, { onDelete: 'cascade' }),
+      .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     authenticationType: text('authentication_type').notNull(),
     revision: integer('revision').notNull(),
@@ -139,7 +139,7 @@ export const profiles = pgTable(
     deletedAt: instant('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
   },
-  (table) => [index('profiles_environment_idx').on(table.environmentId)],
+  (table) => [index('profiles_project_idx').on(table.projectId)],
 );
 
 export const profileVariables = pgTable(
@@ -148,11 +148,17 @@ export const profileVariables = pgTable(
     profileId: uuid('profile_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     value: text('value').notNull(),
     sensitive: boolean('sensitive').notNull(),
   },
-  (table) => [primaryKey({ columns: [table.profileId, table.name] })],
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.environmentId, table.name] }),
+    index('profile_variables_environment_idx').on(table.environmentId),
+  ],
 );
 
 export const testSuites = pgTable(
@@ -238,6 +244,7 @@ export const testRuns = pgTable(
     environmentId: uuid('environment_id')
       .notNull()
       .references(() => environments.id),
+    profileId: uuid('profile_id').references(() => profiles.id),
     status: text('status').notNull(),
     source: text('source').notNull(),
     startedAt: instant('started_at').defaultNow().notNull(),

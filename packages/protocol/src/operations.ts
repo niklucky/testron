@@ -16,7 +16,8 @@ import {
   projectSchema,
   projectNameSchema,
   profileSchema,
-  profileVariableSchema,
+  profileAuthenticationTypeSchema,
+  profileEnvironmentSchema,
   testIdAttributeSchema,
   testRunSchema,
   testRunStatusSchema,
@@ -127,24 +128,47 @@ export const updateEnvironmentRequestSchema = z
   })
   .strict();
 
-const profileMutationFields = {
+const profileIdentityFields = {
   name: z.string().trim().min(1).max(100),
-  authenticationType: z.literal('credentials'),
-  variables: z
-    .array(profileVariableSchema)
+  authenticationType: profileAuthenticationTypeSchema,
+} as const;
+
+const profileVariablesSchema = profileEnvironmentSchema.shape.variables.refine(
+  (variables) => new Set(variables.map((variable) => variable.name)).size === variables.length,
+  { message: 'Profile variable names must be unique.' },
+);
+
+const profileCreateFields = {
+  ...profileIdentityFields,
+  environments: z
+    .array(profileEnvironmentSchema)
     .min(1)
-    .max(50)
+    .max(100)
     .refine(
-      (variables) => new Set(variables.map((variable) => variable.name)).size === variables.length,
-      { message: 'Profile variable names must be unique.' },
+      (environments) =>
+        new Set(environments.map((environment) => environment.environmentId)).size ===
+        environments.length,
+      { message: 'Profile environment assignments must be unique.' },
+    )
+    .refine(
+      (environments) => {
+        const signature = (variables: (typeof environments)[number]['variables']) =>
+          variables
+            .map(({ name, sensitive }) => `${name}\u0000${sensitive}`)
+            .sort()
+            .join('\u0001');
+        const expected = environments[0] ? signature(environments[0].variables) : '';
+        return environments.every((environment) => signature(environment.variables) === expected);
+      },
+      { message: 'Every environment must use the same profile variable keys.' },
     ),
 } as const;
 
 export const createProfileRequestSchema = z
   .object({
     meta: mutationMetadataSchema,
-    environmentId: entityIdSchema,
-    ...profileMutationFields,
+    projectId: entityIdSchema,
+    ...profileCreateFields,
   })
   .strict();
 
@@ -153,7 +177,9 @@ export const updateProfileRequestSchema = z
     meta: mutationMetadataSchema,
     profileId: entityIdSchema,
     baseRevision: revisionNumberSchema,
-    ...profileMutationFields,
+    ...profileIdentityFields,
+    environmentId: entityIdSchema,
+    variables: profileVariablesSchema,
   })
   .strict();
 
@@ -214,7 +240,13 @@ export const moveTestRequestSchema = z
     baseRevision: revisionPointerSchema,
     projectId: entityIdSchema,
     testSuiteId: entityIdSchema,
-    environmentId: entityIdSchema,
+    environmentIds: z
+      .array(entityIdSchema)
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Test environment assignments must be unique.',
+      }),
   })
   .strict();
 
@@ -251,6 +283,7 @@ export const startTestRunRequestSchema = z
     meta: mutationMetadataSchema,
     testId: entityIdSchema,
     environmentId: entityIdSchema,
+    profileId: entityIdSchema.optional(),
     source: z.literal('desktop-local'),
   })
   .strict();

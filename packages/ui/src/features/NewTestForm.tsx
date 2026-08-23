@@ -9,6 +9,8 @@ export const NewTestForm = ({
   initialTitle = '',
   heading = 'Create test',
   submitLabel = 'Start recording',
+  environments,
+  initialEnvironmentIds,
   onStart,
   onClose,
 }: {
@@ -16,11 +18,16 @@ export const NewTestForm = ({
   initialTitle?: string;
   heading?: string;
   submitLabel?: string;
-  onStart: (title: string) => void;
+  environments?: Array<{ id: string; name: string }>;
+  initialEnvironmentIds?: string[];
+  onStart: (title: string, environmentIds: string[]) => void;
   onClose: () => void;
 }) => {
   const { t } = useTranslation();
   const [title, setTitle] = useState(initialTitle);
+  const [environmentIds, setEnvironmentIds] = useState(
+    initialEnvironmentIds ?? environments?.map(({ id }) => id) ?? [],
+  );
   const titleId = useId();
   const inputId = useId();
 
@@ -37,7 +44,8 @@ export const NewTestForm = ({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextTitle = title.trim();
-    if (nextTitle) onStart(nextTitle);
+    if (nextTitle && (!environments || environmentIds.length > 0))
+      onStart(nextTitle, environmentIds);
   };
 
   return createPortal(
@@ -76,9 +84,37 @@ export const NewTestForm = ({
             className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
           />
 
+          {environments && (
+            <fieldset className="mt-5">
+              <legend className="font-medium text-ink-2">{t('environments')}</legend>
+              <div className="mt-2 space-y-2 rounded-md border border-line bg-plane p-3">
+                {environments.map((environment) => (
+                  <label key={environment.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={environmentIds.includes(environment.id)}
+                      onChange={(event) =>
+                        setEnvironmentIds((current) =>
+                          event.target.checked
+                            ? [...current, environment.id]
+                            : current.filter((id) => id !== environment.id),
+                        )
+                      }
+                    />
+                    <span>{environment.name}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
           <div className="mt-6 flex justify-end gap-2">
             <Button onClick={onClose}>{t('cancel')}</Button>
-            <Button type="submit" variant="primary" disabled={!title.trim()}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!title.trim() || Boolean(environments && environmentIds.length === 0)}
+            >
               {submitLabel}
             </Button>
           </div>

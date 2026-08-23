@@ -31,16 +31,17 @@ export interface EnvironmentRecord {
 
 export interface ProfileRecord {
   id: string;
-  environmentId: string;
+  projectId: string;
+  environmentIds: string[];
   name: string;
-  authenticationType: 'credentials';
+  authenticationType: 'credentials' | 'cookies';
   revision?: number;
 }
 
 export interface TestRecord {
   id: string;
   projectId: string;
-  environmentId: string;
+  environmentIds: string[];
   testSuiteId?: string | null;
   title: string;
   prerequisites: string[];
@@ -62,7 +63,12 @@ export interface LibrarySnapshot {
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];
-  profileVariables: Array<{ profileId: string; name: string; sensitive: boolean }>;
+  profileVariables: Array<{
+    profileId: string;
+    environmentId: string;
+    name: string;
+    sensitive: boolean;
+  }>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
   deletedTests?: TestRecord[];

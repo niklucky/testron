@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
+import { TESTED_WEBSITE_PARTITION } from '../../main/security';
 import { NewTestForm } from '../dashboard/NewTestForm';
 import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
@@ -64,6 +65,7 @@ const parkedRecordLayout = (): RecordLayout => ({
 const TestedWebsite = 'webview' as unknown as ComponentType<{
   src: string;
   className: string;
+  partition: string;
 }>;
 
 /**
@@ -117,14 +119,22 @@ export const RecordScreen = () => {
   const mode: CaptureMode = snapshot.captureMode === 'verify' ? 'assert' : 'act';
   const context = useMemo(() => recordingContext(snapshot), [snapshot]);
   const selectedEnvironmentId = snapshot.library.selectedEnvironmentId;
-  const environments = snapshot.library.environments.filter(
+  const projectEnvironments = snapshot.library.environments.filter(
     (environment) => environment.projectId === snapshot.library.selectedProjectId,
   );
+  const selectedLibraryTest = snapshot.library.tests.find(
+    (test) => test.id === snapshot.library.selectedTestId,
+  );
+  const environments = selectedLibraryTest
+    ? projectEnvironments.filter((environment) =>
+        selectedLibraryTest.environmentIds.includes(environment.id),
+      )
+    : projectEnvironments;
   const testSuites = snapshot.library.testSuites.filter(
     (testSuite) => testSuite.projectId === snapshot.library.selectedProjectId,
   );
-  const profiles = snapshot.library.profiles.filter(
-    (profile) => profile.environmentId === selectedEnvironmentId,
+  const profiles = snapshot.library.profiles.filter((profile) =>
+    Boolean(selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId)),
   );
   const selectedProfile = profiles.find(
     (profile) => profile.id === snapshot.library.selectedProfileId,
@@ -568,7 +578,11 @@ export const RecordScreen = () => {
         <div className="absolute inset-y-0" style={websiteInset}>
           {hosted ? (
             url ? (
-              <TestedWebsite src={url} className="h-full w-full" />
+              <TestedWebsite
+                src={url}
+                className="h-full w-full"
+                partition={TESTED_WEBSITE_PARTITION}
+              />
             ) : null
           ) : (
             <TargetPage
@@ -687,23 +701,29 @@ export const RecordScreen = () => {
               selectedProfile
                 ? {
                     name: selectedProfile.name,
+                    authenticationType: selectedProfile.authenticationType,
                     variables: snapshot.library.profileVariables
-                      .filter((variable) => variable.profileId === selectedProfile.id)
+                      .filter(
+                        (variable) =>
+                          variable.profileId === selectedProfile.id &&
+                          variable.environmentId === selectedEnvironmentId,
+                      )
                       .map(({ name, sensitive }) => ({ name, sensitive })),
                   }
                 : undefined
             }
             disabled={!selectedEnvironmentId}
             onCancel={() => setConfiguringProfile(false)}
-            onSave={(profileName, variables) => {
+            onSave={(profileName, authenticationType, variables) => {
               if (!selectedEnvironmentId) return;
               if (selectedProfile?.revision)
                 window.testron?.command({
                   type: 'update-profile',
                   profileId: selectedProfile.id,
+                  environmentId: selectedEnvironmentId,
                   baseRevision: selectedProfile.revision,
                   name: profileName,
-                  authenticationType: 'credentials',
+                  authenticationType,
                   variables,
                 });
               else
@@ -711,7 +731,7 @@ export const RecordScreen = () => {
                   type: 'create-profile',
                   environmentId: selectedEnvironmentId,
                   name: profileName,
-                  authenticationType: 'credentials',
+                  authenticationType,
                   variables,
                 });
               setConfiguringProfile(false);
@@ -724,10 +744,21 @@ export const RecordScreen = () => {
             initialTitle={name}
             heading="Edit test title"
             submitLabel="Save title"
+            environments={projectEnvironments}
+            initialEnvironmentIds={
+              snapshot.library.tests.find((test) => test.id === snapshot.library.selectedTestId)
+                ?.environmentIds
+            }
             onClose={() => setEditingTitle(false)}
-            onStart={(title) => {
+            onStart={(title, environmentIds) => {
               const testId = snapshot.library.selectedTestId;
-              if (testId) window.testron?.command({ type: 'rename-test', testId, title });
+              if (testId)
+                window.testron?.command({
+                  type: 'rename-test',
+                  testId,
+                  title,
+                  environmentIds,
+                });
               setName(title);
               setEditingTitle(false);
               setLog(`Renamed test · ${title}`);
