@@ -73,7 +73,7 @@ test.skip('offers to download Chromium before the first local run', async () => 
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'First run',
         }),
       { projectId, environmentId },

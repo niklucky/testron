@@ -15,11 +15,13 @@ Canonical server values are:
   Environments and tests are owned through their project; clients cannot move
   them between projects.
 - An **environment** belongs to one project and defines a public HTTP(S) base
-  URL and locator configuration. Credentials, profile values, browser storage,
-  and authentication state are not environment protocol data.
+  URL and locator configuration.
+- A **profile** belongs to one project and defines one reusable authentication
+  identity. Every configured environment uses the same variable keys but may
+  supply different values. Browser-safe workspace reads redact those values.
 - A **test** is a stable identity and a pointer to its current immutable
-  revision. Its title, environment, ordered step entries, and assertions live
-  in revisions so every content change is auditable.
+  revision. Its title, assigned environments, ordered step entries, and
+  assertions live in revisions so every content change is auditable.
 - A **test revision** is immutable. Revision 1 has no parent. Each later
   revision points to the immediately preceding revision and increases the
   number by one. A revision is never updated in place.
@@ -56,8 +58,10 @@ wire:
 - A **local run** points to either a canonical revision or a draft. Its process
   state, cancellation, screenshot, trace, reusable browser authentication
   state, and errors stay local in v1.
-- Authentication tokens, profile values, resolved variables, and secret values
-  are local state and are never protocol resources.
+- Authentication tokens, resolved variables, browser storage, and reusable
+  authentication state stay local. Profile values are server resources sent
+  only to authorized desktop clients; web workspace responses contain keys and
+  sensitivity metadata without values.
 
 The desktop draft repository redacts resolved values, assigns stable step IDs
 when Phase 2 steps first become synchronized, retains those IDs after a save,
@@ -141,6 +145,7 @@ Protocol v1 defines the contracts needed by the first server slice:
 
 - create a project;
 - create an environment in an authorized project;
+- create and configure a reusable project profile for one or more environments;
 - create a test and its first revision;
 - read the authenticated user's bounded workspace snapshot into desktop process
 

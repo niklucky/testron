@@ -37,14 +37,16 @@ export interface EnvironmentRecord {
 
 export interface ProfileRecord {
   id: string;
-  environmentId: string;
+  projectId: string;
+  environmentIds: string[];
   name: string;
-  authenticationType: 'credentials';
+  authenticationType: 'credentials' | 'cookies';
   revision?: number;
 }
 
 export interface ProfileVariableRecord {
   profileId: string;
+  environmentId: string;
   name: string;
   value: string;
   sensitive: boolean;
@@ -53,7 +55,7 @@ export interface ProfileVariableRecord {
 export interface TestRecord {
   id: string;
   projectId: string;
-  environmentId: string;
+  environmentIds: string[];
   testSuiteId?: string | null;
   title: string;
   prerequisites: string[];
@@ -173,6 +175,32 @@ const migrations = [
     DROP TABLE IF EXISTS acknowledged_tests;
   `,
   `ALTER TABLE tests ADD COLUMN test_suite_id TEXT;`,
+  `
+    ALTER TABLE tests ADD COLUMN environment_ids TEXT;
+    UPDATE tests SET environment_ids = json_array(environment_id);
+    UPDATE test_drafts
+      SET payload = json_remove(
+        json_set(payload, '$.content.environmentIds', json_array(json_extract(payload, '$.content.environmentId'))),
+        '$.content.environmentId'
+      );
+    DROP TABLE profile_variables;
+    DROP TABLE profiles;
+    CREATE TABLE profiles (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      authentication_type TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE profile_variables (
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      environment_id TEXT NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      value TEXT NOT NULL,
+      sensitive INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (profile_id, environment_id, name)
+    );
+  `,
 ];
 
 interface Row {
@@ -235,23 +263,32 @@ export class TestronRepository {
   listProfiles(): ProfileRecord[] {
     return this.database
       .prepare(
-        'SELECT id, environment_id, name, authentication_type FROM profiles ORDER BY created_at, name',
+        `SELECT profiles.id, profiles.project_id, profiles.name, profiles.authentication_type,
+          group_concat(DISTINCT profile_variables.environment_id) AS environment_ids
+         FROM profiles
+         LEFT JOIN profile_variables ON profile_variables.profile_id = profiles.id
+         GROUP BY profiles.id
+         ORDER BY profiles.created_at, profiles.name`,
       )
       .all()
       .map((row) => ({
         id: String(row.id),
-        environmentId: String(row.environment_id),
+        projectId: String(row.project_id),
+        environmentIds: row.environment_ids ? String(row.environment_ids).split(',') : [],
         name: String(row.name),
-        authenticationType: 'credentials' as const,
+        authenticationType: String(row.authentication_type) as 'credentials' | 'cookies',
       }));
   }
 
   listProfileVariables(): ProfileVariableRecord[] {
     return this.database
-      .prepare('SELECT profile_id, name, value, sensitive FROM profile_variables ORDER BY name')
+      .prepare(
+        'SELECT profile_id, environment_id, name, value, sensitive FROM profile_variables ORDER BY name',
+      )
       .all()
       .map((row) => ({
         profileId: String(row.profile_id),
+        environmentId: String(row.environment_id),
         name: String(row.name),
         value: String(row.value),
         sensitive: Boolean(row.sensitive),
@@ -261,13 +298,13 @@ export class TestronRepository {
   listTests(): TestRecord[] {
     return this.database
       .prepare(
-        'SELECT id, project_id, environment_id, test_suite_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
+        'SELECT id, project_id, environment_ids, test_suite_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
       )
       .all()
       .map((row) => ({
         id: String(row.id),
         projectId: String(row.project_id),
-        environmentId: String(row.environment_id),
+        environmentIds: JSON.parse(String(row.environment_ids)) as string[],
         testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
         title: String(row.title),
         prerequisites: this.getDraft(String(row.id))?.content.prerequisites ?? [],
@@ -332,25 +369,28 @@ export class TestronRepository {
     name: string,
     variables: ReadonlyArray<{ name: string; value: string; sensitive: boolean }>,
   ): ProfileRecord {
+    const environment = this.getEnvironment(environmentId);
+    if (!environment) throw new Error('Environment not found.');
     const profile: ProfileRecord = {
       id: randomUUID(),
-      environmentId,
+      projectId: environment.projectId,
+      environmentIds: [environmentId],
       name: name.trim(),
       authenticationType: 'credentials',
     };
     const insertVariable = this.database.prepare(
-      'INSERT INTO profile_variables (profile_id, name, value, sensitive) VALUES (?, ?, ?, ?)',
+      'INSERT INTO profile_variables (profile_id, environment_id, name, value, sensitive) VALUES (?, ?, ?, ?, ?)',
     );
     this.database.exec('BEGIN IMMEDIATE');
     try {
       this.database
         .prepare(
-          `INSERT INTO profiles (id, environment_id, name, authentication_type, created_at)
+          `INSERT INTO profiles (id, project_id, name, authentication_type, created_at)
            VALUES (?, ?, ?, ?, ?)`,
         )
         .run(
           profile.id,
-          profile.environmentId,
+          profile.projectId,
           profile.name,
           profile.authenticationType,
           new Date().toISOString(),
@@ -358,6 +398,7 @@ export class TestronRepository {
       for (const variable of variables)
         insertVariable.run(
           profile.id,
+          environmentId,
           variable.name.trim(),
           variable.value,
           variable.sensitive ? 1 : 0,
@@ -383,7 +424,7 @@ export class TestronRepository {
 
   createTest(
     projectId: string,
-    environmentId: string,
+    environmentIds: string[],
     title: string,
     testSuiteId?: string,
   ): TestRecord {
@@ -391,7 +432,7 @@ export class TestronRepository {
     const test = {
       id: randomUUID(),
       projectId,
-      environmentId,
+      environmentIds,
       testSuiteId: testSuiteId ?? null,
       title: title.trim(),
       prerequisites: [],
@@ -403,10 +444,19 @@ export class TestronRepository {
       this.database
         .prepare(
           `INSERT INTO tests
-            (id, project_id, environment_id, test_suite_id, title, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            (id, project_id, environment_id, environment_ids, test_suite_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(test.id, projectId, environmentId, test.testSuiteId, test.title, now, now);
+        .run(
+          test.id,
+          projectId,
+          environmentIds[0],
+          JSON.stringify(environmentIds),
+          test.testSuiteId,
+          test.title,
+          now,
+          now,
+        );
       this.writeDraft(
         test.id,
         desktopTestDraftSchema.parse({
@@ -414,7 +464,7 @@ export class TestronRepository {
           projectId,
           testSuiteId: test.testSuiteId,
           baseRevision: null,
-          content: { stepSchemaVersion: 1, title: test.title, environmentId, steps: [] },
+          content: { stepSchemaVersion: 1, title: test.title, environmentIds, steps: [] },
           localCreatedAt: now,
           localUpdatedAt: now,
           syncStatus: 'local',
@@ -539,7 +589,7 @@ export class TestronRepository {
       baseRevision: snapshot.test.currentRevision,
       content: {
         ...snapshot.currentRevision.content,
-        environmentId: current.content.environmentId,
+        environmentIds: current.content.environmentIds,
       },
       localUpdatedAt: new Date().toISOString(),
       syncStatus: 'synced',
@@ -620,13 +670,14 @@ export class TestronRepository {
       this.database
         .prepare(
           `INSERT OR REPLACE INTO tests
-            (id, project_id, environment_id, test_suite_id, title, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            (id, project_id, environment_id, environment_ids, test_suite_id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           snapshot.test.id,
           project.id,
           environment.id,
+          JSON.stringify(revision.content.environmentIds),
           snapshot.test.testSuiteId,
           revision.content.title,
           snapshot.test.createdAt,
@@ -640,7 +691,7 @@ export class TestronRepository {
         insert.run(snapshot.test.id, index, JSON.stringify(entry.payload)),
       );
       this.setServerId('project', project.id, snapshot.test.projectId);
-      this.setServerId('environment', environment.id, revision.content.environmentId);
+      this.setServerId('environment', environment.id, revision.content.environmentIds[0]!);
       this.setServerId('test', snapshot.test.id, snapshot.test.id);
       const now = new Date().toISOString();
       this.writeDraft(snapshot.test.id, {
@@ -648,7 +699,7 @@ export class TestronRepository {
         projectId: project.id,
         testId: snapshot.test.id,
         baseRevision: snapshot.test.currentRevision,
-        content: { ...revision.content, environmentId: environment.id },
+        content: { ...revision.content, environmentIds: [environment.id] },
         localCreatedAt: now,
         localUpdatedAt: now,
         syncStatus: 'synced',
@@ -657,7 +708,7 @@ export class TestronRepository {
       return {
         id: snapshot.test.id,
         projectId: project.id,
-        environmentId: environment.id,
+        environmentIds: [environment.id],
         title: revision.content.title,
         prerequisites: revision.content.prerequisites,
         createdAt: snapshot.test.createdAt,
@@ -711,7 +762,7 @@ export class TestronRepository {
         content: {
           stepSchemaVersion: 1,
           title: test.title,
-          environmentId: test.environmentId,
+          environmentIds: test.environmentIds,
           prerequisites: test.prerequisites,
           steps: this.loadSteps(test.id).map((payload) => ({ id: randomUUID(), payload })),
         },

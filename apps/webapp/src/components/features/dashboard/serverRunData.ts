@@ -115,7 +115,7 @@ export const failuresFromLibrary = (library: LibrarySnapshot): Failure[] => {
       const suite = test.testSuiteId ? suites.get(test.testSuiteId) : undefined;
       const environment = matchingRun
         ? environments.get(matchingRun.environmentId)
-        : environments.get(test.environmentId);
+        : environments.get(test.environmentIds[0] ?? '');
       const timedOut = latest.status === 'timedOut';
       const ageMinutes = minutesSince(latest.startedAt);
       const latestFailureDay = Math.floor(ageMinutes / 1_440);

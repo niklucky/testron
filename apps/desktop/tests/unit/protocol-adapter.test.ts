@@ -16,7 +16,7 @@ describe('desktop protocol adapter', () => {
       {
         id: id('1'),
         projectId: id('2'),
-        environmentId: id('3'),
+        environmentIds: [id('3')],
         title: 'sign in',
         prerequisites: [],
         createdAt: now,
@@ -62,7 +62,7 @@ describe('desktop protocol adapter', () => {
         content: {
           stepSchemaVersion: 1,
           title: 'checkout',
-          environmentId: id('16'),
+          environmentIds: [id('16')],
           prerequisites: [],
           steps: [
             {
@@ -87,7 +87,7 @@ describe('desktop protocol adapter', () => {
       clientVersion: '0.0.1',
     });
 
-    expect(imported.record).toMatchObject({ title: 'checkout', environmentId: id('16') });
+    expect(imported.record).toMatchObject({ title: 'checkout', environmentIds: [id('16')] });
     expect(imported.steps).toHaveLength(1);
     expect(imported.draft).toMatchObject({
       draftId: id('18'),

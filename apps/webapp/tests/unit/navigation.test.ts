@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { goToTest } from '../../src/lib/navigation';
+import { goToRecorder, goToTest } from '../../src/lib/navigation';
 
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock('../../src/router', () => ({ router: { navigate } }));
@@ -46,5 +46,24 @@ describe('test navigation', () => {
         params: { projectId: 'project-1', testId: 'test-1' },
       }),
     );
+  });
+
+  it('passes the selected test explicitly when opening the desktop recorder', () => {
+    const openLocal = vi.fn();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { pathname: '/projects/stale-project/tests/stale-test' },
+        testronDesktop: { openLocal },
+      },
+    });
+
+    goToRecorder({ projectId: 'project-1', testId: 'test-1' });
+
+    expect(openLocal).toHaveBeenCalledWith({
+      route: 'record',
+      projectId: 'project-1',
+      testId: 'test-1',
+    });
   });
 });

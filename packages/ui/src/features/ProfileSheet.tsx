@@ -12,8 +12,19 @@ export interface ProfileVariableInput {
 
 export interface EditableProfile {
   name: string;
+  authenticationType: 'credentials' | 'cookies';
   variables: Array<Omit<ProfileVariableInput, 'value'>>;
 }
+
+const variableOrder = (left: { name: string }, right: { name: string }): number => {
+  const priority = (name: string) => {
+    const normalized = name.trim().toLowerCase();
+    if (normalized === 'username') return 0;
+    if (normalized === 'password') return 1;
+    return 2;
+  };
+  return priority(left.name) - priority(right.name) || left.name.localeCompare(right.name);
+};
 
 export const ProfileSheet = ({
   environment,
@@ -26,16 +37,25 @@ export const ProfileSheet = ({
   profile?: EditableProfile;
   disabled?: boolean;
   onCancel: () => void;
-  onSave: (name: string, variables: ProfileVariableInput[]) => void;
+  onSave: (
+    name: string,
+    authenticationType: 'credentials' | 'cookies',
+    variables: ProfileVariableInput[],
+  ) => void;
 }) => {
   const { t } = useTranslation();
   const editing = Boolean(profile);
   const [name, setName] = useState(profile?.name ?? 'Administrator');
+  const [authenticationType, setAuthenticationType] = useState<'credentials' | 'cookies'>(
+    profile?.authenticationType ?? 'credentials',
+  );
   const [variables, setVariables] = useState<ProfileVariableInput[]>(
-    profile?.variables.map((variable) => ({ ...variable, value: '' })) ?? [
-      { name: 'username', value: '', sensitive: false },
-      { name: 'password', value: '', sensitive: true },
-    ],
+    (
+      profile?.variables.map((variable) => ({ ...variable, value: '' })) ?? [
+        { name: 'username', value: '', sensitive: false },
+        { name: 'password', value: '', sensitive: true },
+      ]
+    ).sort(variableOrder),
   );
   const validVariables = variables.filter((variable) => variable.name.trim());
   const unique =
@@ -75,12 +95,16 @@ export const ProfileSheet = ({
           <span className="text-ink-3">{t('authentication_type')}</span>
           <select
             aria-label={t('authentication_type')}
+            value={authenticationType}
+            onChange={(event) =>
+              setAuthenticationType(event.target.value as 'credentials' | 'cookies')
+            }
             className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none"
           >
             <option value="credentials">{t('login_password')}</option>
             <option disabled>{t('oauth_coming_later')}</option>
             <option disabled>{t('authentication_header_coming_later')}</option>
-            <option disabled>{t('cookie_coming_later')}</option>
+            <option value="cookies">Cookies</option>
           </select>
         </label>
 
@@ -161,6 +185,7 @@ export const ProfileSheet = ({
             onClick={() =>
               onSave(
                 name.trim(),
+                authenticationType,
                 validVariables.map((variable) => ({ ...variable, name: variable.name.trim() })),
               )
             }

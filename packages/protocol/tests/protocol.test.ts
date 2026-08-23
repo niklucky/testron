@@ -29,6 +29,7 @@ const ids = {
   project: '00000000-0000-4000-8000-000000000103',
   test: '00000000-0000-4000-8000-000000000104',
   environment: '00000000-0000-4000-8000-000000000105',
+  environmentTwo: '00000000-0000-4000-8000-000000000109',
   revision: '00000000-0000-4000-8000-000000000106',
 };
 
@@ -41,7 +42,7 @@ const revision = {
   content: {
     stepSchemaVersion: 1,
     title: 'empty test',
-    environmentId: ids.environment,
+    environmentIds: [ids.environment],
     prerequisites: [],
     steps: [],
   },
@@ -226,12 +227,12 @@ describe('project settings mutations', () => {
     expect(
       createProfileRequestSchema.parse({
         meta,
-        environmentId: ids.environment,
+        projectId: ids.project,
         name: 'Administrator',
         authenticationType: 'credentials',
-        variables,
+        environments: [{ environmentId: ids.environment, variables }],
       }),
-    ).toMatchObject({ name: 'Administrator', variables });
+    ).toMatchObject({ name: 'Administrator', environments: [{ variables }] });
     expect(
       updateProfileRequestSchema.parse({
         meta,
@@ -239,16 +240,32 @@ describe('project settings mutations', () => {
         baseRevision: 1,
         name: 'QA administrator',
         authenticationType: 'credentials',
+        environmentId: ids.environment,
         variables,
       }),
     ).toMatchObject({ baseRevision: 1 });
     expect(
       createProfileRequestSchema.safeParse({
         meta,
-        environmentId: ids.environment,
+        projectId: ids.project,
         name: 'Duplicate variables',
         authenticationType: 'credentials',
-        variables: [variables[0], variables[0]],
+        environments: [{ environmentId: ids.environment, variables: [variables[0], variables[0]] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Mismatched environments',
+        authenticationType: 'credentials',
+        environments: [
+          { environmentId: ids.environment, variables },
+          {
+            environmentId: ids.environmentTwo,
+            variables: [{ name: 'token', value: 'different schema', sensitive: true }],
+          },
+        ],
       }).success,
     ).toBe(false);
   });

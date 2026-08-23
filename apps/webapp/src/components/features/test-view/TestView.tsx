@@ -129,6 +129,12 @@ export const TestView = () => {
   );
   const selectedTestId = snapshot.library.selectedTestId;
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
+  const editInRecorder = () =>
+    goToRecorder(
+      selectedTestId && selectedTest
+        ? { projectId: selectedTest.projectId, testId: selectedTestId }
+        : undefined,
+    );
   const testSuites = snapshot.library.testSuites.filter(
     (suite) => suite.projectId === snapshot.library.selectedProjectId,
   );
@@ -311,7 +317,7 @@ export const TestView = () => {
     if (desktop && selectedTestId && selectedTest) {
       desktop.runTest({
         projectId: selectedTest.projectId,
-        environmentId: selectedTest.environmentId,
+        environmentId: snapshot.library.selectedEnvironmentId ?? selectedTest.environmentIds[0],
         testId: selectedTestId,
         environmentVariables: {},
         timeoutMs: 30_000,
@@ -356,7 +362,7 @@ export const TestView = () => {
       {
         run,
         toggleSource: () => setSourceOpen((open) => !open),
-        edit: goToRecorder,
+        edit: editInRecorder,
         closeSource: () => setSourceOpen(false),
       },
       {
@@ -402,15 +408,22 @@ export const TestView = () => {
         </main>
         {newTestOpen && (
           <NewTestForm
+            environments={snapshot.library.environments.filter(
+              (environment) => environment.projectId === snapshot.library.selectedProjectId,
+            )}
+            initialEnvironmentIds={
+              snapshot.library.selectedEnvironmentId
+                ? [snapshot.library.selectedEnvironmentId]
+                : undefined
+            }
             onClose={() => setNewTestOpen(false)}
-            onStart={(title) => {
+            onStart={(title, environmentIds) => {
               const projectId = snapshot.library.selectedProjectId;
-              const environmentId = snapshot.library.selectedEnvironmentId;
-              if (!projectId || !environmentId) return;
+              if (!projectId || environmentIds.length === 0) return;
               window.testron?.command({
                 type: 'create-test',
                 projectId,
-                environmentId,
+                environmentIds,
                 title,
               });
               setNewTestOpen(false);
@@ -555,7 +568,7 @@ export const TestView = () => {
         >
           {sourceOpen && wideSourceLayout ? t('hide_source') : t('view_source')}
         </Button>
-        <Button icon="pencil" onClick={goToRecorder} kbd={displayTestViewShortcut('edit')}>
+        <Button icon="pencil" onClick={editInRecorder} kbd={displayTestViewShortcut('edit')}>
           {t('edit_in_recorder')}
         </Button>
         <span className="mx-1 h-5 w-px bg-line" />
@@ -661,7 +674,7 @@ export const TestView = () => {
                         const original = originalIndex(step.id);
                         if (original < 0) return;
                         window.testron?.command({ type: 'set-repick-step', index: original });
-                        goToRecorder();
+                        editInRecorder();
                       }}
                       onAddAssertion={() => addAssertion(step)}
                       onDelete={() => {
@@ -779,23 +792,32 @@ export const TestView = () => {
           currentTestSuiteId={selectedTest?.testSuiteId}
           onMove={({ projectId, testSuiteId }) => {
             if (!selectedTestId || !selectedTest) return;
-            const currentEnvironment = snapshot.library.environments.find(
-              (environment) => environment.id === selectedTest.environmentId,
+            const currentEnvironments = snapshot.library.environments.filter((environment) =>
+              selectedTest.environmentIds.includes(environment.id),
             );
             const destinationEnvironments = snapshot.library.environments.filter(
               (environment) => environment.projectId === projectId,
             );
-            const environment =
-              destinationEnvironments.find(
-                (candidate) => candidate.name === currentEnvironment?.name,
-              ) ?? destinationEnvironments[0];
-            if (!environment) return;
+            const environmentIds = [
+              ...new Set(
+                currentEnvironments
+                  .map(
+                    (current) =>
+                      destinationEnvironments.find((candidate) => candidate.name === current.name)
+                        ?.id,
+                  )
+                  .filter((id): id is string => Boolean(id)),
+              ),
+            ];
+            if (environmentIds.length === 0 && destinationEnvironments[0])
+              environmentIds.push(destinationEnvironments[0].id);
+            if (environmentIds.length === 0) return;
             window.testron?.command({
               type: 'move-test',
               testId: selectedTestId,
               projectId,
               testSuiteId,
-              environmentId: environment.id,
+              environmentIds,
             });
             setMoveOpen(false);
             setLog('Moving test…');

@@ -31,14 +31,23 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     inviteeLookup,
     projects: value.projects,
     environments: value.environments.map((item) => ({ ...item, authRevision: item.revision })),
-    profiles: value.profiles.map(({ variables: _variables, ...profile }) => profile),
+    profiles: value.profiles.map(({ environments: profileEnvironments, ...profile }) => ({
+      ...profile,
+      environmentIds: profileEnvironments.map(({ environmentId }) => environmentId),
+    })),
     profileVariables: value.profiles.flatMap((profile) =>
-      profile.variables.map((variable) => ({ profileId: profile.id, ...variable })),
+      profile.environments.flatMap((environment) =>
+        environment.variables.map((variable) => ({
+          profileId: profile.id,
+          environmentId: environment.environmentId,
+          ...variable,
+        })),
+      ),
     ),
     tests: value.tests.map(({ test, currentRevision }) => ({
       id: test.id,
       projectId: test.projectId,
-      environmentId: currentRevision.content.environmentId,
+      environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
       title: test.title,
       prerequisites: currentRevision.content.prerequisites,
@@ -49,7 +58,7 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     deletedTests: value.deletedTests?.map(({ test, currentRevision }) => ({
       id: test.id,
       projectId: test.projectId,
-      environmentId: currentRevision.content.environmentId,
+      environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
       title: test.title,
       prerequisites: currentRevision.content.prerequisites,
@@ -76,7 +85,8 @@ const snapshotFromWorkspace = (value: WebWorkspaceSnapshot): AppSnapshot => {
   const library = libraryFromWorkspace(value);
   const selected = value.tests.find((item) => item.test.id === library.selectedTestId);
   const environment = value.environments.find(
-    (item) => item.id === selected?.currentRevision.content.environmentId,
+    (item) =>
+      item.id === (selectedEnvironmentId ?? selected?.currentRevision.content.environmentIds[0]),
   );
   return {
     title: selected?.test.title ?? 'Untitled test',
@@ -162,6 +172,8 @@ const command = (input: AppCommand): void => {
       break;
     case 'select-test':
       selectedTestId = value(input, 'testId');
+      selectedEnvironmentId = workspace?.tests.find((test) => test.test.id === selectedTestId)
+        ?.currentRevision.content.environmentIds[0];
       publish();
       break;
     case 'create-project':
@@ -210,10 +222,15 @@ const command = (input: AppCommand): void => {
       void mutate(
         trpcClient.profile.create.mutate({
           meta,
-          environmentId: value(input, 'environmentId'),
+          projectId: selectedProjectId!,
           name: value(input, 'name'),
-          authenticationType: 'credentials',
-          variables: value(input, 'variables'),
+          authenticationType: value(input, 'authenticationType'),
+          environments: [
+            {
+              environmentId: value(input, 'environmentId'),
+              variables: value(input, 'variables'),
+            },
+          ],
         }),
       );
       break;
@@ -224,7 +241,8 @@ const command = (input: AppCommand): void => {
           profileId: value(input, 'profileId'),
           baseRevision: value(input, 'baseRevision'),
           name: value(input, 'name'),
-          authenticationType: 'credentials',
+          authenticationType: value(input, 'authenticationType'),
+          environmentId: value(input, 'environmentId'),
           variables: value(input, 'variables'),
         }),
       );
@@ -266,7 +284,7 @@ const command = (input: AppCommand): void => {
           content: {
             stepSchemaVersion: 1,
             title: value(input, 'title'),
-            environmentId: value(input, 'environmentId'),
+            environmentIds: value(input, 'environmentIds'),
             steps: [],
           },
         })
@@ -276,7 +294,7 @@ const command = (input: AppCommand): void => {
           window.testronDesktop?.openLocal({
             route: 'record',
             projectId: snapshot.test.projectId,
-            environmentId: snapshot.currentRevision.content.environmentId,
+            environmentId: snapshot.currentRevision.content.environmentIds[0],
             testId: snapshot.test.id,
           });
           if (!window.testronDesktop) goToTest(snapshot.test.id);
@@ -330,12 +348,12 @@ const command = (input: AppCommand): void => {
           baseRevision: test.test.currentRevision,
           projectId: value(input, 'projectId'),
           testSuiteId: value(input, 'testSuiteId'),
-          environmentId: value(input, 'environmentId'),
+          environmentIds: value(input, 'environmentIds'),
         })
         .then(async (moved) => {
           selectedProjectId = moved.test.projectId;
           selectedTestSuiteId = moved.test.testSuiteId ?? undefined;
-          selectedEnvironmentId = moved.currentRevision.content.environmentId;
+          selectedEnvironmentId = moved.currentRevision.content.environmentIds[0];
           selectedTestId = moved.test.id;
           await refresh();
           goToTest(moved.test.id, moved.test.projectId);

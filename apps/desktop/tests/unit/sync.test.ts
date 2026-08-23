@@ -153,7 +153,7 @@ describe('online-first desktop synchronization', () => {
       'https://example.test/',
       'data-testid',
     );
-    const test = local.createTest(project.id, environment.id, 'checkout');
+    const test = local.createTest(project.id, [environment.id], 'checkout');
     local.replaceSteps(test.id, [step()]);
     const remote = fakeServer();
     const coordinator = new DesktopSyncCoordinator(local, remote.client, '0.0.1');
@@ -187,7 +187,7 @@ describe('online-first desktop synchronization', () => {
       'https://example.test/',
       'data-testid',
     );
-    const test = local.createTest(project.id, environment.id, 'checkout');
+    const test = local.createTest(project.id, [environment.id], 'checkout');
     local.replaceSteps(test.id, [step()]);
     const remote = fakeServer();
     const coordinator = new DesktopSyncCoordinator(local, remote.client, '0.0.1');
@@ -214,7 +214,7 @@ describe('online-first desktop synchronization', () => {
       'https://example.test/',
       'data-testid',
     );
-    const test = local.createTest(project.id, environment.id, 'checkout');
+    const test = local.createTest(project.id, [environment.id], 'checkout');
     local.replaceSteps(test.id, [
       step('https://example.test/one'),
       step('https://example.test/two'),
@@ -238,7 +238,7 @@ describe('online-first desktop synchronization', () => {
       'https://example.test/',
       'data-testid',
     );
-    const test = local.createTest(project.id, environment.id, 'checkout');
+    const test = local.createTest(project.id, [environment.id], 'checkout');
     local.replaceSteps(test.id, [step()]);
     const remote = fakeServer();
     remote.client.createProject = async () => Promise.reject(new Error('network unavailable'));

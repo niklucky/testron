@@ -26,12 +26,12 @@ export const goToTest = (testId: string, targetProjectId = projectId()) => {
     }),
   );
 };
-export const goToRecorder = () => {
+export const goToRecorder = (selection?: { projectId: string; testId: string }) => {
   if (window.testronDesktop) {
     window.testronDesktop.openLocal({
       route: 'record',
-      projectId: projectId(),
-      testId: window.location.pathname.split('/')[4],
+      projectId: selection?.projectId ?? projectId(),
+      testId: selection?.testId ?? window.location.pathname.split('/')[4],
     });
     return;
   }

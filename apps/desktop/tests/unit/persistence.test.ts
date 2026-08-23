@@ -27,7 +27,7 @@ describe('TestronRepository', () => {
       'http://127.0.0.1:4174/',
       'data-qa',
     );
-    const test = repository.createTest(project.id, environment.id, 'submit an order');
+    const test = repository.createTest(project.id, [environment.id], 'submit an order');
     repository.replaceSteps(test.id, [
       {
         version: 1,
@@ -87,8 +87,20 @@ describe('TestronRepository', () => {
 
     expect(repository.listProfiles()).toEqual([profile]);
     expect(repository.listProfileVariables()).toEqual([
-      { profileId: profile.id, name: 'password', value: 'not-a-real-password', sensitive: true },
-      { profileId: profile.id, name: 'username', value: 'Administrator', sensitive: false },
+      {
+        profileId: profile.id,
+        environmentId: environment.id,
+        name: 'password',
+        value: 'not-a-real-password',
+        sensitive: true,
+      },
+      {
+        profileId: profile.id,
+        environmentId: environment.id,
+        name: 'username',
+        value: 'Administrator',
+        sensitive: false,
+      },
     ]);
     repository.close();
   });
@@ -105,7 +117,7 @@ describe('TestronRepository', () => {
       'http://127.0.0.1:4174/',
       'data-testid',
     );
-    const test = repository.createTest(project.id, environment.id, 'sign in');
+    const test = repository.createTest(project.id, [environment.id], 'sign in');
     repository.replaceSteps(test.id, [
       {
         version: 1,
@@ -140,7 +152,7 @@ describe('TestronRepository', () => {
       'https://dev.example.test/',
       'data-testid',
     );
-    const test = repository.createTest(project.id, environment.id, 'sign in');
+    const test = repository.createTest(project.id, [environment.id], 'sign in');
     repository.replaceSteps(test.id, [
       {
         version: 1,
@@ -175,7 +187,7 @@ describe('TestronRepository', () => {
       'http://127.0.0.1:4174/',
       'data-testid',
     );
-    const test = repository.createTest(project.id, environment.id, 'legacy test');
+    const test = repository.createTest(project.id, [environment.id], 'legacy test');
     repository.replaceSteps(test.id, [
       {
         version: 1,

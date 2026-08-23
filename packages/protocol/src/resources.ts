@@ -103,6 +103,8 @@ export const environmentSchema = z
   })
   .strict();
 
+export const profileAuthenticationTypeSchema = z.enum(['credentials', 'cookies']);
+
 export const profileVariableSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -111,19 +113,66 @@ export const profileVariableSchema = z
   })
   .strict();
 
+export const profileEnvironmentSchema = z
+  .object({
+    environmentId: entityIdSchema,
+    variables: z.array(profileVariableSchema).min(1).max(50),
+  })
+  .strict()
+  .superRefine((environment, context) => {
+    const names = environment.variables.map(({ name }) => name);
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['variables'],
+        message: 'Profile variable names must be unique.',
+      });
+  });
+
 export const profileSchema = z
   .object({
     id: entityIdSchema,
-    environmentId: entityIdSchema,
+    projectId: entityIdSchema,
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.literal('credentials'),
-    variables: z.array(profileVariableSchema).min(1).max(50),
+    authenticationType: profileAuthenticationTypeSchema,
+    environments: z.array(profileEnvironmentSchema).min(1).max(100),
     revision: revisionNumberSchema,
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
     deletion: deletionStateSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((profile, context) => {
+    const environmentIds = profile.environments.map(({ environmentId }) => environmentId);
+    if (new Set(environmentIds).size !== environmentIds.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments'],
+        message: 'A profile can configure each environment only once.',
+      });
+
+    const signature = (variables: (typeof profile.environments)[number]['variables']) =>
+      variables
+        .map(({ name, sensitive }) => `${name}\u0000${sensitive}`)
+        .sort()
+        .join('\u0001');
+    const expected = profile.environments[0] ? signature(profile.environments[0].variables) : '';
+    profile.environments.forEach((environment, index) => {
+      const names = environment.variables.map(({ name }) => name);
+      if (new Set(names).size !== names.length)
+        context.addIssue({
+          code: 'custom',
+          path: ['environments', index, 'variables'],
+          message: 'Profile variable names must be unique.',
+        });
+      if (signature(environment.variables) !== expected)
+        context.addIssue({
+          code: 'custom',
+          path: ['environments', index, 'variables'],
+          message: 'Every environment must use the same profile variable keys.',
+        });
+    });
+  });
 
 export const testSuiteSchema = z
   .object({
@@ -181,7 +230,13 @@ export const testRevisionContentSchema = z
   .object({
     stepSchemaVersion: stepSchemaVersionSchema,
     title: testTitleSchema,
-    environmentId: entityIdSchema,
+    environmentIds: z
+      .array(entityIdSchema)
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Test environment assignments must be unique.',
+      }),
     prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
     steps: z.array(revisionStepSchema).max(10_000),
   })
@@ -281,6 +336,7 @@ export const testRunSchema = z
     testId: entityIdSchema,
     testRevision: revisionPointerSchema,
     environmentId: entityIdSchema,
+    profileId: entityIdSchema.nullable(),
     status: testRunStatusSchema,
     source: z.literal('desktop-local'),
     startedAt: timestampSchema,
@@ -324,9 +380,19 @@ export const workspaceSnapshotSchema = z
   })
   .strict();
 
-export const webProfileSchema = profileSchema.omit({ variables: true }).extend({
-  variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
-});
+export const webProfileSchema = z
+  .object({
+    ...profileSchema.shape,
+    environments: z.array(
+      z
+        .object({
+          environmentId: entityIdSchema,
+          variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 /** Browser-safe workspace projection. Stored credential values stay server-side. */
 export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema
@@ -337,6 +403,7 @@ export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
 export type ProfileVariable = z.infer<typeof profileVariableSchema>;
+export type ProfileEnvironment = z.infer<typeof profileEnvironmentSchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type TestSuite = z.infer<typeof testSuiteSchema>;
 export type TestSuiteSummary = z.infer<typeof testSuiteSummarySchema>;
