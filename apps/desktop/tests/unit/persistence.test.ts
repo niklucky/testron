@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -80,7 +81,7 @@ describe('TestronRepository', () => {
       'https://dev.example.test/',
       'data-testid',
     );
-    const profile = repository.createProfile(environment.id, 'Administrator', [
+    const profile = repository.createProfile(environment.id, 'Administrator', 'credentials', [
       { name: 'username', value: 'Administrator', sensitive: false },
       { name: 'password', value: 'not-a-real-password', sensitive: true },
     ]);
@@ -101,6 +102,69 @@ describe('TestronRepository', () => {
         value: 'Administrator',
         sensitive: false,
       },
+    ]);
+    const cookieProfile = repository.createProfile(environment.id, 'Session', 'cookies', [
+      { name: 'sid', value: 'not-a-real-cookie', sensitive: true },
+    ]);
+    expect(cookieProfile.authenticationType).toBe('cookies');
+    repository.close();
+  });
+
+  it('preserves every environment when checking out a remote test', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-checkout-'));
+    temporaryDirectories.push(directory);
+    const repository = new TestronRepository(path.join(directory, 'testron.sqlite'));
+    const project = repository.createProject('Multi-environment');
+    const development = repository.createEnvironment(
+      project.id,
+      'Development',
+      'https://dev.example.test/',
+      'data-testid',
+    );
+    const production = repository.createEnvironment(
+      project.id,
+      'Production',
+      'https://example.test/',
+      'data-testid',
+    );
+    const testId = randomUUID();
+    const revisionId = randomUUID();
+    const actorId = randomUUID();
+    const createdAt = '2026-01-01T00:00:00.000Z';
+
+    const test = repository.checkoutRemoteTest(project, [development, production], {
+      test: {
+        id: testId,
+        projectId: project.id,
+        testSuiteId: null,
+        title: 'works everywhere',
+        currentRevision: { id: revisionId, number: 1 },
+        createdAt,
+        createdBy: actorId,
+        deletion: { status: 'active' },
+      },
+      currentRevision: {
+        id: revisionId,
+        testId,
+        projectId: project.id,
+        number: 1,
+        parentRevision: null,
+        content: {
+          stepSchemaVersion: 1,
+          title: 'works everywhere',
+          environmentIds: [development.id, production.id],
+          prerequisites: [],
+          steps: [],
+        },
+        createdAt,
+        createdBy: actorId,
+      },
+    });
+
+    expect(test.environmentIds).toEqual([development.id, production.id]);
+    expect(repository.getDraft(test.id)?.content.environmentIds).toEqual([
+      development.id,
+      production.id,
     ]);
     repository.close();
   });

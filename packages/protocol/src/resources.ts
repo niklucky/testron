@@ -129,6 +129,46 @@ export const profileEnvironmentSchema = z
       });
   });
 
+type ProfileEnvironmentKeys = {
+  environmentId: string;
+  variables: Array<{ name: string; sensitive: boolean }>;
+};
+
+const validateProfileEnvironments = (
+  profile: { environments: ProfileEnvironmentKeys[] },
+  context: z.RefinementCtx,
+): void => {
+  const environmentIds = profile.environments.map(({ environmentId }) => environmentId);
+  if (new Set(environmentIds).size !== environmentIds.length)
+    context.addIssue({
+      code: 'custom',
+      path: ['environments'],
+      message: 'A profile can configure each environment only once.',
+    });
+
+  const signature = (variables: ProfileEnvironmentKeys['variables']) =>
+    variables
+      .map(({ name, sensitive }) => `${name}\u0000${sensitive}`)
+      .sort()
+      .join('\u0001');
+  const expected = profile.environments[0] ? signature(profile.environments[0].variables) : '';
+  profile.environments.forEach((environment, index) => {
+    const names = environment.variables.map(({ name }) => name);
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Profile variable names must be unique.',
+      });
+    if (signature(environment.variables) !== expected)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Every environment must use the same profile variable keys.',
+      });
+  });
+};
+
 export const profileSchema = z
   .object({
     id: entityIdSchema,
@@ -142,37 +182,7 @@ export const profileSchema = z
     deletion: deletionStateSchema,
   })
   .strict()
-  .superRefine((profile, context) => {
-    const environmentIds = profile.environments.map(({ environmentId }) => environmentId);
-    if (new Set(environmentIds).size !== environmentIds.length)
-      context.addIssue({
-        code: 'custom',
-        path: ['environments'],
-        message: 'A profile can configure each environment only once.',
-      });
-
-    const signature = (variables: (typeof profile.environments)[number]['variables']) =>
-      variables
-        .map(({ name, sensitive }) => `${name}\u0000${sensitive}`)
-        .sort()
-        .join('\u0001');
-    const expected = profile.environments[0] ? signature(profile.environments[0].variables) : '';
-    profile.environments.forEach((environment, index) => {
-      const names = environment.variables.map(({ name }) => name);
-      if (new Set(names).size !== names.length)
-        context.addIssue({
-          code: 'custom',
-          path: ['environments', index, 'variables'],
-          message: 'Profile variable names must be unique.',
-        });
-      if (signature(environment.variables) !== expected)
-        context.addIssue({
-          code: 'custom',
-          path: ['environments', index, 'variables'],
-          message: 'Every environment must use the same profile variable keys.',
-        });
-    });
-  });
+  .superRefine(validateProfileEnvironments);
 
 export const testSuiteSchema = z
   .object({
@@ -383,16 +393,23 @@ export const workspaceSnapshotSchema = z
 export const webProfileSchema = z
   .object({
     ...profileSchema.shape,
-    environments: z.array(
-      z
-        .object({
-          environmentId: entityIdSchema,
-          variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
-        })
-        .strict(),
-    ),
+    environments: z
+      .array(
+        z
+          .object({
+            environmentId: entityIdSchema,
+            variables: z
+              .array(profileVariableSchema.omit({ value: true }))
+              .min(1)
+              .max(50),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
   })
-  .strict();
+  .strict()
+  .superRefine(validateProfileEnvironments);
 
 /** Browser-safe workspace projection. Stored credential values stay server-side. */
 export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema

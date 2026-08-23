@@ -183,6 +183,7 @@ const migrations = [
         json_set(payload, '$.content.environmentIds', json_array(json_extract(payload, '$.content.environmentId'))),
         '$.content.environmentId'
       );
+    -- Pre-release reset: local profiles are disposable test data under the new project-scoped model.
     DROP TABLE profile_variables;
     DROP TABLE profiles;
     CREATE TABLE profiles (
@@ -367,6 +368,7 @@ export class TestronRepository {
   createProfile(
     environmentId: string,
     name: string,
+    authenticationType: 'credentials' | 'cookies',
     variables: ReadonlyArray<{ name: string; value: string; sensitive: boolean }>,
   ): ProfileRecord {
     const environment = this.getEnvironment(environmentId);
@@ -376,7 +378,7 @@ export class TestronRepository {
       projectId: environment.projectId,
       environmentIds: [environmentId],
       name: name.trim(),
-      authenticationType: 'credentials',
+      authenticationType,
     };
     const insertVariable = this.database.prepare(
       'INSERT INTO profile_variables (profile_id, environment_id, name, value, sensitive) VALUES (?, ?, ?, ?, ?)',
@@ -642,23 +644,30 @@ export class TestronRepository {
 
   checkoutRemoteTest(
     project: ProjectRecord,
-    environment: EnvironmentRecord,
+    environments: EnvironmentRecord[],
     snapshotValue: TestSnapshot,
   ): TestRecord {
     const snapshot = testSnapshotSchema.parse(snapshotValue);
     const revision = snapshot.currentRevision;
+    const assignedEnvironments = revision.content.environmentIds.map((environmentId) => {
+      const environment = environments.find((candidate) => candidate.id === environmentId);
+      if (!environment || environment.projectId !== project.id)
+        throw new Error(`Environment ${environmentId} is not available locally.`);
+      return environment;
+    });
+    const environmentIds = assignedEnvironments.map(({ id }) => id);
     this.database.exec('BEGIN IMMEDIATE');
     try {
       this.database
         .prepare('INSERT OR IGNORE INTO projects (id, name, created_at) VALUES (?, ?, ?)')
         .run(project.id, project.name, snapshot.test.createdAt);
-      this.database
-        .prepare(
-          `INSERT OR IGNORE INTO environments
+      const insertEnvironment = this.database.prepare(
+        `INSERT OR IGNORE INTO environments
             (id, project_id, name, base_url, test_id_attribute, created_at, auth_revision)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
+      );
+      for (const environment of assignedEnvironments)
+        insertEnvironment.run(
           environment.id,
           project.id,
           environment.name,
@@ -676,8 +685,8 @@ export class TestronRepository {
         .run(
           snapshot.test.id,
           project.id,
-          environment.id,
-          JSON.stringify(revision.content.environmentIds),
+          environmentIds[0],
+          JSON.stringify(environmentIds),
           snapshot.test.testSuiteId,
           revision.content.title,
           snapshot.test.createdAt,
@@ -691,7 +700,9 @@ export class TestronRepository {
         insert.run(snapshot.test.id, index, JSON.stringify(entry.payload)),
       );
       this.setServerId('project', project.id, snapshot.test.projectId);
-      this.setServerId('environment', environment.id, revision.content.environmentIds[0]!);
+      assignedEnvironments.forEach((environment, index) =>
+        this.setServerId('environment', environment.id, revision.content.environmentIds[index]!),
+      );
       this.setServerId('test', snapshot.test.id, snapshot.test.id);
       const now = new Date().toISOString();
       this.writeDraft(snapshot.test.id, {
@@ -699,7 +710,7 @@ export class TestronRepository {
         projectId: project.id,
         testId: snapshot.test.id,
         baseRevision: snapshot.test.currentRevision,
-        content: { ...revision.content, environmentIds: [environment.id] },
+        content: { ...revision.content, environmentIds },
         localCreatedAt: now,
         localUpdatedAt: now,
         syncStatus: 'synced',
@@ -708,7 +719,7 @@ export class TestronRepository {
       return {
         id: snapshot.test.id,
         projectId: project.id,
-        environmentIds: [environment.id],
+        environmentIds,
         title: revision.content.title,
         prerequisites: revision.content.prerequisites,
         createdAt: snapshot.test.createdAt,

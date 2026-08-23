@@ -602,6 +602,29 @@ describe('PostgreSQL tRPC vertical slice', () => {
       ],
     });
     expect(cookieProfile.authenticationType).toBe('cookies');
+    const renamedCookieProfile = await api.profile.update.mutate({
+      meta: mutationMeta(),
+      profileId: cookieProfile.id,
+      baseRevision: cookieProfile.revision,
+      name: 'Cookie session',
+      authenticationType: 'cookies',
+      environmentId: development.id,
+      variables: [{ name: 'sid', value: 'dev-cookie', sensitive: true }],
+    });
+    expect(renamedCookieProfile.environments[0]?.variables).toEqual([
+      { name: 'sid', value: 'dev-cookie', sensitive: true },
+    ]);
+    await expect(
+      api.profile.update.mutate({
+        meta: mutationMeta(),
+        profileId: updated.id,
+        baseRevision: updated.revision,
+        name: 'Mismatched keys',
+        authenticationType: 'credentials',
+        environmentId: environment.id,
+        variables: [{ name: 'token', value: 'different', sensitive: true }],
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
     await expect(
       api.profile.update.mutate({
         meta: mutationMeta(),

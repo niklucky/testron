@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import {
   environmentSchema,
@@ -227,8 +227,13 @@ export class CanonicalRepository {
       const existingVariables = await tx
         .select({ name: profileVariables.name, sensitive: profileVariables.sensitive })
         .from(profileVariables)
-        .where(eq(profileVariables.profileId, request.profileId))
-        .limit(50);
+        .where(
+          and(
+            eq(profileVariables.profileId, request.profileId),
+            ne(profileVariables.environmentId, request.environmentId),
+          ),
+        )
+        .orderBy(asc(profileVariables.environmentId), asc(profileVariables.name));
       const signature = (variables: ReadonlyArray<{ name: string; sensitive: boolean }>) =>
         [...new Set(variables.map(({ name, sensitive }) => `${name}\u0000${sensitive}`))]
           .sort()
@@ -1544,7 +1549,7 @@ export class CanonicalRepository {
       })
       .from(profileVariables)
       .where(eq(profileVariables.profileId, row.id))
-      .orderBy(asc(profileVariables.name));
+      .orderBy(asc(profileVariables.environmentId), asc(profileVariables.name));
     return profileSchema.parse({
       id: row.id,
       projectId: row.projectId,

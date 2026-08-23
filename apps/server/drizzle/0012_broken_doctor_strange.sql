@@ -1,3 +1,4 @@
+-- Pre-release reset: existing profiles are disposable test data until publication.
 DROP TABLE "profile_variables";--> statement-breakpoint
 DROP TABLE "profiles";--> statement-breakpoint
 CREATE TABLE "profiles" (

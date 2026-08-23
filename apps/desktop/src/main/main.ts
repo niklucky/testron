@@ -55,7 +55,12 @@ import {
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
 import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
-import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
+import {
+  TestronRepository,
+  type EnvironmentRecord,
+  type LibrarySnapshot,
+  type ProfileRecord,
+} from './persistence/repository';
 import { RecordingSession } from './recording/session';
 import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
@@ -731,6 +736,16 @@ const createWindow = async (): Promise<void> => {
     );
     return { selectedTest, environment };
   };
+  const authenticationStatePath = (
+    dataDirectory: string,
+    environment: EnvironmentRecord,
+    profile: ProfileRecord | undefined,
+  ): string =>
+    path.join(
+      dataDirectory,
+      'auth',
+      `${environment.id}-${profile?.id ?? 'no-profile'}-revision-${profile?.revision ?? environment.authRevision}.json`,
+    );
   const applyContext = (): void => {
     const { selectedTest, environment } = selectedContext();
     session.setGenerationContext(selectedTest?.title ?? 'recorded test');
@@ -1503,7 +1518,12 @@ const createWindow = async (): Promise<void> => {
           break;
         }
         if (!ensureLocalEnvironment(command.environmentId)) break;
-        const profile = store.createProfile(command.environmentId, command.name, command.variables);
+        const profile = store.createProfile(
+          command.environmentId,
+          command.name,
+          command.authenticationType,
+          command.variables,
+        );
         selectedEnvironmentId = command.environmentId;
         selectedProfileId = profile.id;
         applyContext();
@@ -1856,11 +1876,7 @@ const createWindow = async (): Promise<void> => {
         }
         const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
         const selectedProfile = allProfiles().find((profile) => profile.id === selectedProfileId);
-        const authStatePath = path.join(
-          dataDirectory,
-          'auth',
-          `${environment.id}-${selectedProfile?.id ?? 'no-profile'}-revision-${selectedProfile?.revision ?? environment.authRevision}.json`,
-        );
+        const authStatePath = authenticationStatePath(dataDirectory, environment, selectedProfile);
         const artifactsDirectory = path.join(
           dataDirectory,
           'runs',
@@ -2034,11 +2050,8 @@ const createWindow = async (): Promise<void> => {
         const { environment } = selectedContext();
         if (!environment) break;
         const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
-        const authStatePath = path.join(
-          dataDirectory,
-          'auth',
-          `${environment.id}-revision-${environment.authRevision}.json`,
-        );
+        const selectedProfile = allProfiles().find((profile) => profile.id === selectedProfileId);
+        const authStatePath = authenticationStatePath(dataDirectory, environment, selectedProfile);
         void rm(authStatePath, { force: true }).then(() => {
           const revision = store.rotateAuthenticationRevision(environment.id);
           session.warn(
@@ -2265,7 +2278,11 @@ const createWindow = async (): Promise<void> => {
         const selectedTest = allTests().find((test) => test.id === selectedTestId);
         if (selectedTest) {
           selectedProjectId = selectedTest.projectId;
-          selectedEnvironmentId = selectedTest.environmentIds[0];
+          if (
+            !selectedEnvironmentId ||
+            !selectedTest.environmentIds.includes(selectedEnvironmentId)
+          )
+            selectedEnvironmentId = selectedTest.environmentIds[0];
           selectedTestSuiteId = selectedTest.testSuiteId ?? undefined;
           selectedProfileId = allProfiles().find((profile) =>
             Boolean(

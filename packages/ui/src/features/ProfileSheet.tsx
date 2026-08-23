@@ -96,9 +96,14 @@ export const ProfileSheet = ({
           <select
             aria-label={t('authentication_type')}
             value={authenticationType}
-            onChange={(event) =>
-              setAuthenticationType(event.target.value as 'credentials' | 'cookies')
-            }
+            onChange={(event) => {
+              const next = event.target.value as 'credentials' | 'cookies';
+              setAuthenticationType(next);
+              if (next === 'cookies')
+                setVariables((current) =>
+                  current.map((variable) => ({ ...variable, sensitive: true })),
+                );
+            }}
             className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none"
           >
             <option value="credentials">{t('login_password')}</option>
@@ -131,7 +136,9 @@ export const ProfileSheet = ({
                         ? {
                             ...entry,
                             name: event.target.value,
-                            sensitive: /password|secret|token/i.test(event.target.value),
+                            sensitive:
+                              authenticationType === 'cookies' ||
+                              /password|secret|token/i.test(event.target.value),
                           }
                         : entry,
                     ),
@@ -141,7 +148,7 @@ export const ProfileSheet = ({
               />
               <input
                 aria-label={t('variable_value', { value1: index + 1 })}
-                type={variable.sensitive ? 'password' : 'text'}
+                type={authenticationType === 'cookies' || variable.sensitive ? 'password' : 'text'}
                 value={variable.value}
                 onChange={(event) =>
                   setVariables((current) =>

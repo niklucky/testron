@@ -240,7 +240,13 @@ export const moveTestRequestSchema = z
     baseRevision: revisionPointerSchema,
     projectId: entityIdSchema,
     testSuiteId: entityIdSchema,
-    environmentIds: z.array(entityIdSchema).min(1).max(100),
+    environmentIds: z
+      .array(entityIdSchema)
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Test environment assignments must be unique.',
+      }),
   })
   .strict();
 

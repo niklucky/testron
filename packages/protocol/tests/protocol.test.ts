@@ -10,13 +10,14 @@ import {
   createInvitationRequestSchema,
   finishTestRunRequestSchema,
   createProfileRequestSchema,
+  moveTestRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
   updateEnvironmentRequestSchema,
   updateProjectRequestSchema,
   updateProfileRequestSchema,
 } from '../src/operations';
-import { testRevisionSchema, testSnapshotSchema } from '../src/resources';
+import { testRevisionSchema, testSnapshotSchema, webProfileSchema } from '../src/resources';
 
 const fixture = (name: string): unknown =>
   JSON.parse(
@@ -264,6 +265,73 @@ describe('project settings mutations', () => {
           {
             environmentId: ids.environmentTwo,
             variables: [{ name: 'token', value: 'different schema', sensitive: true }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects duplicate move environments and invalid browser-safe profiles', () => {
+    expect(
+      moveTestRequestSchema.safeParse({
+        meta,
+        testId: ids.test,
+        baseRevision: { id: ids.revision, number: 1 },
+        projectId: ids.project,
+        testSuiteId: ids.revision,
+        environmentIds: [ids.environment, ids.environment],
+      }).success,
+    ).toBe(false);
+
+    const webProfile = {
+      id: ids.revision,
+      projectId: ids.project,
+      name: 'Administrator',
+      authenticationType: 'credentials',
+      environments: [
+        {
+          environmentId: ids.environment,
+          variables: [
+            { name: 'username', sensitive: false },
+            { name: 'password', sensitive: true },
+          ],
+        },
+      ],
+      revision: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      deletion: { status: 'active' },
+    };
+    expect(webProfileSchema.safeParse(webProfile).success).toBe(true);
+    expect(webProfileSchema.safeParse({ ...webProfile, environments: [] }).success).toBe(false);
+    expect(
+      webProfileSchema.safeParse({
+        ...webProfile,
+        environments: [webProfile.environments[0], webProfile.environments[0]],
+      }).success,
+    ).toBe(false);
+    expect(
+      webProfileSchema.safeParse({
+        ...webProfile,
+        environments: [
+          {
+            ...webProfile.environments[0],
+            variables: [
+              webProfile.environments[0].variables[0],
+              webProfile.environments[0].variables[0],
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      webProfileSchema.safeParse({
+        ...webProfile,
+        environments: [
+          webProfile.environments[0],
+          {
+            environmentId: ids.environmentTwo,
+            variables: [{ name: 'token', sensitive: true }],
           },
         ],
       }).success,

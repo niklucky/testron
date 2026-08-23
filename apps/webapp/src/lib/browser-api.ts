@@ -290,6 +290,8 @@ const command = (input: AppCommand): void => {
         })
         .then(async (snapshot) => {
           selectedTestId = snapshot.test.id;
+          selectedEnvironmentId =
+            snapshot.currentRevision.content.environmentIds[0] ?? selectedEnvironmentId;
           await refresh();
           window.testronDesktop?.openLocal({
             route: 'record',
