@@ -1,13 +1,9 @@
 @import 'tailwindcss';
+@source '../../../../packages/ui/src';
 
-@import '../components/ui/design/tokens.css';
-@import '../components/ui/design/base.css';
-@import '../../../../packages/ui/typography.css';
-
-/* The frozen UI studies behind #/experiments and the recorder shell. Fully
-   scoped to their own class names — nothing in here reaches the design
-   system. Delete this import once those screens have been rebuilt. */
-@import '../components/ui/design/experiments/styles.css';
+@import '@testron/ui/tokens.css';
+@import '@testron/ui/base.css';
+@import '@testron/ui/typography.css';
 
 /* --------------------------------------------------------------------------
    Token → utility bridge.

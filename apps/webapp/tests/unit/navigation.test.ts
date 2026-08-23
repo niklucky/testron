@@ -29,22 +29,22 @@ describe('test navigation', () => {
     );
   });
 
-  it('opens the bundled TestView inside Electron', () => {
-    const openLocal = vi.fn();
+  it('keeps TestView in the hosted webapp inside Electron', async () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         location: { pathname: '/projects/project-1' },
-        testronDesktop: { openLocal },
+        testronDesktop: {},
       },
     });
 
     goToTest('test-1');
 
-    expect(openLocal).toHaveBeenCalledWith({
-      route: 'test',
-      projectId: 'project-1',
-      testId: 'test-1',
-    });
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/projects/$projectId/tests/$testId',
+        params: { projectId: 'project-1', testId: 'test-1' },
+      }),
+    );
   });
 });

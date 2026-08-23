@@ -626,9 +626,6 @@ export const Dashboard = ({
           <span>
             {quarantined.length} {t('quarantined')}
           </span>
-          <a href="#/experiments" className="text-ink-3 no-underline hover:text-ink">
-            {t('ui_studies')}
-          </a>
         </span>
       </footer>
 

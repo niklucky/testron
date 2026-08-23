@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 
 import { PanelHost } from './record/PanelHost';
 import { RecordScreen } from './record/RecordScreen';
-import { RunView } from './run-view/RunView';
-import { TestView } from './test-view/TestView';
 import { RecoveryScreen } from './local/RecoveryScreen';
 
 /**
@@ -28,16 +26,7 @@ export const App = () => {
   if (route === '#/panel/code') return <PanelHost panel="code" />;
   if (route === '#/recovery') return <RecoveryScreen />;
 
-  const product =
-    route === '#/record' ? (
-      <RecordScreen />
-    ) : route === '#/test' ? (
-      <TestView />
-    ) : route === '#/run' ? (
-      <RunView />
-    ) : (
-      <RecoveryScreen />
-    );
+  const product = route === '#/record' ? <RecordScreen /> : <RecoveryScreen />;
 
   return product;
 };

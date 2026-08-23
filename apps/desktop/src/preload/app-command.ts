@@ -28,6 +28,7 @@ export type SessionMenuId = z.infer<typeof sessionMenuIdSchema>;
  */
 export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('show-product') }),
+  z.object({ type: z.literal('show-selected-test') }),
   z.object({ type: z.literal('reload-product') }),
   z.object({ type: z.literal('start-recording'), append: z.boolean().optional() }),
   z.object({ type: z.literal('stop-recording') }),

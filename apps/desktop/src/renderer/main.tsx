@@ -1,10 +1,9 @@
 import { SlangProvider, useTranslation } from '@warpunit/slang-react';
+import { en, ru } from '@testron/i18n';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
-import en from './locales/en.json';
-import ru from './locales/ru.json';
 import './app.css';
 
 const slangApiKey = import.meta.env.VITE_SLANG_API_KEY;

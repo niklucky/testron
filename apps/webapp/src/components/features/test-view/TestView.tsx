@@ -1,15 +1,26 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { Step } from '@testron/domain/steps/schema';
+import type { DesktopRuntimeState } from '@testron/protocol';
 import type { AppSnapshot } from '../../../lib/library';
-import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../../ui/design';
+import {
+  Badge,
+  Button,
+  Icon,
+  IconButton,
+  PulseDot,
+  SegmentedControl,
+  StatusDot,
+  useTheme,
+} from '../../ui/design';
 import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
-import type { RecordedStep } from '../record/types';
+import type { RecordedStep, StepViewMode } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
+import { BrowserInstallModal } from './BrowserInstallModal';
 import {
   AssertionCard,
   DetailCard,
@@ -51,6 +62,15 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   verifyAssertion: 'visible',
 };
 
+const EMPTY_DESKTOP_RUNTIME: DesktopRuntimeState = {
+  replay: { status: 'idle', steps: [] },
+  browserInstallation: {
+    status: 'checking',
+    installPath: '',
+    estimatedDownloadBytes: 300 * 1024 * 1024,
+  },
+};
+
 const isAssertion = (step: Step): boolean => step.kind.startsWith('assert');
 
 /** The persisted test, read left to right from the same snapshot used by the recorder. */
@@ -60,6 +80,8 @@ export const TestView = () => {
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
+  const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
+  const [desktopRuntime, setDesktopRuntime] = useState(EMPTY_DESKTOP_RUNTIME);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -68,6 +90,8 @@ export const TestView = () => {
     index: number | null;
     value: string;
   }>();
+  const [browserInstallOpen, setBrowserInstallOpen] = useState(false);
+  const runAfterInstall = useRef(false);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -78,6 +102,14 @@ export const TestView = () => {
       setLoaded(true);
     });
     window.testron?.command({ type: 'request-snapshot' });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const desktop = window.testronDesktop;
+    if (!desktop) return;
+    const unsubscribe = desktop.onRuntimeState(setDesktopRuntime);
+    desktop.requestRuntimeState();
     return unsubscribe;
   }, []);
 
@@ -103,16 +135,15 @@ export const TestView = () => {
   const movableProjects = snapshot.library.projects.filter((project) =>
     snapshot.library.environments.some((environment) => environment.projectId === project.id),
   );
-  const running = snapshot.replay.status === 'running';
+  const replay = window.testronDesktop ? desktopRuntime.replay : snapshot.replay;
+  const running = replay.status === 'running';
   const selectedReplay = useMemo(() => {
-    if (!selectedRun) return snapshot.replay;
+    if (!selectedRun) return replay;
     if (selectedRun.startsWith('server-run-')) return { status: 'idle' as const, steps: [] };
-    if (selectedRun === 'current-run') return snapshot.replay;
+    if (selectedRun === 'current-run') return replay;
     const startedAt = selectedRun.slice('run-'.length);
-    return (
-      snapshot.replayHistory.find((replay) => replay.startedAt === startedAt) ?? snapshot.replay
-    );
-  }, [selectedRun, snapshot.replay, snapshot.replayHistory]);
+    return snapshot.replayHistory.find((entry) => entry.startedAt === startedAt) ?? replay;
+  }, [replay, selectedRun, snapshot.replayHistory]);
 
   useEffect(() => {
     if (runs[0]) setSelectedRun(runs[0].id);
@@ -121,13 +152,13 @@ export const TestView = () => {
   useEffect(() => {
     if (!loaded) return;
     if (!selectedTestId) setLog('No test selected · record a test first');
-    else if (snapshot.replay.status === 'running') setLog(`Running on ${detail.environments[0]}…`);
-    else if (snapshot.replay.status !== 'idle')
+    else if (replay.status === 'running') setLog(`Running on ${detail.environments[0]}…`);
+    else if (replay.status !== 'idle')
       setLog(
-        `Run ${snapshot.replay.status} · ${snapshot.replay.steps.filter((one) => one.status === 'passed').length}/${snapshot.replay.steps.length} steps passed`,
+        `Run ${replay.status} · ${replay.steps.filter((one) => one.status === 'passed').length}/${replay.steps.length} steps passed`,
       );
     else setLog(`${detail.name} · ${snapshot.steps.length} persisted steps`);
-  }, [loaded, selectedTestId, snapshot.replay, snapshot.steps.length, detail]);
+  }, [loaded, selectedTestId, replay, snapshot.steps.length, detail]);
 
   const originalIndex = (id: string): number => fullSteps.findIndex((step) => step.id === id);
 
@@ -275,20 +306,49 @@ export const TestView = () => {
     replaceSteps(next, `Assertion moved to step ${actionIndex + direction + 1}`);
   };
 
+  const startRun = () => {
+    const desktop = window.testronDesktop;
+    if (desktop && selectedTestId && selectedTest) {
+      desktop.runTest({
+        projectId: selectedTest.projectId,
+        environmentId: selectedTest.environmentId,
+        testId: selectedTestId,
+        environmentVariables: {},
+        timeoutMs: 30_000,
+        reuseAuthState: false,
+      });
+    } else {
+      window.testron?.command({
+        type: 'run-test',
+        environmentVariables: {},
+        timeoutMs: 30_000,
+        reuseAuthState: false,
+      });
+    }
+    setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
+  };
+
   const run = () => {
     if (running) {
-      window.testron?.command({ type: 'cancel-run' });
+      if (window.testronDesktop) window.testronDesktop.cancelRun();
+      else window.testron?.command({ type: 'cancel-run' });
       setLog('Cancelling run…');
       return;
     }
-    window.testron?.command({
-      type: 'run-test',
-      environmentVariables: {},
-      timeoutMs: 30_000,
-      reuseAuthState: false,
-    });
-    setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
+    if (window.testronDesktop && desktopRuntime.browserInstallation.status !== 'ready') {
+      setBrowserInstallOpen(true);
+      return;
+    }
+    startRun();
   };
+
+  useEffect(() => {
+    if (!browserInstallOpen || !runAfterInstall.current) return;
+    if (desktopRuntime.browserInstallation.status !== 'ready') return;
+    runAfterInstall.current = false;
+    setBrowserInstallOpen(false);
+    startRun();
+  }, [browserInstallOpen, desktopRuntime.browserInstallation.status]);
 
   const sourceModalOpen = sourceOpen && !wideSourceLayout;
   useHotkeys(
@@ -567,6 +627,19 @@ export const TestView = () => {
               hint={t('assertions_hint', { count: assertions.length })}
               width={360}
               contentTestId="steps-lane-scroll"
+              action={
+                <SegmentedControl
+                  label={t('step_view')}
+                  items={[
+                    { id: 'tester', label: t('tester'), icon: 'list' },
+                    { id: 'developer', label: t('developer'), icon: 'code' },
+                  ]}
+                  value={stepViewMode}
+                  onChange={setStepViewMode}
+                  variant="pill"
+                  iconOnly
+                />
+              }
             >
               {steps.map((step, index) => {
                 const branch = assertionsFor(board, index);
@@ -578,6 +651,7 @@ export const TestView = () => {
                       step={step}
                       index={index}
                       locatorEditable
+                      viewMode={stepViewMode}
                       failed={result?.status === 'failed'}
                       running={result?.status === 'running'}
                       passed={result?.status === 'passed'}
@@ -622,6 +696,7 @@ export const TestView = () => {
                             kinds={allowedKinds}
                             subjectEditable={false}
                             locatorEditable
+                            viewMode={stepViewMode}
                             status={assertionResult?.status}
                             error={assertionResult?.error}
                             canMoveUp={index > 0}
@@ -754,6 +829,24 @@ export const TestView = () => {
           onDelete={() => {
             window.testron?.command({ type: 'delete-test', testId: selectedTestId });
             setDeleteOpen(false);
+          }}
+        />
+      )}
+
+      {browserInstallOpen && desktopRuntime.browserInstallation.status !== 'ready' && (
+        <BrowserInstallModal
+          installation={desktopRuntime.browserInstallation}
+          onInstall={() => {
+            runAfterInstall.current = true;
+            window.testronDesktop?.installBrowser();
+          }}
+          onCancel={() => {
+            runAfterInstall.current = false;
+            window.testronDesktop?.cancelBrowserInstall();
+          }}
+          onClose={() => {
+            runAfterInstall.current = false;
+            setBrowserInstallOpen(false);
           }}
         />
       )}

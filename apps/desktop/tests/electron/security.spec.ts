@@ -37,9 +37,7 @@ const openRecorder = async (appWindow: Page) => {
   await appWindow.evaluate(() => {
     window.location.hash = '#/record';
   });
-  await appWindow
-    .getByRole('button', { name: 'Record R', exact: true })
-    .waitFor({ timeout: 10_000 });
+  await appWindow.getByRole('button', { name: /^Record ?R$/ }).waitFor({ timeout: 10_000 });
   await appWindow.evaluate(() =>
     window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
   );

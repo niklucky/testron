@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { DesktopRunRequest, DesktopRuntimeState } from '@testron/protocol';
 
 import { REMOTE_APP_CHANNELS } from '../main/security';
 
 export type LocalSurfaceRequest = {
-  route: 'record' | 'test' | 'run' | 'recovery';
+  route: 'record' | 'recovery';
   projectId?: string;
   environmentId?: string;
   testId?: string;
@@ -16,6 +17,12 @@ export interface TestronDesktopHost {
   showProduct(): void;
   login(email: string, password: string): void;
   register(name: string, email: string, password: string): void;
+  requestRuntimeState(): void;
+  runTest(request: DesktopRunRequest): void;
+  cancelRun(): void;
+  installBrowser(): void;
+  cancelBrowserInstall(): void;
+  onRuntimeState(listener: (state: DesktopRuntimeState) => void): () => void;
 }
 
 const host: TestronDesktopHost = {
@@ -33,6 +40,20 @@ const host: TestronDesktopHost = {
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'login', email, password }),
   register: (name, email, password) =>
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'register', name, email, password }),
+  requestRuntimeState: () =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'request-runtime-state' }),
+  runTest: (request) =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'run-test', ...request }),
+  cancelRun: () => ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'cancel-run' }),
+  installBrowser: () => ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'install-browser' }),
+  cancelBrowserInstall: () =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'cancel-browser-install' }),
+  onRuntimeState: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: DesktopRuntimeState) =>
+      listener(state);
+    ipcRenderer.on(REMOTE_APP_CHANNELS.runtimeState, wrapped);
+    return () => ipcRenderer.removeListener(REMOTE_APP_CHANNELS.runtimeState, wrapped);
+  },
 };
 
 contextBridge.exposeInMainWorld('testronDesktop', host);

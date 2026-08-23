@@ -90,13 +90,26 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('set-locale'), locale: z.enum(['en', 'ru']) }),
   z.object({
     type: z.literal('open-local'),
-    route: z.enum(['record', 'test', 'run', 'recovery']),
+    route: z.enum(['record', 'recovery']),
     projectId: z.string().uuid().optional(),
     environmentId: z.string().uuid().optional(),
     testId: z.string().uuid().optional(),
     theme: z.enum(['dark', 'light']).optional(),
   }),
   z.object({ type: z.literal('show-product') }),
+  z.object({ type: z.literal('request-runtime-state') }),
+  z.object({
+    type: z.literal('run-test'),
+    projectId: z.string().uuid(),
+    environmentId: z.string().uuid().optional(),
+    testId: z.string().uuid(),
+    environmentVariables: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string()),
+    timeoutMs: z.number().int().min(1_000).max(600_000),
+    reuseAuthState: z.boolean(),
+  }),
+  z.object({ type: z.literal('cancel-run') }),
+  z.object({ type: z.literal('install-browser') }),
+  z.object({ type: z.literal('cancel-browser-install') }),
   z.object({ type: z.literal('login'), email: z.email(), password: z.string().min(12).max(200) }),
   z.object({
     type: z.literal('register'),
@@ -445,6 +458,14 @@ const createWindow = async (): Promise<void> => {
         : [replay, ...history];
     replayHistory.set(testId, next.slice(0, 50));
   };
+  const sendRuntimeState = (): void => {
+    const contents = remoteView?.webContents;
+    if (!contents || contents.isDestroyed()) return;
+    contents.send(REMOTE_APP_CHANNELS.runtimeState, {
+      replay: replaySnapshot,
+      browserInstallation: installer.status(),
+    });
+  };
   const sendSnapshot = (snapshot: ReturnType<RecordingSession['snapshot']>): void => {
     const window = mainWindow;
     if (window && !window.isDestroyed())
@@ -457,6 +478,7 @@ const createWindow = async (): Promise<void> => {
         verifyAssertion,
         ...(repickIndex === undefined ? {} : { repickIndex }),
       });
+    sendRuntimeState();
   };
   const reconcileRevisionSteps = (
     previous: readonly RevisionStep[],
@@ -763,11 +785,7 @@ const createWindow = async (): Promise<void> => {
     if (candidate.success) session.accept(candidate.data);
   });
 
-  ipcMain.on(APP_CHANNELS.command, (event, payload: unknown) => {
-    if (event.sender !== mainWindow?.webContents) return;
-    const parsed = appCommandSchema.safeParse(payload);
-    if (!parsed.success) return;
-    const command: AppCommand = parsed.data;
+  const handleAppCommand = (command: AppCommand): void => {
     switch (command.type) {
       case 'show-product':
         productVisible = Boolean(remoteView);
@@ -775,6 +793,18 @@ const createWindow = async (): Promise<void> => {
           void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
         layout();
         break;
+      case 'show-selected-test': {
+        productVisible = Boolean(remoteView);
+        if (remoteView && selectedProjectId && selectedTestId) {
+          const target = new URL(webappUrl);
+          target.pathname = `/projects/${encodeURIComponent(selectedProjectId)}/tests/${encodeURIComponent(selectedTestId)}`;
+          target.search = '';
+          target.hash = '';
+          void remoteView.webContents.loadURL(target.toString()).catch(() => undefined);
+        }
+        layout();
+        break;
+      }
       case 'reload-product':
         productVisible = Boolean(remoteView);
         if (remoteView) {
@@ -1031,7 +1061,7 @@ const createWindow = async (): Promise<void> => {
       }
       case 'navigate':
         try {
-          mainWindow.webContents.send(APP_CHANNELS.targetUrl, safeUrl(command.url));
+          mainWindow?.webContents.send(APP_CHANNELS.targetUrl, safeUrl(command.url));
         } catch (error) {
           session.warn(error instanceof Error ? error.message : 'Invalid URL.');
         }
@@ -2035,6 +2065,13 @@ const createWindow = async (): Promise<void> => {
       ].includes(command.type)
     )
       sendSnapshot(session.snapshot());
+  };
+
+  ipcMain.on(APP_CHANNELS.command, (event, payload: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    const parsed = appCommandSchema.safeParse(payload);
+    if (!parsed.success) return;
+    handleAppCommand(parsed.data);
   });
 
   ipcMain.on(REMOTE_APP_CHANNELS.command, (event, payload: unknown) => {
@@ -2096,6 +2133,23 @@ const createWindow = async (): Promise<void> => {
       return;
     }
 
+    if (command.type === 'request-runtime-state') {
+      sendRuntimeState();
+      return;
+    }
+    if (command.type === 'cancel-run') {
+      handleAppCommand({ type: 'cancel-run' });
+      return;
+    }
+    if (command.type === 'install-browser') {
+      handleAppCommand({ type: 'install-browser' });
+      return;
+    }
+    if (command.type === 'cancel-browser-install') {
+      handleAppCommand({ type: 'cancel-browser-install' });
+      return;
+    }
+
     void (async () => {
       try {
         if (serverClient && serverState.authentication === 'signedIn')
@@ -2114,6 +2168,15 @@ const createWindow = async (): Promise<void> => {
           )?.id;
           replaySnapshot = historyFor(selectedTest.id)[0] ?? { status: 'idle', steps: [] };
           session.load(selectedTest.title, stepsFor(selectedTest.id));
+        }
+        if (command.type === 'run-test') {
+          handleAppCommand({
+            type: 'run-test',
+            environmentVariables: command.environmentVariables,
+            timeoutMs: command.timeoutMs,
+            reuseAuthState: command.reuseAuthState,
+          });
+          return;
         }
         productVisible = false;
         layout();

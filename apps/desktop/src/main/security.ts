@@ -17,6 +17,7 @@ export const RECORDER_CONFIG_CHANNEL = 'testron:recorder-config' as const;
 
 export const REMOTE_APP_CHANNELS = {
   command: 'testron:remote-command',
+  runtimeState: 'testron:remote-runtime-state',
 } as const;
 
 export const APP_RENDERER_WEB_PREFERENCES = {
