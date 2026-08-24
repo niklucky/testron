@@ -246,6 +246,37 @@ describe('project settings mutations', () => {
       }),
     ).toMatchObject({ baseRevision: 1 });
     expect(
+      createProfileRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'API token',
+        authenticationType: 'headers',
+        environments: [
+          {
+            environmentId: ids.environment,
+            variables: [{ name: 'Authorization', value: 'Bearer secret', sensitive: true }],
+          },
+        ],
+      }),
+    ).toMatchObject({ authenticationType: 'headers' });
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Duplicate headers',
+        authenticationType: 'headers',
+        environments: [
+          {
+            environmentId: ids.environment,
+            variables: [
+              { name: 'Authorization', value: 'one', sensitive: true },
+              { name: 'authorization', value: 'two', sensitive: true },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
       createProfileRequestSchema.safeParse({
         meta,
         projectId: ids.project,

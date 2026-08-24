@@ -107,6 +107,21 @@ describe('TestronRepository', () => {
       { name: 'sid', value: 'not-a-real-cookie', sensitive: true },
     ]);
     expect(cookieProfile.authenticationType).toBe('cookies');
+    const headerProfile = repository.createProfile(environment.id, 'API token', 'headers', [
+      { name: 'Authorization', value: 'Bearer secret', sensitive: true },
+    ]);
+    expect(headerProfile.authenticationType).toBe('headers');
+    expect(repository.listProfiles()).toContainEqual(
+      expect.objectContaining({ id: headerProfile.id, authenticationType: 'headers' }),
+    );
+    expect(repository.listProfileVariables()).toContainEqual(
+      expect.objectContaining({
+        profileId: headerProfile.id,
+        name: 'Authorization',
+        value: 'Bearer secret',
+        sensitive: true,
+      }),
+    );
     repository.close();
   });
 

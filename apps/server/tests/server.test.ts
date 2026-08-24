@@ -602,6 +602,19 @@ describe('PostgreSQL tRPC vertical slice', () => {
       ],
     });
     expect(cookieProfile.authenticationType).toBe('cookies');
+    const headerProfile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'API token',
+      authenticationType: 'headers',
+      environments: [
+        {
+          environmentId: development.id,
+          variables: [{ name: 'Authorization', value: 'Bearer secret', sensitive: true }],
+        },
+      ],
+    });
+    expect(headerProfile.authenticationType).toBe('headers');
     const renamedCookieProfile = await api.profile.update.mutate({
       meta: mutationMeta(),
       profileId: cookieProfile.id,

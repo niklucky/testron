@@ -103,7 +103,7 @@ export const environmentSchema = z
   })
   .strict();
 
-export const profileAuthenticationTypeSchema = z.enum(['credentials', 'cookies']);
+export const profileAuthenticationTypeSchema = z.enum(['credentials', 'cookies', 'headers']);
 
 export const profileVariableSchema = z
   .object({
@@ -132,6 +132,25 @@ export const profileEnvironmentSchema = z
 type ProfileEnvironmentKeys = {
   environmentId: string;
   variables: Array<{ name: string; sensitive: boolean }>;
+};
+
+const validateHeaderVariableNames = (
+  profile: {
+    authenticationType: 'credentials' | 'cookies' | 'headers';
+    environments: ProfileEnvironmentKeys[];
+  },
+  context: z.RefinementCtx,
+): void => {
+  if (profile.authenticationType !== 'headers') return;
+  profile.environments.forEach((environment, index) => {
+    const names = environment.variables.map(({ name }) => name.toLowerCase());
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Header names must be unique regardless of case.',
+      });
+  });
 };
 
 const validateProfileEnvironments = (
@@ -182,7 +201,10 @@ export const profileSchema = z
     deletion: deletionStateSchema,
   })
   .strict()
-  .superRefine(validateProfileEnvironments);
+  .superRefine((profile, context) => {
+    validateProfileEnvironments(profile, context);
+    validateHeaderVariableNames(profile, context);
+  });
 
 export const testSuiteSchema = z
   .object({
