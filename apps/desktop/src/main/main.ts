@@ -14,6 +14,7 @@ import {
   Menu,
   safeStorage,
   session as electronSession,
+  shell,
   type WebContents,
   WebContentsView,
 } from 'electron';
@@ -64,6 +65,7 @@ import {
 import { RecordingSession } from './recording/session';
 import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
+import { DesktopUpdater, type AvailableUpdate } from './update/updater';
 import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
 import { SecureTokenStore } from './sync/token-store';
@@ -154,6 +156,96 @@ let serverState: NonNullable<LibrarySnapshot['server']> = {
   workspace: localMode ? 'loaded' : 'loading',
   status: 'idle',
   ...(localMode ? {} : { message: 'A remote server URL is required before you can sign in.' }),
+};
+
+const promptForDesktopUpdate = async (): Promise<void> => {
+  const window = mainWindow;
+  if (!app.isPackaged || !window || window.isDestroyed()) return;
+
+  const updater = new DesktopUpdater({
+    manifestUrl: __TESTRON_UPDATE_MANIFEST_URL__,
+    currentVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  });
+  let update: AvailableUpdate;
+  try {
+    const check = await updater.check();
+    if (check.status !== 'available') return;
+    update = check;
+  } catch (error) {
+    console.warn('Unable to check for desktop updates.', error);
+    return;
+  }
+
+  const choice = await dialog.showMessageBox(window, {
+    type: update.required ? 'warning' : 'info',
+    title: update.required ? 'Testron update required' : 'Testron update available',
+    message: `Testron ${update.version} is available.`,
+    detail: update.required
+      ? 'This version is required to continue using Testron.'
+      : 'Download it now, or continue with the current version.',
+    buttons: update.required ? ['Download update', 'Quit Testron'] : ['Download update', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (choice.response !== 0) {
+    if (update.required) app.quit();
+    return;
+  }
+
+  const directory = path.join(app.getPath('userData'), 'updates', update.version);
+  let downloadedPath: string;
+  while (true) {
+    window.setProgressBar(0.5, { mode: 'indeterminate' });
+    try {
+      downloadedPath = await updater.download(update, directory);
+      window.setProgressBar(-1);
+      break;
+    } catch (error) {
+      window.setProgressBar(-1);
+      const failure = await dialog.showMessageBox(window, {
+        type: 'error',
+        title: 'Update download failed',
+        message: 'Testron could not download a verified update.',
+        detail: error instanceof Error ? error.message : String(error),
+        buttons: update.required ? ['Retry', 'Quit Testron'] : ['Retry', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (failure.response === 0) continue;
+      if (update.required) app.quit();
+      return;
+    }
+  }
+
+  const ready = await dialog.showMessageBox(window, {
+    type: 'info',
+    title: 'Testron update downloaded',
+    message: `Testron ${update.version} is ready to install.`,
+    detail:
+      'Open the downloaded archive, replace the current application, and launch Testron again.',
+    buttons: update.required ? ['Open update and quit', 'Quit Testron'] : ['Open update', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (ready.response === 0) {
+    const openError = await shell.openPath(downloadedPath);
+    if (openError) {
+      shell.showItemInFolder(downloadedPath);
+      await dialog.showMessageBox(window, {
+        type: 'error',
+        title: 'Could not open update',
+        message: 'The update was downloaded, but could not be opened automatically.',
+        detail: openError,
+        buttons: ['OK'],
+      });
+    }
+  }
+  if (update.required) app.quit();
 };
 
 const safeUrl = (value: string): string => {
@@ -2429,6 +2521,7 @@ app.whenReady().then(async () => {
     }
   }
   await createWindow();
+  void promptForDesktopUpdate();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });

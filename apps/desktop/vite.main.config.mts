@@ -8,6 +8,10 @@ export default defineConfig({
     __TESTRON_WEBAPP_URL__: JSON.stringify(
       process.env.TESTRON_WEBAPP_URL ?? 'https://app.testron.dev',
     ),
+    __TESTRON_UPDATE_MANIFEST_URL__: JSON.stringify(
+      process.env.TESTRON_UPDATE_MANIFEST_URL ??
+        'https://github.com/niklucky/testron/releases/latest/download/update-manifest.json',
+    ),
   },
   build: {
     sourcemap: true,
