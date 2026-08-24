@@ -175,6 +175,15 @@ describe('desktop application command schema', () => {
       }),
     ).toMatchObject({ type: 'update-profile', baseRevision: 1 });
     expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'API token',
+        authenticationType: 'headers',
+        variables: [{ name: 'Authorization', value: 'Bearer secret', sensitive: true }],
+      }),
+    ).toMatchObject({ type: 'create-profile', authenticationType: 'headers' });
+    expect(
       appCommandSchema.safeParse({
         type: 'update-profile',
         profileId: id,

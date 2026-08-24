@@ -375,8 +375,10 @@ export const ProjectSettings = ({
                               <span className="text-ink-3">
                                 {profile.environmentIds.includes(selectedEnvironment.id)
                                   ? profile.authenticationType === 'cookies'
-                                    ? 'Cookies'
-                                    : t('login_password')
+                                    ? t('cookies')
+                                    : profile.authenticationType === 'headers'
+                                      ? t('browser_headers')
+                                      : t('login_password')
                                   : 'Configure'}
                               </span>
                               <IconButton

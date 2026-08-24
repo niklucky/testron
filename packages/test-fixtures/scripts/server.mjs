@@ -8,6 +8,16 @@ const port = Number(process.env.TESTRON_FIXTURE_PORT ?? 4174);
 
 const server = createServer((request, response) => {
   const pathname = new URL(request.url ?? '/', `http://${request.headers.host}`).pathname;
+  if (pathname === '/request-profile') {
+    response.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    response.end(
+      `<p data-testid="profile-request">${request.headers['x-testron-profile'] ?? ''}|${request.headers.cookie ?? ''}</p>`,
+    );
+    return;
+  }
   const filename =
     pathname === '/welcome' ? 'welcome.html' : pathname === '/' ? 'index.html' : undefined;
   if (!filename) {

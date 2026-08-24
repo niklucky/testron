@@ -34,7 +34,7 @@ export interface ProfileRecord {
   projectId: string;
   environmentIds: string[];
   name: string;
-  authenticationType: 'credentials' | 'cookies';
+  authenticationType: 'credentials' | 'cookies' | 'headers';
   revision?: number;
 }
 

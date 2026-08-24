@@ -377,6 +377,113 @@ test('profile variables auto-fill exact field names and record only references',
   }
 });
 
+test('header and cookie profiles are applied to recording requests', async () => {
+  test.setTimeout(60_000);
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'API' }));
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
+    const projectId = (await appSnapshot(appWindow)).library.selectedProjectId!;
+    appWindow.evaluate(
+      (id) =>
+        window.testron.command({
+          type: 'create-environment',
+          projectId: id,
+          name: 'Development',
+          baseUrl: 'http://127.0.0.1:4174/',
+          testIdAttribute: 'data-testid',
+        }),
+      projectId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.environments.length)
+      .toBe(1);
+    const environmentId = (await appSnapshot(appWindow)).library.selectedEnvironmentId!;
+
+    await appWindow.getByLabel('Create authentication profile').click();
+    await appWindow.getByLabel('Authentication type').selectOption('headers');
+    await appWindow.getByLabel('Variable 1 name').fill('X-Testron-Profile');
+    await appWindow.getByLabel('Variable 1 value').fill('header-secret');
+    await appWindow.getByRole('button', { name: 'Create and select' }).click();
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(1);
+
+    const requestEvidence = async (suffix: string) => {
+      await appWindow.evaluate(
+        (url) => window.testron.command({ type: 'navigate', url }),
+        `http://127.0.0.1:4174/request-profile?${suffix}`,
+      );
+      return expect
+        .poll(() =>
+          electronApp.evaluate(({ webContents }) => {
+            const website = webContents
+              .getAllWebContents()
+              .find((contents) => contents.getURL().includes('/request-profile'));
+            return website?.executeJavaScript(
+              `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+            );
+          }),
+        )
+        .toBeDefined();
+    };
+
+    await requestEvidence('headers');
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.executeJavaScript(
+            `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+          );
+        }),
+      )
+      .toBe('header-secret|');
+
+    appWindow.evaluate(
+      ({ id }) =>
+        window.testron.command({
+          type: 'create-profile',
+          environmentId: id,
+          name: 'Session',
+          authenticationType: 'cookies',
+          variables: [{ name: 'sid', value: 'cookie-secret', sensitive: true }],
+        }),
+      { id: environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(2);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.session.cookies.get({
+            url: 'http://127.0.0.1:4174/',
+            name: 'sid',
+          });
+        }),
+      )
+      .toHaveLength(1);
+    await requestEvidence('cookies');
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.executeJavaScript(
+            `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+          );
+        }),
+      )
+      .toBe('|sid=cookie-secret');
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('records a table row collection count with its current match total', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {

@@ -103,7 +103,7 @@ export const environmentSchema = z
   })
   .strict();
 
-export const profileAuthenticationTypeSchema = z.enum(['credentials', 'cookies']);
+export const profileAuthenticationTypeSchema = z.enum(['credentials', 'cookies', 'headers']);
 
 export const profileVariableSchema = z
   .object({

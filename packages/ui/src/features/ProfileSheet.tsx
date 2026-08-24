@@ -10,9 +10,11 @@ export interface ProfileVariableInput {
   sensitive: boolean;
 }
 
+type ProfileAuthenticationType = 'credentials' | 'cookies' | 'headers';
+
 export interface EditableProfile {
   name: string;
-  authenticationType: 'credentials' | 'cookies';
+  authenticationType: ProfileAuthenticationType;
   variables: Array<Omit<ProfileVariableInput, 'value'>>;
 }
 
@@ -25,6 +27,14 @@ const variableOrder = (left: { name: string }, right: { name: string }): number 
   };
   return priority(left.name) - priority(right.name) || left.name.localeCompare(right.name);
 };
+
+const defaultVariables = (authenticationType: ProfileAuthenticationType): ProfileVariableInput[] =>
+  authenticationType === 'credentials'
+    ? [
+        { name: 'username', value: '', sensitive: false },
+        { name: 'password', value: '', sensitive: true },
+      ]
+    : [{ name: '', value: '', sensitive: true }];
 
 export const ProfileSheet = ({
   environment,
@@ -39,22 +49,20 @@ export const ProfileSheet = ({
   onCancel: () => void;
   onSave: (
     name: string,
-    authenticationType: 'credentials' | 'cookies',
+    authenticationType: ProfileAuthenticationType,
     variables: ProfileVariableInput[],
   ) => void;
 }) => {
   const { t } = useTranslation();
   const editing = Boolean(profile);
   const [name, setName] = useState(profile?.name ?? 'Administrator');
-  const [authenticationType, setAuthenticationType] = useState<'credentials' | 'cookies'>(
+  const [authenticationType, setAuthenticationType] = useState<ProfileAuthenticationType>(
     profile?.authenticationType ?? 'credentials',
   );
   const [variables, setVariables] = useState<ProfileVariableInput[]>(
     (
-      profile?.variables.map((variable) => ({ ...variable, value: '' })) ?? [
-        { name: 'username', value: '', sensitive: false },
-        { name: 'password', value: '', sensitive: true },
-      ]
+      profile?.variables.map((variable) => ({ ...variable, value: '' })) ??
+      defaultVariables('credentials')
     ).sort(variableOrder),
   );
   const validVariables = variables.filter((variable) => variable.name.trim());
@@ -97,19 +105,16 @@ export const ProfileSheet = ({
             aria-label={t('authentication_type')}
             value={authenticationType}
             onChange={(event) => {
-              const next = event.target.value as 'credentials' | 'cookies';
+              const next = event.target.value as ProfileAuthenticationType;
               setAuthenticationType(next);
-              if (next === 'cookies')
-                setVariables((current) =>
-                  current.map((variable) => ({ ...variable, sensitive: true })),
-                );
+              setVariables(defaultVariables(next));
             }}
             className="mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-2.5 outline-none"
           >
             <option value="credentials">{t('login_password')}</option>
             <option disabled>{t('oauth_coming_later')}</option>
-            <option disabled>{t('authentication_header_coming_later')}</option>
-            <option value="cookies">Cookies</option>
+            <option value="cookies">{t('cookies')}</option>
+            <option value="headers">{t('browser_headers')}</option>
           </select>
         </label>
 
@@ -137,7 +142,7 @@ export const ProfileSheet = ({
                             ...entry,
                             name: event.target.value,
                             sensitive:
-                              authenticationType === 'cookies' ||
+                              authenticationType !== 'credentials' ||
                               /password|secret|token/i.test(event.target.value),
                           }
                         : entry,
@@ -148,7 +153,9 @@ export const ProfileSheet = ({
               />
               <input
                 aria-label={t('variable_value', { value1: index + 1 })}
-                type={authenticationType === 'cookies' || variable.sensitive ? 'password' : 'text'}
+                type={
+                  authenticationType !== 'credentials' || variable.sensitive ? 'password' : 'text'
+                }
                 value={variable.value}
                 onChange={(event) =>
                   setVariables((current) =>
@@ -174,10 +181,17 @@ export const ProfileSheet = ({
             variant="ghost"
             size="sm"
             onClick={() =>
-              setVariables((current) => [...current, { name: '', value: '', sensitive: false }])
+              setVariables((current) => [
+                ...current,
+                { name: '', value: '', sensitive: authenticationType !== 'credentials' },
+              ])
             }
           >
-            {t('variable')}
+            {authenticationType === 'cookies'
+              ? t('add_cookie')
+              : authenticationType === 'headers'
+                ? t('add_header')
+                : t('variable')}
           </Button>
           {!unique && <p className="mt-2 text-critical">{t('variable_names_must_be_unique')}</p>}
         </div>

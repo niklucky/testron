@@ -828,6 +828,63 @@ const createWindow = async (): Promise<void> => {
     );
     return { selectedTest, environment };
   };
+  const selectedProfileContext = () => {
+    const { environment } = selectedContext();
+    const profile = allProfiles().find((candidate) => candidate.id === selectedProfileId);
+    const values = environment
+      ? allProfileVariables().filter(
+          (variable) =>
+            variable.profileId === profile?.id && variable.environmentId === environment.id,
+        )
+      : [];
+    return { environment, profile, values };
+  };
+  const testedWebsiteSession = electronSession.fromPartition(TESTED_WEBSITE_PARTITION);
+  testedWebsiteSession.webRequest.onBeforeSendHeaders(
+    { urls: ['http://*/*', 'https://*/*'] },
+    (details, callback) => {
+      const { profile, values } = selectedProfileContext();
+      callback({
+        requestHeaders:
+          profile?.authenticationType === 'headers'
+            ? {
+                ...details.requestHeaders,
+                ...Object.fromEntries(values.map(({ name, value }) => [name, value])),
+              }
+            : details.requestHeaders,
+      });
+    },
+  );
+  let appliedProfileCookies: Array<{ name: string; url: string }> = [];
+  let recordingAuthenticationUpdate = Promise.resolve();
+  const applyRecordingAuthentication = (): Promise<void> => {
+    const { environment, profile, values } = selectedProfileContext();
+    recordingAuthenticationUpdate = recordingAuthenticationUpdate
+      .then(async () => {
+        await Promise.all(
+          appliedProfileCookies.map(({ name, url }) =>
+            testedWebsiteSession.cookies.remove(url, name),
+          ),
+        );
+        appliedProfileCookies = [];
+        if (!environment || profile?.authenticationType !== 'cookies') return;
+        await Promise.all(
+          values.map(async ({ name, value }) => {
+            await testedWebsiteSession.cookies.set({ url: environment.baseUrl, name, value });
+            appliedProfileCookies.push({ url: environment.baseUrl, name });
+          }),
+        );
+      })
+      .catch((error: unknown) => {
+        session.warn(
+          error instanceof Error
+            ? `Could not apply the recording profile: ${error.message}`
+            : 'Could not apply the recording profile.',
+        );
+        sendSnapshot(session.snapshot());
+      });
+    return recordingAuthenticationUpdate;
+  };
   const authenticationStatePath = (
     dataDirectory: string,
     environment: EnvironmentRecord,
@@ -859,6 +916,7 @@ const createWindow = async (): Promise<void> => {
           .map(({ name, value }) => ({ name, value })),
       });
     }
+    void applyRecordingAuthentication();
   };
   if (selectedTestId) {
     const { selectedTest } = selectedContext();
@@ -902,12 +960,13 @@ const createWindow = async (): Promise<void> => {
     const contents = websiteContents;
     if (contents && !contents.isDestroyed()) contents.stop();
 
-    const testedWebsiteSession = electronSession.fromPartition(TESTED_WEBSITE_PARTITION);
     await Promise.all([
       testedWebsiteSession.clearStorageData(),
       testedWebsiteSession.clearCache(),
       testedWebsiteSession.clearAuthCache(),
     ]);
+    appliedProfileCookies = [];
+    await applyRecordingAuthentication();
 
     if (
       reload &&
@@ -2094,6 +2153,13 @@ const createWindow = async (): Promise<void> => {
                       value,
                       url: environment.baseUrl,
                     })),
+                  }
+                : {}),
+              ...(selectedProfile?.authenticationType === 'headers'
+                ? {
+                    headers: Object.fromEntries(
+                      profileValues.map(({ name, value }) => [name, value]),
+                    ),
                   }
                 : {}),
               onProgress: (progress) => {

@@ -150,7 +150,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('create-profile'),
     environmentId: entityIdSchema,
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.enum(['credentials', 'cookies']),
+    authenticationType: z.enum(['credentials', 'cookies', 'headers']),
     variables: z
       .array(
         z.object({
@@ -173,7 +173,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     environmentId: entityIdSchema,
     baseRevision: z.number().int().positive(),
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.enum(['credentials', 'cookies']),
+    authenticationType: z.enum(['credentials', 'cookies', 'headers']),
     variables: z
       .array(
         z.object({

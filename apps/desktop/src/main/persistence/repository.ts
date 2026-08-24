@@ -40,7 +40,7 @@ export interface ProfileRecord {
   projectId: string;
   environmentIds: string[];
   name: string;
-  authenticationType: 'credentials' | 'cookies';
+  authenticationType: 'credentials' | 'cookies' | 'headers';
   revision?: number;
 }
 
@@ -277,7 +277,8 @@ export class TestronRepository {
         projectId: String(row.project_id),
         environmentIds: row.environment_ids ? String(row.environment_ids).split(',') : [],
         name: String(row.name),
-        authenticationType: String(row.authentication_type) as 'credentials' | 'cookies',
+        authenticationType: String(row.authentication_type) as
+          'credentials' | 'cookies' | 'headers',
       }));
   }
 
@@ -368,7 +369,7 @@ export class TestronRepository {
   createProfile(
     environmentId: string,
     name: string,
-    authenticationType: 'credentials' | 'cookies',
+    authenticationType: 'credentials' | 'cookies' | 'headers',
     variables: ReadonlyArray<{ name: string; value: string; sensitive: boolean }>,
   ): ProfileRecord {
     const environment = this.getEnvironment(environmentId);
