@@ -66,8 +66,9 @@ export const ProfileSheet = ({
     ).sort(variableOrder),
   );
   const validVariables = variables.filter((variable) => variable.name.trim());
-  const unique =
-    new Set(validVariables.map((variable) => variable.name.trim())).size === validVariables.length;
+  const normalizedVariableName = (variable: ProfileVariableInput) =>
+    authenticationType === 'headers' ? variable.name.trim().toLowerCase() : variable.name.trim();
+  const unique = new Set(validVariables.map(normalizedVariableName)).size === validVariables.length;
   const complete = validVariables.every((variable) => variable.value.length > 0);
 
   return createPortal(

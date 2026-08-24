@@ -263,6 +263,23 @@ describe('project settings mutations', () => {
       createProfileRequestSchema.safeParse({
         meta,
         projectId: ids.project,
+        name: 'Duplicate headers',
+        authenticationType: 'headers',
+        environments: [
+          {
+            environmentId: ids.environment,
+            variables: [
+              { name: 'Authorization', value: 'one', sensitive: true },
+              { name: 'authorization', value: 'two', sensitive: true },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
         name: 'Duplicate variables',
         authenticationType: 'credentials',
         environments: [{ environmentId: ids.environment, variables: [variables[0], variables[0]] }],

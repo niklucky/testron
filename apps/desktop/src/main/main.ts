@@ -843,16 +843,19 @@ const createWindow = async (): Promise<void> => {
   testedWebsiteSession.webRequest.onBeforeSendHeaders(
     { urls: ['http://*/*', 'https://*/*'] },
     (details, callback) => {
-      const { profile, values } = selectedProfileContext();
-      callback({
-        requestHeaders:
-          profile?.authenticationType === 'headers'
-            ? {
-                ...details.requestHeaders,
-                ...Object.fromEntries(values.map(({ name, value }) => [name, value])),
-              }
-            : details.requestHeaders,
-      });
+      const { environment, profile, values } = selectedProfileContext();
+      const sameEnvironmentOrigin =
+        environment && new URL(details.url).origin === new URL(environment.baseUrl).origin;
+      const requestHeaders = { ...details.requestHeaders };
+      if (profile?.authenticationType === 'headers')
+        for (const { name, value } of values) {
+          const existingName = Object.keys(requestHeaders).find(
+            (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+          );
+          if (existingName) delete requestHeaders[existingName];
+          if (sameEnvironmentOrigin) requestHeaders[name] = value;
+        }
+      callback({ requestHeaders });
     },
   );
   let appliedProfileCookies: Array<{ name: string; url: string }> = [];
@@ -2157,9 +2160,12 @@ const createWindow = async (): Promise<void> => {
                 : {}),
               ...(selectedProfile?.authenticationType === 'headers'
                 ? {
-                    headers: Object.fromEntries(
-                      profileValues.map(({ name, value }) => [name, value]),
-                    ),
+                    headers: {
+                      origin: environment.baseUrl,
+                      values: Object.fromEntries(
+                        profileValues.map(({ name, value }) => [name, value]),
+                      ),
+                    },
                   }
                 : {}),
               onProgress: (progress) => {

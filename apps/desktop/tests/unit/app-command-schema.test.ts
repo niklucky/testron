@@ -185,6 +185,18 @@ describe('desktop application command schema', () => {
     ).toMatchObject({ type: 'create-profile', authenticationType: 'headers' });
     expect(
       appCommandSchema.safeParse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Duplicate headers',
+        authenticationType: 'headers',
+        variables: [
+          { name: 'Authorization', value: 'one', sensitive: true },
+          { name: 'authorization', value: 'two', sensitive: true },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      appCommandSchema.safeParse({
         type: 'update-profile',
         profileId: id,
         environmentId: id,

@@ -44,7 +44,7 @@ export interface ReplayOptions {
   authStatePath?: string;
   saveAuthStatePath?: string;
   cookies?: Array<{ name: string; value: string; url: string }>;
-  headers?: Record<string, string>;
+  headers?: { origin: string; values: Record<string, string> };
   onProgress: (snapshot: ReplaySnapshot) => void;
 }
 
@@ -210,12 +210,37 @@ export class LocalReplayRunner {
     try {
       this.context = await browser.newContext({
         ...(options.authStatePath ? { storageState: options.authStatePath } : {}),
-        ...(options.headers ? { extraHTTPHeaders: options.headers } : {}),
       });
       if (options.cookies?.length) await this.context.addCookies(options.cookies);
       this.context.setDefaultTimeout(options.timeoutMs);
       await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
+      if (options.headers) {
+        const profileHeaders = options.headers;
+        const profileOrigin = new URL(profileHeaders.origin).origin;
+        const cdp = await this.context.newCDPSession(page);
+        cdp.on('Fetch.requestPaused', (event) => {
+          const headers = { ...event.request.headers };
+          const sameProfileOrigin = new URL(event.request.url).origin === profileOrigin;
+          for (const [name, value] of Object.entries(profileHeaders.values)) {
+            const existingName = Object.keys(headers).find(
+              (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+            );
+            if (existingName) delete headers[existingName];
+            if (sameProfileOrigin) headers[name] = value;
+          }
+          void cdp.send('Fetch.continueRequest', {
+            requestId: event.requestId,
+            headers: Object.entries(headers).map(([name, value]) => ({ name, value })),
+          });
+        });
+        await cdp.send('Fetch.enable', {
+          patterns: [
+            { urlPattern: 'http://*/*', requestStage: 'Request' },
+            { urlPattern: 'https://*/*', requestStage: 'Request' },
+          ],
+        });
+      }
       timer = setTimeout(() => {
         timedOut = true;
         void this.context?.close().catch(() => undefined);

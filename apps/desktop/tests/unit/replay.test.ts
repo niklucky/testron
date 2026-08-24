@@ -101,10 +101,26 @@ describe('LocalReplayRunner', () => {
   });
 
   it('adds profile headers and cookies to browser requests', async () => {
+    const crossOriginHeaders: Array<string | undefined> = [];
+    const crossOriginServer = createServer((request, response) => {
+      crossOriginHeaders.push(request.headers['x-profile-token'] as string | undefined);
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end('<p>Cross origin</p>');
+    });
+    await new Promise<void>((resolve) => crossOriginServer.listen(0, '127.0.0.1', resolve));
+    const crossOriginAddress = crossOriginServer.address();
+    if (!crossOriginAddress || typeof crossOriginAddress === 'string')
+      throw new Error('Cross-origin fixture server did not start.');
+    const crossOriginUrl = `http://127.0.0.1:${crossOriginAddress.port}/pixel.png`;
     const server = createServer((request, response) => {
+      if (request.url === '/redirect') {
+        response.writeHead(302, { location: crossOriginUrl });
+        response.end();
+        return;
+      }
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(
-        `<p data-testid="evidence">${request.headers['x-profile-token'] ?? ''}|${request.headers.cookie ?? ''}</p>`,
+        `<p data-testid="evidence">${request.headers['x-profile-token'] ?? ''}|${request.headers.cookie ?? ''}</p><img src="${crossOriginUrl}">`,
       );
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -123,6 +139,7 @@ describe('LocalReplayRunner', () => {
         assertion: { type: 'text', match: 'equals', expected: 'header-secret|sid=cookie-secret' },
         metadata,
       },
+      { version: 1, kind: 'navigate', url: `${url}redirect`, metadata },
     ];
 
     try {
@@ -131,14 +148,20 @@ describe('LocalReplayRunner', () => {
         environmentVariables: {},
         timeoutMs: 5_000,
         artifactsDirectory: artifactDirectory(),
-        headers: { 'X-Profile-Token': 'header-secret' },
+        headers: { origin: url, values: { 'X-Profile-Token': 'header-secret' } },
         cookies: [{ name: 'sid', value: 'cookie-secret', url }],
         onProgress: () => undefined,
       });
       expect(result.status).toBe('passed');
+      expect(crossOriginHeaders).toEqual([undefined, undefined]);
     } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
+      await Promise.all(
+        [server, crossOriginServer].map(
+          (fixtureServer) =>
+            new Promise<void>((resolve, reject) =>
+              fixtureServer.close((error) => (error ? reject(error) : resolve())),
+            ),
+        ),
       );
     }
   });

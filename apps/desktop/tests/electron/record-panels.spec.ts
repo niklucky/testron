@@ -1,5 +1,6 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -380,6 +381,17 @@ test('profile variables auto-fill exact field names and record only references',
 test('header and cookie profiles are applied to recording requests', async () => {
   test.setTimeout(60_000);
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  const crossOriginHeaders: Array<string | undefined> = [];
+  const crossOriginServer = createServer((request, response) => {
+    crossOriginHeaders.push(request.headers['x-testron-profile'] as string | undefined);
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<p>Cross origin</p>');
+  });
+  await new Promise<void>((resolve) => crossOriginServer.listen(0, '127.0.0.1', resolve));
+  const crossOriginAddress = crossOriginServer.address();
+  if (!crossOriginAddress || typeof crossOriginAddress === 'string')
+    throw new Error('Cross-origin fixture server did not start.');
+  const crossOriginUrl = `http://127.0.0.1:${crossOriginAddress.port}/pixel.png`;
   try {
     appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'API' }));
     await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
@@ -408,25 +420,26 @@ test('header and cookie profiles are applied to recording requests', async () =>
     await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(1);
 
     const requestEvidence = async (suffix: string) => {
+      const targetUrl = `http://127.0.0.1:4174/request-profile?${suffix}`;
       await appWindow.evaluate(
         (url) => window.testron.command({ type: 'navigate', url }),
-        `http://127.0.0.1:4174/request-profile?${suffix}`,
+        targetUrl,
       );
       return expect
         .poll(() =>
-          electronApp.evaluate(({ webContents }) => {
+          electronApp.evaluate(({ webContents }, expectedUrl) => {
             const website = webContents
               .getAllWebContents()
-              .find((contents) => contents.getURL().includes('/request-profile'));
+              .find((contents) => contents.getURL() === expectedUrl);
             return website?.executeJavaScript(
               `document.querySelector('[data-testid="profile-request"]')?.textContent`,
             );
-          }),
+          }, targetUrl),
         )
         .toBeDefined();
     };
 
-    await requestEvidence('headers');
+    await requestEvidence(`headers&subresource=${encodeURIComponent(crossOriginUrl)}`);
     await expect
       .poll(() =>
         electronApp.evaluate(async ({ webContents }) => {
@@ -439,6 +452,12 @@ test('header and cookie profiles are applied to recording requests', async () =>
         }),
       )
       .toBe('header-secret|');
+    await expect.poll(() => crossOriginHeaders).toEqual([undefined]);
+    await appWindow.evaluate(
+      (url) => window.testron.command({ type: 'navigate', url }),
+      `http://127.0.0.1:4174/request-profile-redirect?target=${encodeURIComponent(crossOriginUrl)}`,
+    );
+    await expect.poll(() => crossOriginHeaders).toEqual([undefined, undefined]);
 
     appWindow.evaluate(
       ({ id }) =>
@@ -481,6 +500,9 @@ test('header and cookie profiles are applied to recording requests', async () =>
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
+    await new Promise<void>((resolve, reject) =>
+      crossOriginServer.close((error) => (error ? reject(error) : resolve())),
+    );
   }
 });
 

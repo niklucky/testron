@@ -7,14 +7,20 @@ const fixtureDirectory = join(dirname(fileURLToPath(import.meta.url)), '../src/l
 const port = Number(process.env.TESTRON_FIXTURE_PORT ?? 4174);
 
 const server = createServer((request, response) => {
-  const pathname = new URL(request.url ?? '/', `http://${request.headers.host}`).pathname;
+  const requestUrl = new URL(request.url ?? '/', `http://${request.headers.host}`);
+  const pathname = requestUrl.pathname;
+  if (pathname === '/request-profile-redirect' && requestUrl.searchParams.get('target')) {
+    response.writeHead(302, { location: requestUrl.searchParams.get('target') });
+    response.end();
+    return;
+  }
   if (pathname === '/request-profile') {
     response.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
       'cache-control': 'no-store',
     });
     response.end(
-      `<p data-testid="profile-request">${request.headers['x-testron-profile'] ?? ''}|${request.headers.cookie ?? ''}</p>`,
+      `<p data-testid="profile-request">${request.headers['x-testron-profile'] ?? ''}|${request.headers.cookie ?? ''}</p>${requestUrl.searchParams.get('subresource') ? `<img src="${requestUrl.searchParams.get('subresource')}">` : ''}`,
     );
     return;
   }

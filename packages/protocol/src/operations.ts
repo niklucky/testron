@@ -138,6 +138,11 @@ const profileVariablesSchema = profileEnvironmentSchema.shape.variables.refine(
   { message: 'Profile variable names must be unique.' },
 );
 
+const headerVariableNamesAreUnique = (variables: Array<{ name: string }>): boolean => {
+  const names = variables.map(({ name }) => name.toLowerCase());
+  return new Set(names).size === names.length;
+};
+
 const profileCreateFields = {
   ...profileIdentityFields,
   environments: z
@@ -170,7 +175,18 @@ export const createProfileRequestSchema = z
     projectId: entityIdSchema,
     ...profileCreateFields,
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (request.authenticationType !== 'headers') return;
+    request.environments.forEach((environment, index) => {
+      if (!headerVariableNamesAreUnique(environment.variables))
+        context.addIssue({
+          code: 'custom',
+          path: ['environments', index, 'variables'],
+          message: 'Header names must be unique regardless of case.',
+        });
+    });
+  });
 
 export const updateProfileRequestSchema = z
   .object({
@@ -181,7 +197,18 @@ export const updateProfileRequestSchema = z
     environmentId: entityIdSchema,
     variables: profileVariablesSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      request.authenticationType === 'headers' &&
+      !headerVariableNamesAreUnique(request.variables)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['variables'],
+        message: 'Header names must be unique regardless of case.',
+      });
+  });
 
 export const createTestSuiteRequestSchema = z
   .object({

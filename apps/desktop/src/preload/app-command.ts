@@ -21,6 +21,23 @@ export type { VerifyAssertion } from './verify-assertion';
 export const sessionMenuIdSchema = z.enum(['project', 'suite', 'environment', 'profile']);
 export type SessionMenuId = z.infer<typeof sessionMenuIdSchema>;
 
+const validateHeaderVariableNames = (
+  command: {
+    authenticationType: 'credentials' | 'cookies' | 'headers';
+    variables: Array<{ name: string }>;
+  },
+  context: z.RefinementCtx,
+): void => {
+  if (command.authenticationType !== 'headers') return;
+  const names = command.variables.map(({ name }) => name.toLowerCase());
+  if (new Set(names).size !== names.length)
+    context.addIssue({
+      code: 'custom',
+      path: ['variables'],
+      message: 'Header names must be unique regardless of case.',
+    });
+};
+
 /**
  * Desktop IPC is a separate compatibility boundary from the server protocol.
  * Its resource fields reuse protocol invariants, while its command envelope
@@ -146,49 +163,53 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select-project'), projectId: entityIdSchema }),
   z.object({ type: z.literal('select-test-suite'), testSuiteId: entityIdSchema }),
   z.object({ type: z.literal('select-environment'), environmentId: entityIdSchema }),
-  z.object({
-    type: z.literal('create-profile'),
-    environmentId: entityIdSchema,
-    name: z.string().trim().min(1).max(100),
-    authenticationType: z.enum(['credentials', 'cookies', 'headers']),
-    variables: z
-      .array(
-        z.object({
-          name: z.string().trim().min(1).max(100),
-          value: z.string().min(1).max(10_000),
-          sensitive: z.boolean(),
-        }),
-      )
-      .min(1)
-      .max(50)
-      .refine(
-        (variables) =>
-          new Set(variables.map((variable) => variable.name)).size === variables.length,
-      ),
-  }),
+  z
+    .object({
+      type: z.literal('create-profile'),
+      environmentId: entityIdSchema,
+      name: z.string().trim().min(1).max(100),
+      authenticationType: z.enum(['credentials', 'cookies', 'headers']),
+      variables: z
+        .array(
+          z.object({
+            name: z.string().trim().min(1).max(100),
+            value: z.string().min(1).max(10_000),
+            sensitive: z.boolean(),
+          }),
+        )
+        .min(1)
+        .max(50)
+        .refine(
+          (variables) =>
+            new Set(variables.map((variable) => variable.name)).size === variables.length,
+        ),
+    })
+    .superRefine(validateHeaderVariableNames),
   z.object({ type: z.literal('select-profile'), profileId: entityIdSchema.optional() }),
-  z.object({
-    type: z.literal('update-profile'),
-    profileId: entityIdSchema,
-    environmentId: entityIdSchema,
-    baseRevision: z.number().int().positive(),
-    name: z.string().trim().min(1).max(100),
-    authenticationType: z.enum(['credentials', 'cookies', 'headers']),
-    variables: z
-      .array(
-        z.object({
-          name: z.string().trim().min(1).max(100),
-          value: z.string().min(1).max(10_000),
-          sensitive: z.boolean(),
-        }),
-      )
-      .min(1)
-      .max(50)
-      .refine(
-        (variables) =>
-          new Set(variables.map((variable) => variable.name)).size === variables.length,
-      ),
-  }),
+  z
+    .object({
+      type: z.literal('update-profile'),
+      profileId: entityIdSchema,
+      environmentId: entityIdSchema,
+      baseRevision: z.number().int().positive(),
+      name: z.string().trim().min(1).max(100),
+      authenticationType: z.enum(['credentials', 'cookies', 'headers']),
+      variables: z
+        .array(
+          z.object({
+            name: z.string().trim().min(1).max(100),
+            value: z.string().min(1).max(10_000),
+            sensitive: z.boolean(),
+          }),
+        )
+        .min(1)
+        .max(50)
+        .refine(
+          (variables) =>
+            new Set(variables.map((variable) => variable.name)).size === variables.length,
+        ),
+    })
+    .superRefine(validateHeaderVariableNames),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({
     type: z.literal('rename-test'),
