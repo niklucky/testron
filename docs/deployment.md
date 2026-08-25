@@ -164,5 +164,7 @@ site's download buttons rely on those names; renaming an asset means editing
 Builds embed `TESTRON_SERVER_URL` from the `TESTRON_PUBLIC_URL` repository
 variable, falling back to `https://app.testron.dev`. A manual run of the
 workflow builds all four targets and attaches them to the run without creating a
-release. Nothing is code-signed or notarized yet, so macOS and Windows show the
-usual unidentified-developer warnings on first launch.
+release. macOS builds require the Developer ID and notarization secrets described
+in [macOS signing and notarization](macos-signing.md); the workflow refuses to
+upload them unless code-signature, stapling, and Gatekeeper verification all
+pass. Windows builds remain unsigned and may show a SmartScreen warning.

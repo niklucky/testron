@@ -55,12 +55,63 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: node .github/scripts/set-desktop-version.mjs "${GITHUB_REF_NAME#v}"
-      - name: Make distributable
+      - name: Import Apple code-signing certificate
+        if: matrix.platform == 'darwin'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        shell: bash
+        run: |
+          : "${MACOS_CERTIFICATE:?Add the base64-encoded Developer ID Application certificate as the MACOS_CERTIFICATE secret.}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?Add the certificate export password as the MACOS_CERTIFICATE_PASSWORD secret.}"
+
+          certificate_path="$RUNNER_TEMP/testron-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/testron-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
+          echo "MACOS_KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
+      - name: Make signed and notarized macOS distributable
+        if: matrix.platform == 'darwin'
         run: pnpm --filter @testron/desktop exec electron-forge make --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
         env:
           # The packaged app talks to the hosted server; the site tells people
           # the same address.
           TESTRON_SERVER_URL: ${{ vars.TESTRON_PUBLIC_URL || 'https://app.testron.dev' }}
+          MACOS_SIGNING_ENABLED: 'true'
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Make distributable
+        if: matrix.platform != 'darwin'
+        run: pnpm --filter @testron/desktop exec electron-forge make --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+        env:
+          TESTRON_SERVER_URL: ${{ vars.TESTRON_PUBLIC_URL || 'https://app.testron.dev' }}
+      - name: Verify signed and notarized macOS app
+        if: matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          app="apps/desktop/out/Testron-${{ matrix.platform }}-${{ matrix.arch }}/Testron.app"
+          codesign --verify --deep --strict --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
       - name: Name the artifact
         shell: bash
         # Forge stamps the package version into the file name. The site links to
@@ -84,6 +135,14 @@ jobs:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
+      - name: Delete temporary signing keychain
+        if: always() && matrix.platform == 'darwin'
+        shell: bash
+        run: |
+          if [ -n "${MACOS_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$MACOS_KEYCHAIN_PATH" || true
+          fi
+          rm -f "$RUNNER_TEMP/testron-developer-id.p12"
 
   publish:
     needs: build
