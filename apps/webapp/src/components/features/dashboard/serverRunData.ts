@@ -54,6 +54,7 @@ export const projectRunsFromLibrary = (library: LibrarySnapshot): ProjectRun[] =
       const failed = run.status === 'failed' || run.status === 'timedOut';
       return {
         id: run.id,
+        testId: run.testId,
         test: test?.title ?? 'Unknown test',
         suite: suite?.name ?? 'Unassigned',
         verdict: runVerdict(run.status),
