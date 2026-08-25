@@ -28,8 +28,10 @@ Invitation and password-reset email delivery is optional. Set both
 `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to enable it; password-reset links use
 `TESTRON_PUBLIC_URL`, and the sender must use a domain verified in Resend. If
 the API key is present without a sender, the server refuses to start. Without
-either value, invitations remain fully usable in-app but no email is sent.
-Provider failures are logged and do not remove the in-app invitation.
+either value, invitations remain fully usable in-app but no email is sent, while
+password-reset requests are accepted without delivering a usable link. Invitation
+delivery failures do not remove the in-app invitation. Password-reset delivery is
+queued durably and retried in the background when the provider is unavailable.
 
 The desktop server URL is injected when its main process is built. It defaults
 to `http://127.0.0.1:4400`; set `TESTRON_SERVER_URL` only on the `pnpm build`,

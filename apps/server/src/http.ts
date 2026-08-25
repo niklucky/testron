@@ -141,6 +141,7 @@ export const createHttpServer = (options: {
             const user = await options.authentication.authenticate(authorization);
             return {
               ...(user ? { user } : {}),
+              ...(request.socket.remoteAddress ? { requestIp: request.socket.remoteAddress } : {}),
               setSession: (session: AuthSessionOutput) =>
                 response.setHeader(
                   'set-cookie',

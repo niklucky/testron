@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 
 import {
   authLoginInputSchema,
@@ -13,7 +14,12 @@ import {
   type AuthSessionOutput,
 } from '@testron/protocol';
 import type { Database } from './database/database.js';
-import { passwordResetTokens, sessions, users } from './database/schema.js';
+import {
+  passwordResetEmailOutbox,
+  passwordResetTokens,
+  sessions,
+  users,
+} from './database/schema.js';
 import { disabledPasswordResetMailer, type PasswordResetMailer } from './email.js';
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -40,6 +46,8 @@ export class AuthenticationError extends Error {
 }
 
 export class AuthenticationService {
+  private deliveringPasswordResets: Promise<void> | undefined;
+
   constructor(
     private readonly db: Database,
     private readonly passwordResetMailer: PasswordResetMailer = disabledPasswordResetMailer,
@@ -96,31 +104,41 @@ export class AuthenticationService {
   }
 
   async requestPasswordReset(value: unknown): Promise<{ accepted: true }> {
+    const respondAt = Date.now() + 200;
     const { email } = authRequestPasswordResetInputSchema.parse(value);
     const [user] = await this.db
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, email))
       .limit(1);
-    if (!user) return { accepted: true };
-
-    const token = randomBytes(32).toString('base64url');
-    const tokenHash = hash(token);
-    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
-    await this.db.transaction(async (transaction) => {
-      await transaction.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
-      await transaction
-        .insert(passwordResetTokens)
-        .values({ userId: user.id, tokenHash, expiresAt });
-    });
-    const resetUrl = new URL('/reset-password', this.publicBaseUrl);
-    resetUrl.searchParams.set('token', token);
-    await this.passwordResetMailer.sendPasswordReset({
-      email,
-      resetUrl: resetUrl.href,
-      tokenId: tokenHash,
-    });
+    if (user)
+      await this.db
+        .insert(passwordResetEmailOutbox)
+        .values({ userId: user.id, email })
+        .onConflictDoUpdate({
+          target: passwordResetEmailOutbox.userId,
+          set: {
+            email,
+            requestedAt: new Date().toISOString(),
+            availableAt: new Date().toISOString(),
+            attempts: 0,
+          },
+        });
+    this.schedulePasswordResetDelivery();
+    await delay(Math.max(0, respondAt - Date.now()));
     return { accepted: true };
+  }
+
+  async deliverPendingPasswordResets(): Promise<void> {
+    if (this.deliveringPasswordResets) return this.deliveringPasswordResets;
+    this.deliveringPasswordResets = this.deliverPasswordResetBatch().finally(() => {
+      this.deliveringPasswordResets = undefined;
+    });
+    return this.deliveringPasswordResets;
+  }
+
+  async waitForPasswordResetDelivery(): Promise<void> {
+    await this.deliveringPasswordResets;
   }
 
   async resetPassword(value: unknown): Promise<{ changed: true }> {
@@ -198,6 +216,66 @@ export class AuthenticationService {
 
   private invalidCredentials(): AuthenticationError {
     return new AuthenticationError('INVALID_CREDENTIALS', 'The email or password is incorrect.');
+  }
+
+  private schedulePasswordResetDelivery(): void {
+    queueMicrotask(() => {
+      void this.deliverPendingPasswordResets().catch((error: unknown) =>
+        console.error('Password reset email delivery failed.', error),
+      );
+    });
+  }
+
+  private async deliverPasswordResetBatch(): Promise<void> {
+    const jobs = await this.db
+      .select()
+      .from(passwordResetEmailOutbox)
+      .where(lte(passwordResetEmailOutbox.availableAt, new Date().toISOString()))
+      .limit(10);
+    for (const job of jobs) {
+      const token = randomBytes(32).toString('base64url');
+      const tokenHash = hash(token);
+      const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      const resetUrl = new URL('/reset-password', this.publicBaseUrl);
+      resetUrl.searchParams.set('token', token);
+      try {
+        await this.db.transaction(async (transaction) => {
+          await transaction
+            .delete(passwordResetTokens)
+            .where(eq(passwordResetTokens.userId, job.userId));
+          await transaction
+            .insert(passwordResetTokens)
+            .values({ userId: job.userId, tokenHash, expiresAt });
+        });
+        await this.passwordResetMailer.sendPasswordReset({
+          email: job.email,
+          resetUrl: resetUrl.href,
+          tokenId: tokenHash,
+        });
+        await this.db
+          .delete(passwordResetEmailOutbox)
+          .where(
+            and(
+              eq(passwordResetEmailOutbox.userId, job.userId),
+              eq(passwordResetEmailOutbox.requestedAt, job.requestedAt),
+            ),
+          );
+      } catch (error) {
+        const retryAt = new Date(
+          Date.now() + Math.min(60, 2 ** Math.min(job.attempts, 6)) * 60_000,
+        ).toISOString();
+        await this.db
+          .update(passwordResetEmailOutbox)
+          .set({ attempts: job.attempts + 1, availableAt: retryAt })
+          .where(
+            and(
+              eq(passwordResetEmailOutbox.userId, job.userId),
+              eq(passwordResetEmailOutbox.requestedAt, job.requestedAt),
+            ),
+          );
+        console.error('Password reset email delivery failed; retry scheduled.', error);
+      }
+    }
   }
 
   private passwordMatches(

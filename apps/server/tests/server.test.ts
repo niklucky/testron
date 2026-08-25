@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@testron/protocol';
 import type { PasswordResetEmail } from '../src/email.js';
+import { AuthenticationService } from '../src/auth.js';
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
 
@@ -134,6 +135,17 @@ const createSlice = async (api: ReturnType<typeof client>) => {
 };
 
 describe('PostgreSQL tRPC vertical slice', () => {
+  it('rejects Resend delivery without a public reset URL before connecting to the database', async () => {
+    await expect(
+      startTestronServer({
+        databaseUrl: 'postgresql://invalid:invalid@127.0.0.1:1/invalid',
+        resend: { apiKey: 're_test', from: 'Testron <accounts@example.test>' },
+      }),
+    ).rejects.toThrow(
+      'TESTRON_PUBLIC_URL is required when password-reset email delivery is enabled.',
+    );
+  });
+
   it('serves health checks under the canonical API prefix', async () => {
     const response = await fetch(`${server.url}/api/health`);
     await expect(response.json()).resolves.toEqual({ ok: true });
@@ -229,6 +241,35 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       client().auth.resetPassword.mutate({ token: token!, newPassword: 'another password' }),
     ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+
+    await client().auth.requestPasswordReset.mutate({ email });
+    await client().auth.requestPasswordReset.mutate({ email });
+    expect(deliveredPasswordResets).toHaveLength(3);
+  });
+
+  it('keeps failed password-reset emails in the durable outbox for retry', async () => {
+    const email = 'retry-reset@example.test';
+    await client().auth.register.mutate({
+      name: 'Retry Reset User',
+      email,
+      password: 'correct horse battery staple',
+    });
+    const deliveryError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const authentication = new AuthenticationService(
+      server.database.db,
+      { sendPasswordReset: async () => Promise.reject(new Error('provider unavailable')) },
+      'https://testron.example.test',
+    );
+
+    await authentication.requestPasswordReset({ email });
+    await authentication.deliverPendingPasswordResets();
+
+    const result = await server.database.pool.query<{ attempts: number }>(
+      'select attempts from password_reset_email_outbox',
+    );
+    expect(result.rows).toEqual([{ attempts: 1 }]);
+    expect(deliveryError).toHaveBeenCalled();
+    deliveryError.mockRestore();
   });
 
   it('authenticates browser requests with an HttpOnly session cookie', async () => {

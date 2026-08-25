@@ -37,6 +37,10 @@ export const startTestronServer = async (options: {
   webappDirectory?: string;
   authenticationEncryptionKeys?: string;
 }): Promise<RunningTestronServer> => {
+  if (options.resend && !options.publicBaseUrl)
+    throw new Error(
+      'TESTRON_PUBLIC_URL is required when password-reset email delivery is enabled.',
+    );
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
     await database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
@@ -49,6 +53,15 @@ export const startTestronServer = async (options: {
     passwordResetMailer,
     options.publicBaseUrl,
   );
+  const passwordResetDeliveryTimer = setInterval(() => {
+    void authentication
+      .deliverPendingPasswordResets()
+      .catch((error: unknown) => console.error('Password reset outbox processing failed.', error));
+  }, 30_000);
+  passwordResetDeliveryTimer.unref();
+  void authentication
+    .deliverPendingPasswordResets()
+    .catch((error: unknown) => console.error('Password reset outbox processing failed.', error));
   const authenticationEncryption = AuthenticationEncryption.fromEnvironment(
     options.authenticationEncryptionKeys,
   );
@@ -79,14 +92,19 @@ export const startTestronServer = async (options: {
     authentication,
     ...(authenticationStates ? { authenticationStates } : {}),
     router,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    close: () => {
+      clearInterval(passwordResetDeliveryTimer);
+      return new Promise<void>((resolve, reject) => {
         server.close((error) => {
-          void database.close().then(() => {
-            if (error) reject(error);
-            else resolve();
-          });
+          void authentication
+            .waitForPasswordResetDelivery()
+            .then(() => database.close())
+            .then(() => {
+              if (error) reject(error);
+              else resolve();
+            }, reject);
         });
-      }),
+      });
+    },
   };
 };

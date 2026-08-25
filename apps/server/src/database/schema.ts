@@ -61,6 +61,20 @@ export const passwordResetTokens = pgTable(
   ],
 );
 
+export const passwordResetEmailOutbox = pgTable(
+  'password_reset_email_outbox',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    requestedAt: instant('requested_at').defaultNow().notNull(),
+    availableAt: instant('available_at').defaultNow().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+  },
+  (table) => [index('password_reset_email_outbox_available_idx').on(table.availableAt)],
+);
+
 export const projects = pgTable(
   'projects',
   {
