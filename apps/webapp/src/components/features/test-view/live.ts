@@ -25,6 +25,9 @@ const displayDate = (value: string | undefined): string => {
   );
 };
 
+const latestFirst = (left: TestRun, right: TestRun): number =>
+  Date.parse(right.startedAt) - Date.parse(left.startedAt);
+
 const replayRun = (
   snapshot: AppSnapshot,
   fullSteps: readonly RecordedStep[],
@@ -73,7 +76,13 @@ const serverRun = (
   return {
     id: `server-run-${run.id}`,
     verdict:
-      run.status === 'passed' ? 'passed' : run.status === 'cancelled' ? 'cancelled' : 'failed',
+      run.status === 'running'
+        ? 'running'
+        : run.status === 'passed'
+          ? 'passed'
+          : run.status === 'cancelled'
+            ? 'cancelled'
+            : 'failed',
     environment: environment?.name ?? 'Unknown environment',
     seconds: (run.durationMs ?? 0) / 1_000,
     minutesAgo: Math.max(0, (Date.now() - Date.parse(run.startedAt)) / 60_000),
@@ -117,8 +126,15 @@ export const liveTestBoard = (
     const run = replayRun(snapshot, fullSteps, replay);
     return run ? [run] : [];
   });
-  const serverRuns = (snapshot.library.recentRuns ?? [])
+  const serverRunsById = new Map<string, TestRun>();
+  for (const run of [
+    ...(snapshot.library.activeRuns ?? []),
+    ...(snapshot.library.recentRuns ?? []),
+  ])
+    serverRunsById.set(run.id, run);
+  const serverRuns = [...serverRunsById.values()]
     .filter((run) => run.testId === selectedTest?.id)
+    .sort(latestFirst)
     .filter(
       (run) =>
         !localReplays.some(

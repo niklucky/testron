@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { liveTestBoard } from '../../src/components/features/test-view/live';
 import type { AppSnapshot } from '../../src/lib/library';
+import type { TestRun } from '@testron/protocol';
 
 const snapshot: AppSnapshot = {
   title: 'Untitled test',
@@ -89,6 +90,22 @@ const snapshot: AppSnapshot = {
   replayHistory: [],
 };
 
+const serverRun = (overrides: Partial<TestRun> = {}): TestRun => ({
+  id: 'server-run',
+  projectId: 'project',
+  testId: 'test',
+  testRevision: 1,
+  environmentId: 'environment',
+  profileId: null,
+  status: 'running',
+  source: 'desktop-local',
+  startedAt: '2026-08-16T10:07:00.000Z',
+  finishedAt: null,
+  durationMs: null,
+  error: null,
+  ...overrides,
+});
+
 describe('live test board', () => {
   it('projects selected persisted data into actions, anchored assertions, and a real run', () => {
     const board = liveTestBoard(snapshot);
@@ -133,5 +150,53 @@ describe('live test board', () => {
     expect(board.runs).toHaveLength(2);
     expect(board.runs.map((run) => run.verdict)).toEqual(['failed', 'passed']);
     expect(board.runs[0].id).not.toBe(board.runs[1].id);
+  });
+
+  it('shows active server runs immediately', () => {
+    const board = liveTestBoard({
+      ...snapshot,
+      replay: { status: 'idle', steps: [] },
+      library: {
+        ...snapshot.library,
+        activeRuns: [serverRun()],
+        recentRuns: [],
+      },
+    });
+
+    expect(board.runs).toMatchObject([
+      {
+        id: 'server-run-server-run',
+        verdict: 'running',
+        environment: 'Local',
+        seconds: 0,
+        completed: 0,
+      },
+    ]);
+  });
+
+  it('replaces an active server run with its completed recent run', () => {
+    const board = liveTestBoard({
+      ...snapshot,
+      replay: { status: 'idle', steps: [] },
+      library: {
+        ...snapshot.library,
+        activeRuns: [serverRun()],
+        recentRuns: [
+          serverRun({
+            status: 'passed',
+            finishedAt: '2026-08-16T10:07:02.000Z',
+            durationMs: 2000,
+          }),
+        ],
+      },
+    });
+
+    expect(board.runs).toHaveLength(1);
+    expect(board.runs[0]).toMatchObject({
+      id: 'server-run-server-run',
+      verdict: 'passed',
+      seconds: 2,
+      completed: board.fullSteps.length,
+    });
   });
 });
