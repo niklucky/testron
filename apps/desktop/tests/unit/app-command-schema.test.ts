@@ -59,6 +59,20 @@ describe('desktop application command schema', () => {
         password: 'correct horse battery staple',
       }).success,
     ).toBe(false);
+    expect(
+      appCommandSchema.safeParse({
+        type: 'login-server',
+        email: 'owner@example.test',
+        password: '12345678',
+      }).success,
+    ).toBe(true);
+    expect(
+      appCommandSchema.safeParse({
+        type: 'login-server',
+        email: 'owner@example.test',
+        password: '1234567',
+      }).success,
+    ).toBe(false);
   });
 
   it('validates server-backed project settings commands', () => {
@@ -243,7 +257,7 @@ describe('desktop application command schema', () => {
     expect(
       appCommandSchema.safeParse({
         type: 'change-account-password',
-        currentPassword: 'too short',
+        currentPassword: '1234567',
         newPassword: 'another correct password',
       }).success,
     ).toBe(false);

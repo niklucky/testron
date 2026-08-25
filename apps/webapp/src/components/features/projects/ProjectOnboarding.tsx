@@ -5,7 +5,13 @@ import type { LibrarySnapshot } from '../../../lib/library';
 import { Button, Icon, IconButton, PulseDot, useTheme } from '../../ui/design';
 import { viewerLabel } from './access';
 
-export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => {
+export const ProjectOnboarding = ({
+  library,
+  onSkip,
+}: {
+  library: LibrarySnapshot;
+  onSkip?: () => void;
+}) => {
   const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [name, setName] = useState('');
@@ -119,16 +125,22 @@ export const ProjectOnboarding = ({ library }: { library: LibrarySnapshot }) => 
                   {creationError}
                 </div>
               )}
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                icon="plus"
-                className="mt-5"
-                disabled={!name.trim() || submitting}
-              >
-                {submitting ? t('creating_project') : t('create_project_2')}
-              </Button>
+              <div className="mt-5 flex items-center gap-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  icon="plus"
+                  disabled={!name.trim() || submitting}
+                >
+                  {submitting ? t('creating_project') : t('create_project_2')}
+                </Button>
+                {onSkip && (
+                  <Button type="button" size="lg" disabled={submitting} onClick={onSkip}>
+                    {t('skip')}
+                  </Button>
+                )}
+              </div>
             </form>
           )}
         </section>

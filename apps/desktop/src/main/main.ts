@@ -27,6 +27,7 @@ import {
   deriveAuthenticationStateExpiration,
 } from '@testron/domain/auth/storage-state';
 import {
+  ACCOUNT_PASSWORD_MIN_LENGTH,
   cancelInvitationRequestSchema,
   browserStorageStateSchema,
   changeAccountPasswordRequestSchema,
@@ -167,12 +168,16 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('install-browser') }),
   z.object({ type: z.literal('cancel-browser-install') }),
-  z.object({ type: z.literal('login'), email: z.email(), password: z.string().min(12).max(200) }),
+  z.object({
+    type: z.literal('login'),
+    email: z.email(),
+    password: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
+  }),
   z.object({
     type: z.literal('register'),
     name: z.string().trim().min(1).max(100),
     email: z.email(),
-    password: z.string().min(12).max(200),
+    password: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
   }),
 ]);
 

@@ -1,5 +1,6 @@
 import type { WebWorkspaceSnapshot } from '@testron/protocol';
 
+import type { AuthenticationRequest } from '../components/features/auth/authentication';
 import { mutationMeta, requestMeta } from './meta';
 import { goToDashboard, goToTest } from './navigation';
 import { queryClient, trpcClient } from './trpc';
@@ -148,32 +149,40 @@ const mutate = async (operation: Promise<unknown>) => {
   await refresh();
 };
 
+export const authenticateBrowser = async (request: AuthenticationRequest): Promise<void> => {
+  if (request.mode === 'login') {
+    await trpcClient.auth.login.mutate({ email: request.email, password: request.password });
+  } else {
+    await trpcClient.auth.register.mutate({
+      name: request.name,
+      email: request.email,
+      password: request.password,
+    });
+  }
+
+  // The browser mutation establishes the web session. Logging in afterwards
+  // also stores the desktop token without racing registration for the account.
+  window.testronDesktop?.login(request.email, request.password);
+  window.location.href = '/';
+};
+
 const command = (input: AppCommand): void => {
   const meta = mutationMeta(input.type);
   switch (input.type) {
     case 'login-server':
-      window.testronDesktop?.login(value(input, 'email'), value(input, 'password'));
-      void trpcClient.auth.login
-        .mutate({ email: value(input, 'email'), password: value(input, 'password') })
-        .then(() => {
-          window.location.href = '/';
-        });
+      void authenticateBrowser({
+        mode: 'login',
+        email: value(input, 'email'),
+        password: value(input, 'password'),
+      }).catch(() => undefined);
       break;
     case 'register-server':
-      window.testronDesktop?.register(
-        value(input, 'name'),
-        value(input, 'email'),
-        value(input, 'password'),
-      );
-      void trpcClient.auth.register
-        .mutate({
-          name: value(input, 'name'),
-          email: value(input, 'email'),
-          password: value(input, 'password'),
-        })
-        .then(() => {
-          window.location.href = '/';
-        });
+      void authenticateBrowser({
+        mode: 'register',
+        name: value(input, 'name'),
+        email: value(input, 'email'),
+        password: value(input, 'password'),
+      }).catch(() => undefined);
       break;
     case 'request-snapshot':
     case 'refresh-workspace':

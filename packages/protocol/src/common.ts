@@ -5,6 +5,7 @@ import { protocolSchemaVersionSchema, stepSchemaVersionSchema } from './version'
 export const entityIdSchema = z.uuid();
 export const timestampSchema = z.iso.datetime();
 export const revisionNumberSchema = z.number().int().positive();
+export const ACCOUNT_PASSWORD_MIN_LENGTH = 8;
 export const idempotencyKeySchema = z.string().trim().min(8).max(200);
 export const httpUrlSchema = z
   .url()
