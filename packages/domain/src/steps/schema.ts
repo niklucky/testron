@@ -36,6 +36,12 @@ export const stepSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     version: z.literal(1),
+    kind: z.literal('hover'),
+    target: targetSchema,
+    metadata: metadataSchema,
+  }),
+  z.object({
+    version: z.literal(1),
     kind: z.literal('fill'),
     target: targetSchema,
     value: z.string(),

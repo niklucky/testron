@@ -42,6 +42,8 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await page.goto(${quote(step.url)});`;
       case 'click':
         return `  await ${generateLocator(step.target.primary)}.click();`;
+      case 'hover':
+        return `  await ${generateLocator(step.target.primary)}.hover();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${
           step.variable ? `requiredEnv(${quote(step.variable.name)})` : quote(step.value)

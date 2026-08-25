@@ -6,7 +6,7 @@ import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
 import type { VerifyAssertion } from './verify-assertion';
 
 let testIdAttribute = 'data-testid';
-let captureMode: 'record' | 'verify' = 'record';
+let captureMode: 'record' | 'hover' | 'verify' = 'record';
 let recordingActive = false;
 let repicking = false;
 let profileVariables: Array<{ name: string; value: string }> = [];
@@ -25,9 +25,15 @@ ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {
     typeof payload === 'object' &&
     payload !== null &&
     'captureMode' in payload &&
-    (payload.captureMode === 'record' || payload.captureMode === 'verify')
-  )
+    (payload.captureMode === 'record' ||
+      payload.captureMode === 'hover' ||
+      payload.captureMode === 'verify')
+  ) {
     captureMode = payload.captureMode;
+    cancelHoverCapture();
+    inspectedElement = undefined;
+    schedulePointerHitTest();
+  }
   if (
     typeof payload === 'object' &&
     payload !== null &&
@@ -100,6 +106,35 @@ let inspectedElement: Element | undefined;
 let inspector: HTMLDivElement | undefined;
 let lastPointer: { x: number; y: number } | undefined;
 let inspectorFrame: number | undefined;
+let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+let hoverCandidate: Element | undefined;
+
+const cancelHoverCapture = (): void => {
+  if (hoverTimer !== undefined) clearTimeout(hoverTimer);
+  hoverTimer = undefined;
+  hoverCandidate = undefined;
+};
+
+const scheduleHoverCapture = (element: Element): void => {
+  if (!recordingActive || captureMode !== 'hover' || repicking || element === hoverCandidate)
+    return;
+  cancelHoverCapture();
+  hoverCandidate = element;
+  hoverTimer = setTimeout(() => {
+    hoverTimer = undefined;
+    if (
+      !recordingActive ||
+      captureMode !== 'hover' ||
+      repicking ||
+      hoverCandidate !== element ||
+      !element.isConnected ||
+      inspectedElement !== element
+    )
+      return;
+    send({ kind: 'hover', target: observationFor(element), url: window.location.href });
+    sendControl({ kind: 'hover-captured' });
+  }, 350);
+};
 
 const isInspectorElement = (element: Element): boolean =>
   Boolean(element.closest(`[${INSPECTOR_ATTRIBUTE}]`));
@@ -361,6 +396,7 @@ const fillFromVariable = (
 };
 
 const hideInspector = (): void => {
+  cancelHoverCapture();
   if (inspectorFrame !== undefined) cancelAnimationFrame(inspectorFrame);
   inspectorFrame = undefined;
   inspectedElement = undefined;
@@ -400,6 +436,12 @@ const renderInspector = (): void => {
     mode.textContent = 'Repick element';
     mode.style.cssText =
       'padding:2px 6px;border-radius:4px;background:#69511b;color:#ffe19a;font-family:system-ui,sans-serif;font-weight:600';
+    picker.append(mode);
+  } else if (captureMode === 'hover') {
+    const mode = document.createElement('span');
+    mode.textContent = 'Record hover';
+    mode.style.cssText =
+      'padding:2px 6px;border-radius:4px;background:rgb(57 135 229 / 22%);color:#8fc5ff;font-family:system-ui,sans-serif;font-weight:600';
     picker.append(mode);
   } else if (captureMode === 'verify') {
     const select = document.createElement('select');
@@ -531,6 +573,7 @@ const inspect = (origin: Element, reposition = false): void => {
   }
   inspectedElement = element;
   renderInspector();
+  scheduleHoverCapture(element);
 };
 
 const inspectAtLastPointer = (): void => {
@@ -569,6 +612,7 @@ window.addEventListener('blur', hideInspector);
 window.addEventListener(
   'click',
   (event) => {
+    cancelHoverCapture();
     const origin = event.target;
     if (!(origin instanceof Element)) return;
     if (isInspectorElement(origin)) return;
@@ -609,6 +653,11 @@ window.addEventListener(
       });
       return;
     }
+    if (captureMode === 'hover') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     send({ kind: 'click', target: observationFor(element), url: window.location.href });
   },
   true,
@@ -617,7 +666,7 @@ window.addEventListener(
 window.addEventListener(
   'focusin',
   (event) => {
-    if (!recordingActive || captureMode === 'verify') return;
+    if (!recordingActive || captureMode !== 'record') return;
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     if (automaticallyFilled.has(element) || selectedVariables.has(element)) return;
@@ -632,7 +681,7 @@ window.addEventListener(
 window.addEventListener(
   'input',
   (event) => {
-    if (captureMode === 'verify') return;
+    if (captureMode !== 'record') return;
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     if (event.isTrusted && selectedVariables.has(element)) selectedVariables.delete(element);
@@ -649,7 +698,7 @@ window.addEventListener(
 window.addEventListener(
   'focusout',
   (event) => {
-    if (captureMode === 'verify') return;
+    if (captureMode !== 'record') return;
     const element = event.target;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     send({
@@ -664,7 +713,7 @@ window.addEventListener(
 window.addEventListener(
   'change',
   (event) => {
-    if (captureMode === 'verify') return;
+    if (captureMode !== 'record') return;
     const element = event.target;
     if (element instanceof HTMLSelectElement) {
       send({
@@ -709,7 +758,7 @@ window.addEventListener(
       (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && normalizedKey === 'l'
         ? 'mod+l'
         : !isEditable && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
-          ? ['r', 'a', '1', '2', 'f'].find((key) => key === normalizedKey)
+          ? ['r', 'a', 'h', '1', '2', 'f'].find((key) => key === normalizedKey)
           : undefined;
     if (!event.repeat && shortcutKey) {
       event.preventDefault();
@@ -717,7 +766,7 @@ window.addEventListener(
       sendControl({ kind: 'shortcut', key: shortcutKey });
       return;
     }
-    if (captureMode === 'verify') return;
+    if (captureMode !== 'record') return;
     if (!['Enter', 'Escape', 'Tab'].includes(event.key) || event.repeat) return;
     const element = target;
     if (!(

@@ -1,4 +1,5 @@
 import type { WebWorkspaceSnapshot } from '@testron/protocol';
+import type { Step } from '@testron/domain/steps/schema';
 
 import type { AuthenticationRequest } from '../components/features/auth/authentication';
 import { mutationMeta, requestMeta } from './meta';
@@ -6,6 +7,11 @@ import { goToDashboard, goToTest } from './navigation';
 import { queryClient, trpcClient } from './trpc';
 import type { AppCommand, AppSnapshot, LibrarySnapshot, TestronApi } from './library';
 import { workspaceQueryOptions } from './workspace';
+import {
+  applyStepMutation,
+  reconcileRevisionSteps,
+  type StepMutationCommand,
+} from './browser-step-mutations';
 
 const listeners = new Set<(snapshot: AppSnapshot) => void>();
 let workspace: WebWorkspaceSnapshot | undefined;
@@ -149,6 +155,25 @@ const mutate = async (operation: Promise<unknown>) => {
   await refresh();
 };
 
+const saveSelectedTestSteps = async (
+  steps: readonly Step[],
+  meta: ReturnType<typeof mutationMeta>,
+) => {
+  const current = workspace?.tests.find((item) => item.test.id === selectedTestId);
+  if (!current) return;
+  const result = await trpcClient.test.saveRevision.mutate({
+    meta,
+    testId: current.test.id,
+    baseRevision: current.test.currentRevision,
+    content: {
+      ...current.currentRevision.content,
+      steps: reconcileRevisionSteps(current.currentRevision.content.steps, steps),
+    },
+  });
+  if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+  await refresh();
+};
+
 export const authenticateBrowser = async (request: AuthenticationRequest): Promise<void> => {
   if (request.mode === 'login') {
     await trpcClient.auth.login.mutate({ email: request.email, password: request.password });
@@ -237,6 +262,19 @@ const command = (input: AppCommand): void => {
           if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
           await refresh();
         });
+      break;
+    }
+    case 'delete-step':
+    case 'update-step':
+    case 'replace-steps': {
+      const current = workspace?.tests.find((item) => item.test.id === selectedTestId);
+      if (!current) break;
+      const next = applyStepMutation(
+        current.currentRevision.content.steps.map((entry) => entry.payload),
+        input as StepMutationCommand,
+      );
+      if (!next) break;
+      void saveSelectedTestSteps(next, meta);
       break;
     }
     case 'create-project':

@@ -135,6 +135,29 @@ describe('live record presentation', () => {
     expect(displayed).toMatchObject([{ kind: 'assert', assertion: 'countAtLeast', value: '20' }]);
   });
 
+  it('presents a hover action for the step review UI', () => {
+    const displayed = presentRecordedSteps([
+      {
+        version: 1,
+        kind: 'hover',
+        target: {
+          primary: { strategy: 'role', role: 'button', name: 'Account details' },
+          alternatives: [],
+        },
+        metadata: { recordedAt: at },
+      },
+    ]);
+
+    expect(displayed).toMatchObject([
+      {
+        kind: 'hover',
+        label: 'Account details',
+        locator: "getByRole('button', { name: 'Account details' })",
+      },
+    ]);
+    expect(sentence(displayed[0])).toBe('Hover over “Account details”');
+  });
+
   it('localizes manual step descriptions without changing their recorded values', () => {
     const displayed = presentRecordedSteps([
       {

@@ -18,7 +18,7 @@ export interface RecordingSnapshot {
   steps: Step[];
   descriptions: string[];
   source: string;
-  captureMode: 'record' | 'verify';
+  captureMode: 'record' | 'hover' | 'verify';
   stepWarnings: string[][];
   canUndo: boolean;
   canRedo: boolean;
@@ -42,7 +42,7 @@ export class RecordingSession {
     this.normalizer = new RecorderNormalizer((step) => {
       this.steps.push(step);
       this.future = [];
-      if (['click', 'selectOption', 'check', 'uncheck', 'press'].includes(step.kind))
+      if (['click', 'hover', 'selectOption', 'check', 'uncheck', 'press'].includes(step.kind))
         this.lastNavigationActionAt = Date.now();
       this.stepsChanged(this.steps);
       this.notify();

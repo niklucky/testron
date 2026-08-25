@@ -33,6 +33,7 @@ export type StepStyle = { icon: IconName; verb: string };
 export const stepStyle: Record<StepKind, StepStyle> = {
   navigate: { icon: 'arrowRight', verb: 'Open' },
   click: { icon: 'play', verb: 'Click' },
+  hover: { icon: 'eye', verb: 'Hover' },
   fill: { icon: 'pencil', verb: 'Fill' },
   select: { icon: 'caret', verb: 'Select' },
   check: { icon: 'check', verb: 'Check' },

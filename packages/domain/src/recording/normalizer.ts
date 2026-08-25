@@ -38,6 +38,9 @@ export class RecorderNormalizer {
       case 'click':
         this.emit({ version: 1, kind: 'click', target, metadata });
         break;
+      case 'hover':
+        this.emit({ version: 1, kind: 'hover', target, metadata });
+        break;
       case 'select':
         this.emit({ version: 1, kind: 'selectOption', target, value: candidate.value, metadata });
         break;

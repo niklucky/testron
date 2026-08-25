@@ -139,7 +139,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('set-capture-mode'),
-    mode: z.enum(['record', 'verify']),
+    mode: z.enum(['record', 'hover', 'verify']),
     assertion: verifyAssertionSchema,
   }),
   z.object({ type: z.literal('add-url-path-assertion'), expected: z.string().startsWith('/') }),

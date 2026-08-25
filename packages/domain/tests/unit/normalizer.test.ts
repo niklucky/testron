@@ -49,6 +49,25 @@ describe('RecorderNormalizer', () => {
     expect(steps.map((step) => step.kind)).toEqual(['fill', 'click']);
   });
 
+  it('normalizes a deliberate hover into a structured action', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    normalizer.accept({
+      kind: 'hover',
+      url: 'http://127.0.0.1:4174/',
+      target: {
+        fingerprint: 'help',
+        sensitive: false,
+        locators: [{ strategy: 'role', role: 'button', name: 'Help' }],
+      },
+    });
+
+    expect(steps[0]).toMatchObject({
+      kind: 'hover',
+      target: { primary: { strategy: 'role', role: 'button', name: 'Help' } },
+    });
+  });
+
   it('records a manually entered password as its literal value', () => {
     const steps: Step[] = [];
     const normalizer = new RecorderNormalizer((step) => steps.push(step));

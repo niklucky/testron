@@ -80,6 +80,17 @@ test('record screen hotkeys control recording and ignore ordinary keys in the ad
       'aria-pressed',
       'true',
     );
+    await sendWebsiteKey('H');
+    await expect(appWindow.getByRole('button', { name: /Hover/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(appWindow.getByRole('button', { name: /Assert/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await sendWebsiteKey('H');
+    await sendWebsiteKey('A');
 
     await electronApp.evaluate(async ({ webContents }) => {
       const website = webContents

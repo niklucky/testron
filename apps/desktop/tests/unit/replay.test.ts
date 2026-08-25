@@ -62,6 +62,44 @@ describe('LocalReplayRunner', () => {
     expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(true);
   });
 
+  it('reveals dynamically mounted content with hover before asserting it', async () => {
+    const trigger = {
+      primary: { strategy: 'testId' as const, attribute: 'data-testid', value: 'help' },
+      alternatives: [],
+    };
+    const popover = {
+      primary: { strategy: 'testId' as const, attribute: 'data-testid', value: 'popover' },
+      alternatives: [],
+    };
+    const steps: Step[] = [
+      {
+        version: 1,
+        kind: 'navigate',
+        url: `data:text/html,${encodeURIComponent('<button data-testid="help" onmouseenter="document.body.insertAdjacentHTML(\'beforeend\', \'<div data-testid=popover>Details</div>\')">Help</button>')}`,
+        metadata,
+      },
+      { version: 1, kind: 'hover', target: trigger, metadata },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target: popover,
+        assertion: { type: 'text', match: 'equals', expected: 'Details' },
+        metadata,
+      },
+    ];
+
+    const result = await new LocalReplayRunner().run({
+      steps,
+      environmentVariables: {},
+      timeoutMs: 5_000,
+      artifactsDirectory: artifactDirectory(),
+      onProgress: () => undefined,
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.steps[1]).toMatchObject({ action: 'Hover over [data-testid="help"]' });
+  });
+
   it('associates a Playwright failure with its action, locator, URL, and screenshot', async () => {
     const steps: Step[] = [
       {

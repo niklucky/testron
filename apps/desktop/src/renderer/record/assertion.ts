@@ -27,6 +27,7 @@ export const convertStepToAssertion = (step: Step, currentUrl: string): Step => 
       case 'uncheck':
         return { type: 'unchecked' } as const;
       case 'click':
+      case 'hover':
       case 'press':
         return { type: 'visible' } as const;
     }

@@ -116,7 +116,12 @@ export const RecordScreen = () => {
 
   const steps = useMemo(() => presentRecordedSteps(snapshot.steps), [snapshot.steps]);
   const status: RecordStatus = snapshot.status;
-  const mode: CaptureMode = snapshot.captureMode === 'verify' ? 'assert' : 'act';
+  const mode: CaptureMode =
+    snapshot.captureMode === 'verify'
+      ? 'assert'
+      : snapshot.captureMode === 'hover'
+        ? 'hover'
+        : 'act';
   const context = useMemo(() => recordingContext(snapshot), [snapshot]);
   const selectedEnvironmentId = snapshot.library.selectedEnvironmentId;
   const projectEnvironments = snapshot.library.environments.filter(
@@ -297,7 +302,7 @@ export const RecordScreen = () => {
     setVerifyAssertion(assertion);
     window.testron?.command({
       type: 'set-capture-mode',
-      mode: next === 'assert' ? 'verify' : 'record',
+      mode: next === 'assert' ? 'verify' : next === 'hover' ? 'hover' : 'record',
       assertion,
     });
   };
@@ -314,6 +319,9 @@ export const RecordScreen = () => {
     },
     toggleAssert: () => {
       if (status === 'recording') setCaptureMode(mode === 'assert' ? 'act' : 'assert');
+    },
+    toggleHover: () => {
+      if (status === 'recording') setCaptureMode(mode === 'hover' ? 'act' : 'hover');
     },
     toggleStepsPanel: () => togglePanel('steps'),
     toggleCodePanel: () => togglePanel('code'),
@@ -342,7 +350,7 @@ export const RecordScreen = () => {
   useHotkeys(
     createRecordHotkeyDefinitions(recordHotkeyActions, {
       enabled: !finishing && !configuringProfile && !editingTitle,
-      assertEnabled: status === 'recording',
+      captureModeEnabled: status === 'recording',
       escapeEnabled: !configuringProfile && !editingTitle,
     }),
   );

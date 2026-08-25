@@ -4,6 +4,7 @@ export type RecordedStep = {
   kind:
     | 'navigate'
     | 'click'
+    | 'hover'
     | 'fill'
     | 'select'
     | 'check'
@@ -35,5 +36,5 @@ export type RecordedStep = {
 };
 export type RecordPanelState = {
   status: 'idle' | 'recording' | 'paused' | 'finished';
-  mode: 'act' | 'assert';
+  mode: 'act' | 'hover' | 'assert';
 };
