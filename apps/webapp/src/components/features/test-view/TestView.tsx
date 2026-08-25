@@ -236,6 +236,7 @@ export const TestView = () => {
       case 'navigate':
         return;
       case 'click':
+      case 'hover':
       case 'check':
       case 'uncheck':
         updated = { ...current, target: target! };
@@ -769,9 +770,12 @@ export const TestView = () => {
                       onAddAssertion={() => addAssertion(step)}
                       onDelete={() => {
                         const original = originalIndex(step.id);
-                        if (original >= 0)
-                          window.testron?.command({ type: 'delete-step', index: original });
-                        setLog(`Step ${index + 1} deleted`);
+                        if (original < 0) {
+                          setLog(`Step ${index + 1} could not be found`);
+                          return;
+                        }
+                        window.testron?.command({ type: 'delete-step', index: original });
+                        setLog(`Deleting step ${index + 1}…`);
                       }}
                     />
                     {branch.map((assertion, position) => {
@@ -808,9 +812,12 @@ export const TestView = () => {
                             onMove={(direction) => moveAssertion(assertion, index, direction)}
                             onDelete={() => {
                               const original = originalIndex(assertion.id);
-                              if (original >= 0)
-                                window.testron?.command({ type: 'delete-step', index: original });
-                              setLog('Assertion deleted');
+                              if (original < 0) {
+                                setLog('Assertion could not be found');
+                                return;
+                              }
+                              window.testron?.command({ type: 'delete-step', index: original });
+                              setLog('Deleting assertion…');
                             }}
                           />
                         </Branch>

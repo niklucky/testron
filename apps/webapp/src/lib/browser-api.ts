@@ -6,6 +6,12 @@ import { goToDashboard, goToTest } from './navigation';
 import { queryClient, trpcClient } from './trpc';
 import type { AppCommand, AppSnapshot, LibrarySnapshot, TestronApi } from './library';
 import { workspaceQueryOptions } from './workspace';
+import {
+  applyStepMutation,
+  createSerialMutationQueue,
+  reconcileRevisionSteps,
+  type StepMutationCommand,
+} from './browser-step-mutations';
 
 const listeners = new Set<(snapshot: AppSnapshot) => void>();
 let workspace: WebWorkspaceSnapshot | undefined;
@@ -149,6 +155,37 @@ const mutate = async (operation: Promise<unknown>) => {
   await refresh();
 };
 
+const enqueueStepMutation = createSerialMutationQueue(
+  async ({
+    testId,
+    command,
+    meta,
+  }: {
+    testId: string;
+    command: StepMutationCommand;
+    meta: ReturnType<typeof mutationMeta>;
+  }) => {
+    const current = workspace?.tests.find((item) => item.test.id === testId);
+    if (!current) return;
+    const steps = applyStepMutation(
+      current.currentRevision.content.steps.map((entry) => entry.payload),
+      command,
+    );
+    if (!steps) return;
+    const result = await trpcClient.test.saveRevision.mutate({
+      meta,
+      testId: current.test.id,
+      baseRevision: current.test.currentRevision,
+      content: {
+        ...current.currentRevision.content,
+        steps: reconcileRevisionSteps(current.currentRevision.content.steps, steps),
+      },
+    });
+    if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+    await refresh();
+  },
+);
+
 export const authenticateBrowser = async (request: AuthenticationRequest): Promise<void> => {
   if (request.mode === 'login') {
     await trpcClient.auth.login.mutate({ email: request.email, password: request.password });
@@ -237,6 +274,20 @@ const command = (input: AppCommand): void => {
           if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
           await refresh();
         });
+      break;
+    }
+    case 'delete-step':
+    case 'update-step':
+    case 'replace-steps': {
+      if (!selectedTestId) break;
+      void enqueueStepMutation({
+        testId: selectedTestId,
+        command: input as StepMutationCommand,
+        meta,
+      }).catch((error: unknown) => {
+        console.error('Could not save test steps.', error);
+        void refresh();
+      });
       break;
     }
     case 'create-project':

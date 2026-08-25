@@ -54,6 +54,7 @@ export const recordedStepSchema = z.object({
   kind: z.enum([
     'navigate',
     'click',
+    'hover',
     'fill',
     'select',
     'check',
@@ -78,7 +79,7 @@ export type RecordedStep = z.infer<typeof recordedStepSchema>;
 export const recordPanelStateSchema = z.object({
   theme: z.enum(['dark', 'light']),
   status: z.enum(['idle', 'recording', 'paused', 'finished']),
-  mode: z.enum(['act', 'assert']),
+  mode: z.enum(['act', 'hover', 'assert']),
   elapsed: z.number().nonnegative(),
   file: z.string(),
   selectedId: z.string().optional(),
@@ -90,7 +91,7 @@ export const recordPanelStateSchema = z.object({
 });
 export type RecordPanelState = z.infer<typeof recordPanelStateSchema>;
 
-export const recordShortcutKeySchema = z.enum(['mod+l', 'r', 'a', '1', '2', 'f']);
+export const recordShortcutKeySchema = z.enum(['mod+l', 'r', 'a', 'h', '1', '2', 'f']);
 export type RecordShortcutKey = z.infer<typeof recordShortcutKeySchema>;
 
 export const recordPanelEventSchema = z.discriminatedUnion('type', [

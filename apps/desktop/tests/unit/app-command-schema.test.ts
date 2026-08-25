@@ -5,6 +5,16 @@ import { appCommandSchema } from '../../src/preload/app-command';
 const id = '00000000-0000-4000-8000-000000000001';
 
 describe('desktop application command schema', () => {
+  it('accepts the one-shot hover capture mode', () => {
+    expect(
+      appCommandSchema.parse({
+        type: 'set-capture-mode',
+        mode: 'hover',
+        assertion: 'visible',
+      }),
+    ).toMatchObject({ type: 'set-capture-mode', mode: 'hover' });
+  });
+
   it('uses protocol resource invariants for project, environment, and test fields', () => {
     expect(appCommandSchema.parse({ type: 'create-project', name: '  Checkout  ' })).toEqual({
       type: 'create-project',

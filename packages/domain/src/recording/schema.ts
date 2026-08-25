@@ -12,6 +12,7 @@ export const targetObservationSchema = z.object({
 
 export const recorderCandidateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('click'), target: targetObservationSchema, url: z.url() }),
+  z.object({ kind: z.literal('hover'), target: targetObservationSchema, url: z.url() }),
   z.object({
     kind: z.literal('select'),
     target: targetObservationSchema,

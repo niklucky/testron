@@ -120,6 +120,9 @@ const executeStep = async (
     case 'click':
       await resolveLocator(page, step.target.primary).click();
       break;
+    case 'hover':
+      await resolveLocator(page, step.target.primary).hover();
+      break;
     case 'fill': {
       const variableName = step.variable?.name;
       const secretName = step.secret?.environmentVariable;

@@ -53,4 +53,13 @@ describe('recorded action conversion', () => {
       assertion: { type: 'visible' },
     });
   });
+
+  it('turns a hover action into a visibility assertion for the same target', () => {
+    const hover: Step = { version: 1, kind: 'hover', target, metadata };
+    expect(convertStepToAssertion(hover, '')).toMatchObject({
+      kind: 'assertElement',
+      target,
+      assertion: { type: 'visible' },
+    });
+  });
 });

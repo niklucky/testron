@@ -18,6 +18,7 @@ describe('record screen hotkeys', () => {
       focusAddress: vi.fn(),
       toggleRecording: vi.fn(),
       toggleAssert: vi.fn(),
+      toggleHover: vi.fn(),
       toggleStepsPanel: vi.fn(),
       toggleCodePanel: vi.fn(),
       toggleFocus: vi.fn(),
@@ -25,32 +26,36 @@ describe('record screen hotkeys', () => {
     };
     const entries = createRecordHotkeyDefinitions(actions, {
       enabled: true,
-      assertEnabled: true,
+      captureModeEnabled: true,
       escapeEnabled: true,
     });
 
     trigger(entries, 'Mod+L');
     trigger(entries, 'R');
     trigger(entries, 'A');
+    trigger(entries, 'H');
     trigger(entries, '1');
 
     expect(actions.focusAddress).toHaveBeenCalledOnce();
     expect(actions.toggleRecording).toHaveBeenCalledOnce();
     expect(actions.toggleAssert).toHaveBeenCalledOnce();
+    expect(actions.toggleHover).toHaveBeenCalledOnce();
     expect(actions.toggleStepsPanel).toHaveBeenCalledOnce();
     expect(entries.find((entry) => entry.hotkey === 'R')?.options?.ignoreInputs).toBe(true);
     expect(entries.find((entry) => entry.hotkey === 'Mod+L')?.options?.ignoreInputs).toBe(false);
     expect(recordShortcutIdForKey('R')).toBe('record');
+    expect(recordShortcutIdForKey('h')).toBe('hover');
   });
 
-  it('only enables assertion mode while recording', () => {
+  it('only enables explicit capture modes while recording', () => {
     const entries = createRecordHotkeyDefinitions({} as RecordHotkeyActions, {
       enabled: true,
-      assertEnabled: false,
+      captureModeEnabled: false,
       escapeEnabled: true,
     });
 
     expect(entries.find((entry) => entry.hotkey === 'A')?.options?.enabled).toBe(false);
+    expect(entries.find((entry) => entry.hotkey === 'H')?.options?.enabled).toBe(false);
     expect(entries.find((entry) => entry.hotkey === 'R')?.options?.enabled).toBe(true);
   });
 });

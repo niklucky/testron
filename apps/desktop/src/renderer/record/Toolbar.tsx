@@ -397,6 +397,15 @@ export const BrowserBar = ({
       >
         {t('assert')}
       </Button>
+      <Button
+        icon="focus"
+        pressed={mode === 'hover'}
+        disabled={!recording}
+        kbd={displayRecordShortcut('hover')}
+        onClick={() => onMode(mode === 'hover' ? 'act' : 'hover')}
+      >
+        {t('hover')}
+      </Button>
       {mode === 'assert' && (
         <select
           aria-label={t('assertion_type')}

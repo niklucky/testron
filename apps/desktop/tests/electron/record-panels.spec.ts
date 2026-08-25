@@ -1067,6 +1067,84 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
   }
 });
 
+test('records only an explicitly armed hover before asserting dynamic popover content', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    const websiteEval = (source: string) =>
+      electronApp.evaluate(async ({ webContents }, script) => {
+        const website = webContents
+          .getAllWebContents()
+          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+        if (!website) throw new Error('Fixture WebContentsView was not found.');
+        return website.executeJavaScript(script);
+      }, source);
+
+    await websiteEval(`(() => {
+      document.body.innerHTML = '<button data-testid="help">Help</button>';
+      const help = document.querySelector('[data-testid="help"]');
+      help.addEventListener('pointermove', () => {
+        if (!document.querySelector('[data-testid="popover"]'))
+          document.body.insertAdjacentHTML('beforeend', '<div data-testid="popover">Details</div>');
+      });
+      const rect = help.getBoundingClientRect();
+      help.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+    })()`);
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+
+    await appWindow.getByRole('button', { name: /^Hover/ }).click();
+    await websiteEval(`(() => {
+      const help = document.querySelector('[data-testid="help"]');
+      const rect = help.getBoundingClientRect();
+      help.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+    })()`);
+
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'hover'))
+      .toMatchObject({
+        target: { primary: { strategy: 'testId', value: 'help' } },
+      });
+    await expect(appWindow.getByRole('button', { name: /^Hover/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    await appWindow.getByRole('button', { name: 'Assert' }).click();
+    await websiteEval(`(() => {
+      const popover = document.querySelector('[data-testid="popover"]');
+      const rect = popover.getBoundingClientRect();
+      popover.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+      popover.click();
+    })()`);
+
+    await expect
+      .poll(async () =>
+        (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'assertElement'),
+      )
+      .toMatchObject({
+        target: { primary: { strategy: 'testId', value: 'popover' } },
+        assertion: { type: 'visible' },
+      });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('hover picker chooses a primary locator and an action can become an assertion', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {

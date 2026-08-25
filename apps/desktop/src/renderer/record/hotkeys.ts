@@ -1,12 +1,13 @@
 import { formatForDisplay, type UseHotkeyDefinition } from '@tanstack/react-hotkeys';
 
 export type RecordShortcutId =
-  'address' | 'record' | 'assert' | 'stepsPanel' | 'codePanel' | 'focus' | 'escape';
+  'address' | 'record' | 'assert' | 'hover' | 'stepsPanel' | 'codePanel' | 'focus' | 'escape';
 
 export const recordShortcuts = {
   address: { hotkey: 'Mod+L', name: 'Address', description: 'Focus the browser address' },
   record: { hotkey: 'R', name: 'Record or pause', description: 'Toggle recording' },
   assert: { hotkey: 'A', name: 'Assert mode', description: 'Toggle assertion capture mode' },
+  hover: { hotkey: 'H', name: 'Hover', description: 'Capture the next deliberate hover' },
   stepsPanel: { hotkey: '1', name: 'Test steps', description: 'Toggle the test steps panel' },
   codePanel: { hotkey: '2', name: 'Auto test', description: 'Toggle the source panel' },
   focus: { hotkey: 'F', name: 'Focus website', description: 'Toggle both recorder panels' },
@@ -19,6 +20,7 @@ export const recordShortcuts = {
 export const recordPanelShortcutIds = [
   'record',
   'assert',
+  'hover',
   'stepsPanel',
   'codePanel',
   'focus',
@@ -36,6 +38,7 @@ export type RecordHotkeyActions = {
   focusAddress(): void;
   toggleRecording(): void;
   toggleAssert(): void;
+  toggleHover(): void;
   toggleStepsPanel(): void;
   toggleCodePanel(): void;
   toggleFocus(): void;
@@ -50,6 +53,7 @@ export const runRecordShortcut = (
   if (id === 'address') actions.focusAddress();
   else if (id === 'record') actions.toggleRecording();
   else if (id === 'assert') actions.toggleAssert();
+  else if (id === 'hover') actions.toggleHover();
   else if (id === 'stepsPanel') actions.toggleStepsPanel();
   else if (id === 'codePanel') actions.toggleCodePanel();
   else if (id === 'focus') actions.toggleFocus();
@@ -58,7 +62,7 @@ export const runRecordShortcut = (
 
 export const createRecordHotkeyDefinitions = (
   actions: RecordHotkeyActions,
-  options: { enabled: boolean; assertEnabled: boolean; escapeEnabled: boolean },
+  options: { enabled: boolean; captureModeEnabled: boolean; escapeEnabled: boolean },
 ): UseHotkeyDefinition[] => {
   return (Object.keys(recordShortcuts) as RecordShortcutId[]).map((id) => ({
     hotkey: recordShortcuts[id].hotkey,
@@ -67,8 +71,8 @@ export const createRecordHotkeyDefinitions = (
       enabled:
         id === 'escape'
           ? options.escapeEnabled
-          : id === 'assert'
-            ? options.enabled && options.assertEnabled
+          : id === 'assert' || id === 'hover'
+            ? options.enabled && options.captureModeEnabled
             : options.enabled,
       ignoreInputs: id === 'address' || id === 'escape' ? false : true,
       meta: { name: recordShortcuts[id].name, description: recordShortcuts[id].description },

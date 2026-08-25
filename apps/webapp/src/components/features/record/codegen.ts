@@ -27,6 +27,10 @@ export const sentence = (step: RecordedStep, translate?: Translate): string => {
       return translated(translate, 'step_click_target', `Click “${step.label}”`, {
         value1: step.label,
       });
+    case 'hover':
+      return translated(translate, 'step_hover_target', `Hover over “${step.label}”`, {
+        value1: step.label,
+      });
     case 'fill':
       return step.secret
         ? translated(
@@ -161,6 +165,8 @@ const call = (step: RecordedStep): string => {
       return `await page.goto(${quote(step.url ?? '/')});`;
     case 'click':
       return `await ${target}.click();`;
+    case 'hover':
+      return `await ${target}.hover();`;
     case 'fill':
       return step.secret
         ? `await ${target}.fill(requiredEnv(${quote(step.secret)}));`

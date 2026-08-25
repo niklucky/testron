@@ -28,6 +28,8 @@ export const presentStep = (step: Step): string => {
       return `Navigate to ${step.url}`;
     case 'click':
       return `Click ${locatorName(step.target.primary)}`;
+    case 'hover':
+      return `Hover over ${locatorName(step.target.primary)}`;
     case 'fill':
       return step.variable
         ? `Fill ${locatorName(step.target.primary)} with {{${step.variable.name}}}`

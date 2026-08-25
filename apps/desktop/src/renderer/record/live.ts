@@ -92,6 +92,13 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           label: labelFor(step.target.primary),
           locator: presentLocator(step.target.primary),
         };
+      case 'hover':
+        return {
+          ...common,
+          kind: 'hover',
+          label: labelFor(step.target.primary),
+          locator: presentLocator(step.target.primary),
+        };
       case 'fill':
         return {
           ...common,

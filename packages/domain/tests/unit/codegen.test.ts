@@ -25,12 +25,14 @@ describe('Playwright generation', () => {
       alternatives: [],
     };
     const steps: Step[] = [
+      { version: 1, kind: 'hover', target, metadata },
       { version: 1, kind: 'selectOption', target, value: 'one', metadata },
       { version: 1, kind: 'check', target, metadata },
       { version: 1, kind: 'uncheck', target, metadata },
       { version: 1, kind: 'press', target, key: 'Enter', metadata },
     ];
     const source = generatePlaywright('phase 1 actions', steps);
+    expect(source).toContain("page.locator('[data-qa=\\'control\\']').hover()");
     expect(source).toContain("page.locator('[data-qa=\\'control\\']').selectOption('one')");
     expect(source).toContain("page.locator('[data-qa=\\'control\\']').check()");
     expect(source).toContain("page.locator('[data-qa=\\'control\\']').uncheck()");
