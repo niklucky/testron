@@ -1,4 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
+import { generatePlaywright } from '@testron/domain/codegen/playwright';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -123,10 +124,14 @@ export const TestView = () => {
 
   const board = useMemo(() => liveTestBoard(snapshot), [snapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
-  const lines = useMemo(
-    () => presentSource(snapshot.source, fullSteps),
-    [snapshot.source, fullSteps],
+  const source = useMemo(
+    () =>
+      snapshot.source.trim()
+        ? snapshot.source
+        : generatePlaywright(snapshot.title || detail.name, snapshot.steps),
+    [snapshot.source, snapshot.title, snapshot.steps, detail.name],
   );
+  const lines = useMemo(() => presentSource(source, fullSteps), [source, fullSteps]);
   const selectedTestId = snapshot.library.selectedTestId;
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
   const editInRecorder = () =>
@@ -771,7 +776,7 @@ export const TestView = () => {
             lines={lines}
             file={detail.file}
             detached={false}
-            source=""
+            source={source}
             canDetach={false}
             onDetach={() => undefined}
             onSource={() => undefined}
