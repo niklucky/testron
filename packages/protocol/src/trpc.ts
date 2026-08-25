@@ -102,6 +102,19 @@ export const authRegisterInputSchema = z
     name: z.string().trim().min(1).max(100),
   })
   .strict();
+export const authRequestPasswordResetInputSchema = z
+  .object({ email: z.email().transform((email) => email.toLowerCase()) })
+  .strict();
+export const authResetPasswordInputSchema = z
+  .object({
+    token: z.string().min(40).max(500),
+    newPassword: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
+  })
+  .strict();
+export const authPasswordResetRequestedOutputSchema = z
+  .object({ accepted: z.literal(true) })
+  .strict();
+export const authPasswordResetOutputSchema = z.object({ changed: z.literal(true) }).strict();
 export const authSessionOutputSchema = z
   .object({
     accessToken: z.string().min(40),
@@ -242,5 +255,7 @@ export const finishTestRunProcedure = {
 
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;
 export type AuthRegisterInput = z.infer<typeof authRegisterInputSchema>;
+export type AuthRequestPasswordResetInput = z.infer<typeof authRequestPasswordResetInputSchema>;
+export type AuthResetPasswordInput = z.infer<typeof authResetPasswordInputSchema>;
 export type AuthSessionOutput = z.infer<typeof authSessionOutputSchema>;
 export type SaveTestRevisionOutput = z.infer<typeof saveTestRevisionOutputSchema>;

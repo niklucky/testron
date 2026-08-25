@@ -7,7 +7,7 @@ import { Button, Icon, IconButton, PulseDot, useTheme } from '../../ui/design';
 import { authenticationErrorMessage, type Authenticate } from './authentication';
 
 type ServerState = NonNullable<LibrarySnapshot['server']>;
-type AuthMode = 'login' | 'register';
+type AuthMode = 'login' | 'register' | 'forgot' | 'reset';
 
 export const AuthenticationLoading = () => {
   const { t } = useTranslation();
@@ -23,8 +23,12 @@ export const AuthenticationLoading = () => {
 
 /* The public site links straight to registration with `?mode=register`; any
    other value lands on the sign-in tab. */
-const requestedMode = (): AuthMode =>
-  new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login';
+const requestedMode = (): AuthMode => {
+  if (window.location.pathname === '/reset-password') return 'reset';
+  return new URLSearchParams(window.location.search).get('mode') === 'register'
+    ? 'register'
+    : 'login';
+};
 
 export const AuthLanding = ({
   server,
@@ -41,7 +45,9 @@ export const AuthLanding = ({
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [authenticationError, setAuthenticationError] = useState<string>();
+  const [completed, setCompleted] = useState(false);
   const authenticating = submitting || server.authentication === 'authenticating';
+  const resetToken = new URLSearchParams(window.location.search).get('token');
 
   useEffect(() => {
     window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
@@ -50,6 +56,7 @@ export const AuthLanding = ({
   const chooseMode = (next: AuthMode) => {
     setMode(next);
     setPassword('');
+    setCompleted(false);
     setAuthenticationError(undefined);
   };
 
@@ -58,28 +65,45 @@ export const AuthLanding = ({
     if (
       !server.configured ||
       authenticating ||
-      !email.trim() ||
-      password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
+      (mode !== 'reset' && !email.trim()) ||
+      (mode !== 'forgot' && password.length < ACCOUNT_PASSWORD_MIN_LENGTH) ||
+      (mode === 'reset' && !resetToken) ||
       (mode === 'register' && !name.trim())
     )
       return;
     setSubmitting(true);
     setAuthenticationError(undefined);
-    void authenticate(
+    const request =
       mode === 'login'
-        ? { mode, email: email.trim(), password }
-        : { mode, name: name.trim(), email: email.trim(), password },
-    )
+        ? ({ mode, email: email.trim(), password } as const)
+        : mode === 'register'
+          ? ({ mode, name: name.trim(), email: email.trim(), password } as const)
+          : mode === 'forgot'
+            ? ({ mode, email: email.trim() } as const)
+            : ({
+                mode,
+                token: resetToken ?? '',
+                newPassword: password,
+              } as const);
+    void authenticate(request)
+      .then(() => {
+        if (mode === 'forgot' || mode === 'reset') setCompleted(true);
+      })
       .catch((error: unknown) => setAuthenticationError(authenticationErrorMessage(error)))
       .finally(() => setSubmitting(false));
   };
 
-  const error = authenticationError ?? server.message;
+  const error =
+    authenticationError ??
+    (mode === 'reset' && !resetToken
+      ? 'This password reset link is invalid or incomplete.'
+      : server.message);
   const disabled =
     !server.configured ||
     authenticating ||
-    !email.trim() ||
-    password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
+    (mode !== 'reset' && !email.trim()) ||
+    (mode !== 'forgot' && password.length < ACCOUNT_PASSWORD_MIN_LENGTH) ||
+    (mode === 'reset' && !resetToken) ||
     (mode === 'register' && !name.trim());
 
   return (
@@ -150,43 +174,70 @@ export const AuthLanding = ({
           </section>
 
           <section className="self-center rounded-xl border border-line bg-surface p-7 shadow-[0_22px_60px_rgba(0,0,0,0.22)]">
-            <div className="grid grid-cols-2 rounded-lg border border-line bg-plane p-1">
-              <button
-                type="button"
-                className={`h-8 rounded-md font-medium transition-colors ${
-                  mode === 'login' ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
-                }`}
-                aria-pressed={mode === 'login'}
-                onClick={() => chooseMode('login')}
-              >
-                {t('sign_in')}
-              </button>
-              <button
-                type="button"
-                className={`h-8 rounded-md font-medium transition-colors ${
-                  mode === 'register' ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
-                }`}
-                aria-pressed={mode === 'register'}
-                onClick={() => chooseMode('register')}
-              >
-                {t('create_account')}
-              </button>
-            </div>
+            {(mode === 'login' || mode === 'register') && (
+              <div className="grid grid-cols-2 rounded-lg border border-line bg-plane p-1">
+                <button
+                  type="button"
+                  className={`h-8 rounded-md font-medium transition-colors ${
+                    mode === 'login' ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
+                  }`}
+                  aria-pressed={mode === 'login'}
+                  onClick={() => chooseMode('login')}
+                >
+                  {t('sign_in')}
+                </button>
+                <button
+                  type="button"
+                  className={`h-8 rounded-md font-medium transition-colors ${
+                    mode === 'register' ? 'bg-raised text-ink' : 'text-ink-3 hover:text-ink-2'
+                  }`}
+                  aria-pressed={mode === 'register'}
+                  onClick={() => chooseMode('register')}
+                >
+                  {t('create_account')}
+                </button>
+              </div>
+            )}
 
             <form className="mt-6" onSubmit={submit}>
               <span className="ui-mono tracking-[0.12em] text-accent uppercase">
-                {mode === 'login' ? t('testron_account') : t('alpha_registration')}
+                {mode === 'login'
+                  ? t('testron_account')
+                  : mode === 'register'
+                    ? t('alpha_registration')
+                    : 'Account recovery'}
               </span>
               <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em]">
-                {mode === 'login' ? t('welcome_back') : t('create_your_account')}
+                {mode === 'login'
+                  ? t('welcome_back')
+                  : mode === 'register'
+                    ? t('create_your_account')
+                    : mode === 'forgot'
+                      ? 'Reset your password'
+                      : 'Choose a new password'}
               </h2>
               <p className="mt-2 leading-5 text-ink-2">
                 {mode === 'login'
                   ? t('use_the_credentials_attached_to_your_workspace')
-                  : t('create_an_account_and_enter_your_new_workspace_immediately')}
+                  : mode === 'register'
+                    ? t('create_an_account_and_enter_your_new_workspace_immediately')
+                    : mode === 'forgot'
+                      ? 'Enter your email and we’ll send you a secure reset link.'
+                      : 'Enter the new password you want to use for your account.'}
               </p>
 
-              {mode === 'register' && (
+              {completed && (
+                <div
+                  className="mt-5 rounded-md border border-accent/30 bg-accent-wash px-3 py-3 leading-5 text-ink-2"
+                  role="status"
+                >
+                  {mode === 'forgot'
+                    ? 'If an account exists for that email, a reset link is on its way.'
+                    : 'Your password has been reset. You can now sign in with your new password.'}
+                </div>
+              )}
+
+              {!completed && mode === 'register' && (
                 <label className="mt-6 block">
                   <span className="font-medium text-ink-2">{t('name')}</span>
                   <input
@@ -205,38 +256,54 @@ export const AuthLanding = ({
                 </label>
               )}
 
-              <label className={`${mode === 'register' ? 'mt-4' : 'mt-6'} block`}>
-                <span className="font-medium text-ink-2">{t('email_address')}</span>
-                <input
-                  autoFocus={mode === 'login'}
-                  required
-                  type="email"
-                  autoComplete="email"
-                  aria-label={t('email_address')}
-                  value={email}
-                  disabled={authenticating}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder={t('you_company_com')}
-                  className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-                />
-              </label>
+              {!completed && mode !== 'reset' && (
+                <label className={`${mode === 'register' ? 'mt-4' : 'mt-6'} block`}>
+                  <span className="font-medium text-ink-2">{t('email_address')}</span>
+                  <input
+                    autoFocus={mode === 'login'}
+                    required
+                    type="email"
+                    autoComplete="email"
+                    aria-label={t('email_address')}
+                    value={email}
+                    disabled={authenticating}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder={t('you_company_com')}
+                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                  />
+                </label>
+              )}
 
-              <label className="mt-4 block">
-                <span className="font-medium text-ink-2">{t('password')}</span>
-                <input
-                  required
-                  minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
-                  maxLength={200}
-                  type="password"
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  aria-label={t('password')}
-                  value={password}
-                  disabled={authenticating}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={t('at_least_8_characters')}
-                  className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-                />
-              </label>
+              {!completed && mode !== 'forgot' && (
+                <label className="mt-4 block">
+                  <span className="font-medium text-ink-2">
+                    {mode === 'reset' ? 'New password' : t('password')}
+                  </span>
+                  <input
+                    required
+                    minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
+                    maxLength={200}
+                    type="password"
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                    aria-label={mode === 'reset' ? 'New password' : t('password')}
+                    value={password}
+                    disabled={authenticating}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder={t('at_least_8_characters')}
+                    className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                  />
+                </label>
+              )}
+
+              {!completed && mode === 'login' && (
+                <button
+                  type="button"
+                  className="mt-3 text-accent hover:underline"
+                  onClick={() => chooseMode('forgot')}
+                >
+                  Forgot password?
+                </button>
+              )}
 
               {error && (
                 <div
@@ -248,22 +315,44 @@ export const AuthLanding = ({
                 </div>
               )}
 
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                block
-                className="mt-5 justify-center"
-                disabled={disabled}
-              >
-                {authenticating
-                  ? mode === 'login'
-                    ? t('signing_in')
-                    : t('creating_account')
-                  : mode === 'login'
-                    ? t('sign_in')
-                    : t('create_account')}
-              </Button>
+              {!completed && (
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  block
+                  className="mt-5 justify-center"
+                  disabled={disabled}
+                >
+                  {authenticating
+                    ? mode === 'login'
+                      ? t('signing_in')
+                      : mode === 'register'
+                        ? t('creating_account')
+                        : 'Submitting…'
+                    : mode === 'login'
+                      ? t('sign_in')
+                      : mode === 'register'
+                        ? t('create_account')
+                        : mode === 'forgot'
+                          ? 'Send reset link'
+                          : 'Reset password'}
+                </Button>
+              )}
+
+              {(mode === 'forgot' || mode === 'reset') && (
+                <button
+                  type="button"
+                  className="mt-4 block w-full text-center text-accent hover:underline"
+                  onClick={() => {
+                    if (window.location.pathname === '/reset-password')
+                      window.location.href = '/login';
+                    else chooseMode('login');
+                  }}
+                >
+                  Back to sign in
+                </button>
+              )}
 
               {server.configured ? (
                 <p className="mt-4 text-center leading-4 text-ink-3">

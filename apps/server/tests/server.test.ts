@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@testron/protocol';
+import type { PasswordResetEmail } from '../src/email.js';
+import { AuthenticationService } from '../src/auth.js';
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
 
@@ -18,6 +20,7 @@ const expectedUser = 'testron_test';
 let server: RunningTestronServer;
 let webappDirectory: string;
 const deliveredInvitationIds: string[] = [];
+const deliveredPasswordResets: PasswordResetEmail[] = [];
 
 const assertIsolatedTestDatabase = async (): Promise<void> => {
   const result = await server.database.pool.query<{
@@ -45,6 +48,11 @@ beforeAll(async () => {
         deliveredInvitationIds.push(invitation.id);
       },
     },
+    passwordResetMailer: {
+      sendPasswordReset: async (message) => {
+        deliveredPasswordResets.push(message);
+      },
+    },
     webappDirectory,
   });
   await assertIsolatedTestDatabase();
@@ -53,6 +61,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   deliveredInvitationIds.length = 0;
+  deliveredPasswordResets.length = 0;
   await assertIsolatedTestDatabase();
   await server.database.db.execute(sql`
     truncate table idempotency_records, project_activity, test_runs, test_revisions, tests, test_suites, environments,
@@ -126,6 +135,17 @@ const createSlice = async (api: ReturnType<typeof client>) => {
 };
 
 describe('PostgreSQL tRPC vertical slice', () => {
+  it('rejects Resend delivery without a public reset URL before connecting to the database', async () => {
+    await expect(
+      startTestronServer({
+        databaseUrl: 'postgresql://invalid:invalid@127.0.0.1:1/invalid',
+        resend: { apiKey: 're_test', from: 'Testron <accounts@example.test>' },
+      }),
+    ).rejects.toThrow(
+      'TESTRON_PUBLIC_URL is required when password-reset email delivery is enabled.',
+    );
+  });
+
   it('serves health checks under the canonical API prefix', async () => {
     const response = await fetch(`${server.url}/api/health`);
     await expect(response.json()).resolves.toEqual({ ok: true });
@@ -160,6 +180,100 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       client(login.accessToken).workspace.get.query({ meta: requestMeta() }),
     ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
+  });
+
+  it('resets a password with an expiring single-use email token and revokes existing sessions', async () => {
+    const email = 'reset@example.test';
+    const password = 'correct horse battery staple';
+    const registration = await client().auth.register.mutate({
+      name: 'Reset User',
+      email,
+      password,
+    });
+
+    await expect(
+      client().auth.requestPasswordReset.mutate({ email: 'missing@example.test' }),
+    ).resolves.toEqual({ accepted: true });
+    expect(deliveredPasswordResets).toHaveLength(0);
+
+    await expect(client().auth.requestPasswordReset.mutate({ email })).resolves.toEqual({
+      accepted: true,
+    });
+    await server.authentication.deliverPendingPasswordResets();
+    expect(deliveredPasswordResets).toHaveLength(1);
+    const resetUrl = new URL(deliveredPasswordResets[0]!.resetUrl);
+    expect(resetUrl.origin).toBe('http://localhost');
+    expect(resetUrl.pathname).toBe('/reset-password');
+    const expiredToken = resetUrl.searchParams.get('token');
+    expect(expiredToken).toBeTruthy();
+
+    await server.database.db.execute(sql`
+      update password_reset_tokens set expires_at = now() - interval '1 minute'
+    `);
+    await expect(
+      client().auth.resetPassword.mutate({
+        token: expiredToken!,
+        newPassword: 'new secure password',
+      }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+
+    await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
+    const token = new URL(deliveredPasswordResets[1]!.resetUrl).searchParams.get('token');
+    expect(token).toBeTruthy();
+
+    await expect(
+      client().auth.resetPassword.mutate({
+        token: 'x'.repeat(43),
+        newPassword: 'new secure password',
+      }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+    await expect(
+      client().auth.resetPassword.mutate({ token: token!, newPassword: 'new secure password' }),
+    ).resolves.toEqual({ changed: true });
+    await expect(
+      client(registration.accessToken).workspace.get.query({ meta: requestMeta() }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+    await expect(client().auth.login.mutate({ email, password })).rejects.toMatchObject({
+      data: { code: 'UNAUTHORIZED' },
+    });
+    await expect(
+      client().auth.login.mutate({ email, password: 'new secure password' }),
+    ).resolves.toHaveProperty('accessToken');
+    await expect(
+      client().auth.resetPassword.mutate({ token: token!, newPassword: 'another password' }),
+    ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+
+    await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
+    await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
+    expect(deliveredPasswordResets).toHaveLength(3);
+  });
+
+  it('keeps failed password-reset emails in the durable outbox for retry', async () => {
+    const email = 'retry-reset@example.test';
+    await client().auth.register.mutate({
+      name: 'Retry Reset User',
+      email,
+      password: 'correct horse battery staple',
+    });
+    const deliveryError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const authentication = new AuthenticationService(
+      server.database.db,
+      { sendPasswordReset: async () => Promise.reject(new Error('provider unavailable')) },
+      'https://testron.example.test',
+    );
+
+    await authentication.requestPasswordReset({ email });
+    await authentication.deliverPendingPasswordResets();
+
+    const result = await server.database.pool.query<{ attempts: number }>(
+      'select attempts from password_reset_email_outbox',
+    );
+    expect(result.rows).toEqual([{ attempts: 1 }]);
+    expect(deliveryError).toHaveBeenCalled();
+    deliveryError.mockRestore();
   });
 
   it('authenticates browser requests with an HttpOnly session cookie', async () => {

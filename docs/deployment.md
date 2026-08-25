@@ -44,7 +44,7 @@ Create an environment named `production`. Add these encrypted secrets:
   Generate the key material with `openssl rand -base64 32`; retain old
   versions comma-separated during rotation.
 - `RESEND_API_KEY`: optional Resend key with sending access. Set it to enable
-  invitation email delivery.
+  invitation and password-reset email delivery.
 
 Add these environment variables:
 

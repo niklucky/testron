@@ -1,8 +1,13 @@
+import { createHash } from 'node:crypto';
 import { TRPCError, initTRPC } from '@trpc/server';
 
 import {
   authLoginInputSchema,
+  authPasswordResetOutputSchema,
+  authPasswordResetRequestedOutputSchema,
   authRegisterInputSchema,
+  authRequestPasswordResetInputSchema,
+  authResetPasswordInputSchema,
   authSessionOutputSchema,
   cancelInvitationProcedure,
   changeAccountPasswordProcedure,
@@ -50,6 +55,7 @@ import { RepositoryError, type CanonicalRepository } from '../database/repositor
 
 export interface TrpcContext {
   user?: AuthenticatedUser;
+  requestIp?: string;
   setSession?(session: AuthSessionOutput): void;
 }
 
@@ -60,6 +66,28 @@ export interface RouterServices {
 
 const t = initTRPC.context<TrpcContext>().create();
 const publicProcedure = t.procedure;
+const passwordResetAttempts = new Map<string, { count: number; resetsAt: number }>();
+const passwordResetAllowed = (email: string, requestIp: string | undefined): boolean => {
+  const now = Date.now();
+  const windowMs = 15 * 60_000;
+  const keys = [
+    { key: `email:${createHash('sha256').update(email).digest('hex')}`, limit: 3 },
+    { key: `ip:${requestIp ?? 'unknown'}`, limit: 10 },
+  ];
+  let allowed = true;
+  for (const { key, limit } of keys) {
+    const current = passwordResetAttempts.get(key);
+    const bucket =
+      !current || current.resetsAt <= now ? { count: 0, resetsAt: now + windowMs } : current;
+    bucket.count += 1;
+    passwordResetAttempts.set(key, bucket);
+    if (bucket.count > limit) allowed = false;
+  }
+  if (passwordResetAttempts.size > 10_000)
+    for (const [key, bucket] of passwordResetAttempts)
+      if (bucket.resetsAt <= now) passwordResetAttempts.delete(key);
+  return allowed;
+};
 const authenticatedProcedure = publicProcedure.use(({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
   return next({ ctx: { ...ctx, user: ctx.user } });
@@ -118,6 +146,18 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
           ctx.setSession?.(session);
           return session;
         }),
+      requestPasswordReset: publicProcedure
+        .input(authRequestPasswordResetInputSchema)
+        .output(authPasswordResetRequestedOutputSchema)
+        .mutation(({ ctx, input }) =>
+          passwordResetAllowed(input.email, ctx.requestIp)
+            ? callAuthentication(() => authentication.requestPasswordReset(input))
+            : { accepted: true as const },
+        ),
+      resetPassword: publicProcedure
+        .input(authResetPasswordInputSchema)
+        .output(authPasswordResetOutputSchema)
+        .mutation(({ input }) => callAuthentication(() => authentication.resetPassword(input))),
     }),
     account: t.router({
       updateProfile: authenticatedProcedure

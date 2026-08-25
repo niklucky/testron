@@ -152,12 +152,21 @@ const mutate = async (operation: Promise<unknown>) => {
 export const authenticateBrowser = async (request: AuthenticationRequest): Promise<void> => {
   if (request.mode === 'login') {
     await trpcClient.auth.login.mutate({ email: request.email, password: request.password });
-  } else {
+  } else if (request.mode === 'register') {
     await trpcClient.auth.register.mutate({
       name: request.name,
       email: request.email,
       password: request.password,
     });
+  } else if (request.mode === 'forgot') {
+    await trpcClient.auth.requestPasswordReset.mutate({ email: request.email });
+    return;
+  } else {
+    await trpcClient.auth.resetPassword.mutate({
+      token: request.token,
+      newPassword: request.newPassword,
+    });
+    return;
   }
 
   // The browser mutation establishes the web session. Logging in afterwards
