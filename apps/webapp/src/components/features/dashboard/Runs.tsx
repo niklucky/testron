@@ -1,7 +1,7 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useMemo } from 'react';
 
-import { goToRuns } from '../../../lib/navigation';
+import { goToTest } from '../../../lib/navigation';
 import {
   Badge,
   EmptyState,
@@ -108,6 +108,12 @@ export const Runs = ({
   const comparable = earlier.length > 0;
 
   const grid = useMemo(() => failureGrid(period, range), [period, range]);
+
+  const openRun = (run: ProjectRun) => {
+    onLog(`Opening test · ${run.test}`);
+    window.testron?.command({ type: 'select-test', testId: run.testId });
+    goToTest(run.testId);
+  };
 
   /** Rows are grouped by day, so the table reads as a log rather than a list. */
   const groups = useMemo(() => {
@@ -277,12 +283,9 @@ export const Runs = ({
                   key={run.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => {
-                    onLog(`Report · ${run.id} · ${run.test}`);
-                    goToRuns();
-                  }}
+                  onClick={() => openRun(run)}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter') goToRuns();
+                    if (event.key === 'Enter') openRun(run);
                   }}
                   className={`grid ${columns} cursor-default border-b border-line-soft px-4 py-2 last:border-b-0 hover:bg-raised/60`}
                 >

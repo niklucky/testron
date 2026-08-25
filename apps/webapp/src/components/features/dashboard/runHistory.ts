@@ -22,6 +22,7 @@ export type ProjectRunVerdict = RunVerdict | 'running';
 
 export type ProjectRun = {
   id: string;
+  testId: string;
   test: string;
   suite: string;
   verdict: ProjectRunVerdict;
@@ -71,7 +72,12 @@ export const runs: ProjectRun[] = (() => {
   const random = mulberry32(90_210);
   const suites = buildSuites();
   const tests = suites.flatMap((suite) =>
-    suite.tests.map((test) => ({ suite: suite.name, test: test.name, status: test.status })),
+    suite.tests.map((test) => ({
+      testId: test.id,
+      suite: suite.name,
+      test: test.name,
+      status: test.status,
+    })),
   );
 
   const history: ProjectRun[] = [];
@@ -97,6 +103,7 @@ export const runs: ProjectRun[] = (() => {
 
       history.push({
         id: `run-${4_400 + history.length}`,
+        testId: subject.testId,
         test: subject.test,
         suite: subject.suite,
         verdict,
@@ -126,6 +133,7 @@ export const runs: ProjectRun[] = (() => {
   // Whatever is in flight sits at the top, still counting.
   const live: ProjectRun[] = tests.slice(0, 3).map((subject, index) => ({
     id: `run-${4_500 + index}`,
+    testId: subject.testId,
     test: subject.test,
     suite: subject.suite,
     verdict: 'running',
