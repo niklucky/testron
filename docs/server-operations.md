@@ -19,6 +19,11 @@ The server applies checked-in migrations before listening. The default listener
 is `http://127.0.0.1:4400`; configure `HOST` and `PORT` when needed.
 `DATABASE_URL` is required.
 
+Reusable browser authentication also requires `TESTRON_AUTH_ENCRYPTION_KEYS`.
+Use `version:key` entries with 32-byte base64 or hex keys; the highest version
+encrypts new values, while retained older versions allow key rotation. The
+server refuses secret creation until this deployment-managed key is configured.
+
 Invitation email delivery is optional. Set both `RESEND_API_KEY` and
 `RESEND_FROM_EMAIL` to enable it; the sender must use a domain verified in
 Resend. If the API key is present without a sender, the server refuses to start.

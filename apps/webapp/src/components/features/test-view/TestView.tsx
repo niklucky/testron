@@ -1,15 +1,25 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
 import type { Step } from '@testron/domain/steps/schema';
+import type { DesktopRuntimeState } from '@testron/protocol';
 import type { AppSnapshot } from '../../../lib/library';
-import { Badge, Button, Icon, IconButton, PulseDot, StatusDot, useTheme } from '../../ui/design';
+import {
+  Badge,
+  Button,
+  Icon,
+  IconButton,
+  PulseDot,
+  SegmentedControl,
+  StatusDot,
+} from '../../ui/design';
 import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
-import type { RecordedStep } from '../record/types';
+import type { RecordedStep, StepViewMode } from '../record/types';
 import { Branch, EmptyLane, Flow, Lane } from './Board';
+import { BrowserInstallModal } from './BrowserInstallModal';
 import {
   AssertionCard,
   DetailCard,
@@ -19,7 +29,7 @@ import {
   StepArrow,
   StepCard,
 } from './columns';
-import { liveTestBoard } from './live';
+import { liveTestBoard, withDesktopReplay } from './live';
 import { createTestViewHotkeyDefinitions, displayTestViewShortcut } from './hotkeys';
 import { DeleteSheet, MoveSheet, PrerequisiteSheet, SourceSheet } from './sheets';
 import { assertionsFor } from './spec';
@@ -51,15 +61,26 @@ const EMPTY_SNAPSHOT: AppSnapshot = {
   verifyAssertion: 'visible',
 };
 
+const EMPTY_DESKTOP_RUNTIME: DesktopRuntimeState = {
+  replay: { status: 'idle', steps: [] },
+  browserInstallation: {
+    status: 'checking',
+    installPath: '',
+    estimatedDownloadBytes: 300 * 1024 * 1024,
+  },
+  workspaceRevision: 0,
+};
+
 const isAssertion = (step: Step): boolean => step.kind.startsWith('assert');
 
 /** The persisted test, read left to right from the same snapshot used by the recorder. */
 export const TestView = () => {
   const { t } = useTranslation();
-  const { theme, toggle } = useTheme();
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const [loaded, setLoaded] = useState(false);
   const [selectedRun, setSelectedRun] = useState<string>();
+  const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
+  const [desktopRuntime, setDesktopRuntime] = useState(EMPTY_DESKTOP_RUNTIME);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -68,6 +89,10 @@ export const TestView = () => {
     index: number | null;
     value: string;
   }>();
+  const [browserInstallOpen, setBrowserInstallOpen] = useState(false);
+  const [showBrowser, setShowBrowser] = useState(false);
+  const runAfterInstall = useRef(false);
+  const desktopWorkspaceRevision = useRef<number | undefined>(undefined);
   const [wideSourceLayout, setWideSourceLayout] = useState(() => window.innerWidth > 1920);
   const [log, setLog] = useState('Loading the selected test…');
 
@@ -82,6 +107,22 @@ export const TestView = () => {
   }, []);
 
   useEffect(() => {
+    const desktop = window.testronDesktop;
+    if (!desktop) return;
+    const unsubscribe = desktop.onRuntimeState(setDesktopRuntime);
+    desktop.requestRuntimeState();
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!window.testronDesktop) return;
+    const previous = desktopWorkspaceRevision.current;
+    desktopWorkspaceRevision.current = desktopRuntime.workspaceRevision;
+    if (previous === undefined || previous === desktopRuntime.workspaceRevision) return;
+    window.testron?.command({ type: 'refresh-workspace' });
+  }, [desktopRuntime.workspaceRevision]);
+
+  useEffect(() => {
     const query = window.matchMedia('(min-width: 1921px)');
     const update = () => setWideSourceLayout(query.matches);
     update();
@@ -89,7 +130,12 @@ export const TestView = () => {
     return () => query.removeEventListener('change', update);
   }, []);
 
-  const board = useMemo(() => liveTestBoard(snapshot), [snapshot]);
+  const replay = window.testronDesktop ? desktopRuntime.replay : snapshot.replay;
+  const liveSnapshot = useMemo(
+    () => (window.testronDesktop ? withDesktopReplay(snapshot, replay) : snapshot),
+    [replay, snapshot],
+  );
+  const board = useMemo(() => liveTestBoard(liveSnapshot), [liveSnapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
   const lines = useMemo(
     () => presentSource(snapshot.source, fullSteps),
@@ -97,22 +143,48 @@ export const TestView = () => {
   );
   const selectedTestId = snapshot.library.selectedTestId;
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
+  const projectEnvironments = snapshot.library.environments.filter(
+    (environment) => environment.projectId === selectedTest?.projectId,
+  );
+  const testProfiles = snapshot.library.profiles
+    .filter(
+      (profile) =>
+        profile.projectId === selectedTest?.projectId &&
+        (profile.id === selectedTest?.profileId ||
+          Boolean(
+            selectedTest?.environmentIds.every((environmentId) =>
+              profile.environmentIds.includes(environmentId),
+            ),
+          )),
+    )
+    .map((profile) => ({
+      ...profile,
+      supported: Boolean(
+        selectedTest?.environmentIds.every((environmentId) =>
+          profile.environmentIds.includes(environmentId),
+        ),
+      ),
+    }));
+  const editInRecorder = () =>
+    goToRecorder(
+      selectedTestId && selectedTest
+        ? { projectId: selectedTest.projectId, testId: selectedTestId }
+        : undefined,
+    );
   const testSuites = snapshot.library.testSuites.filter(
     (suite) => suite.projectId === snapshot.library.selectedProjectId,
   );
   const movableProjects = snapshot.library.projects.filter((project) =>
     snapshot.library.environments.some((environment) => environment.projectId === project.id),
   );
-  const running = snapshot.replay.status === 'running';
+  const running = replay.status === 'running';
   const selectedReplay = useMemo(() => {
-    if (!selectedRun) return snapshot.replay;
+    if (!selectedRun) return replay;
     if (selectedRun.startsWith('server-run-')) return { status: 'idle' as const, steps: [] };
-    if (selectedRun === 'current-run') return snapshot.replay;
+    if (selectedRun === 'current-run') return replay;
     const startedAt = selectedRun.slice('run-'.length);
-    return (
-      snapshot.replayHistory.find((replay) => replay.startedAt === startedAt) ?? snapshot.replay
-    );
-  }, [selectedRun, snapshot.replay, snapshot.replayHistory]);
+    return liveSnapshot.replayHistory.find((entry) => entry.startedAt === startedAt) ?? replay;
+  }, [liveSnapshot.replayHistory, replay, selectedRun]);
 
   useEffect(() => {
     if (runs[0]) setSelectedRun(runs[0].id);
@@ -121,13 +193,13 @@ export const TestView = () => {
   useEffect(() => {
     if (!loaded) return;
     if (!selectedTestId) setLog('No test selected · record a test first');
-    else if (snapshot.replay.status === 'running') setLog(`Running on ${detail.environments[0]}…`);
-    else if (snapshot.replay.status !== 'idle')
+    else if (replay.status === 'running') setLog(`Running on ${detail.environments[0]}…`);
+    else if (replay.status !== 'idle')
       setLog(
-        `Run ${snapshot.replay.status} · ${snapshot.replay.steps.filter((one) => one.status === 'passed').length}/${snapshot.replay.steps.length} steps passed`,
+        `Run ${replay.status} · ${replay.steps.filter((one) => one.status === 'passed').length}/${replay.steps.length} steps passed`,
       );
     else setLog(`${detail.name} · ${snapshot.steps.length} persisted steps`);
-  }, [loaded, selectedTestId, snapshot.replay, snapshot.steps.length, detail]);
+  }, [loaded, selectedTestId, replay, snapshot.steps.length, detail]);
 
   const originalIndex = (id: string): number => fullSteps.findIndex((step) => step.id === id);
 
@@ -275,20 +347,55 @@ export const TestView = () => {
     replaceSteps(next, `Assertion moved to step ${actionIndex + direction + 1}`);
   };
 
+  const startRun = () => {
+    const desktop = window.testronDesktop;
+    const profile = snapshot.library.profiles.find(
+      (candidate) => candidate.id === snapshot.library.selectedProfileId,
+    );
+    const authStateMode = profile?.authenticationType === 'browser-session' ? 'reuse' : 'ignore';
+    if (desktop && selectedTestId && selectedTest) {
+      desktop.runTest({
+        projectId: selectedTest.projectId,
+        environmentId: snapshot.library.selectedEnvironmentId ?? selectedTest.environmentIds[0],
+        testId: selectedTestId,
+        environmentVariables: {},
+        timeoutMs: 120_000,
+        authStateMode,
+        headed: showBrowser,
+      });
+    } else {
+      window.testron?.command({
+        type: 'run-test',
+        environmentVariables: {},
+        timeoutMs: 120_000,
+        authStateMode,
+        headed: showBrowser,
+      });
+    }
+    setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
+  };
+
   const run = () => {
     if (running) {
-      window.testron?.command({ type: 'cancel-run' });
+      if (window.testronDesktop) window.testronDesktop.cancelRun();
+      else window.testron?.command({ type: 'cancel-run' });
       setLog('Cancelling run…');
       return;
     }
-    window.testron?.command({
-      type: 'run-test',
-      environmentVariables: {},
-      timeoutMs: 30_000,
-      reuseAuthState: false,
-    });
-    setLog(`Starting run on ${detail.environments[0] ?? 'Local'}…`);
+    if (window.testronDesktop && desktopRuntime.browserInstallation.status !== 'ready') {
+      setBrowserInstallOpen(true);
+      return;
+    }
+    startRun();
   };
+
+  useEffect(() => {
+    if (!browserInstallOpen || !runAfterInstall.current) return;
+    if (desktopRuntime.browserInstallation.status !== 'ready') return;
+    runAfterInstall.current = false;
+    setBrowserInstallOpen(false);
+    startRun();
+  }, [browserInstallOpen, desktopRuntime.browserInstallation.status]);
 
   const sourceModalOpen = sourceOpen && !wideSourceLayout;
   useHotkeys(
@@ -296,7 +403,7 @@ export const TestView = () => {
       {
         run,
         toggleSource: () => setSourceOpen((open) => !open),
-        edit: goToRecorder,
+        edit: editInRecorder,
         closeSource: () => setSourceOpen(false),
       },
       {
@@ -342,15 +449,22 @@ export const TestView = () => {
         </main>
         {newTestOpen && (
           <NewTestForm
+            environments={snapshot.library.environments.filter(
+              (environment) => environment.projectId === snapshot.library.selectedProjectId,
+            )}
+            initialEnvironmentIds={
+              snapshot.library.selectedEnvironmentId
+                ? [snapshot.library.selectedEnvironmentId]
+                : undefined
+            }
             onClose={() => setNewTestOpen(false)}
-            onStart={(title) => {
+            onStart={(title, environmentIds) => {
               const projectId = snapshot.library.selectedProjectId;
-              const environmentId = snapshot.library.selectedEnvironmentId;
-              if (!projectId || !environmentId) return;
+              if (!projectId || environmentIds.length === 0) return;
               window.testron?.command({
                 type: 'create-test',
                 projectId,
-                environmentId,
+                environmentIds,
                 title,
               });
               setNewTestOpen(false);
@@ -441,25 +555,13 @@ export const TestView = () => {
                   : snapshot.library.server.status}
               </Badge>
               {snapshot.library.server.authentication === 'signedIn' && (
-                <>
-                  <Button
-                    size="sm"
-                    icon="rerun"
-                    onClick={() => window.testron?.command({ type: 'sync-now' })}
-                  >
-                    {t('sync')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      window.testron?.command({ type: 'logout-server' });
-                      goToDashboard();
-                    }}
-                  >
-                    {t('sign_out')}
-                  </Button>
-                </>
+                <Button
+                  size="sm"
+                  icon="rerun"
+                  onClick={() => window.testron?.command({ type: 'sync-now' })}
+                >
+                  {t('sync')}
+                </Button>
               )}
               {snapshot.library.server.authentication === 'signedOut' && (
                 <Button size="sm" onClick={goToDashboard}>
@@ -468,12 +570,6 @@ export const TestView = () => {
               )}
             </>
           )}
-          <IconButton
-            icon={theme === 'dark' ? 'sun' : 'moon'}
-            size="sm"
-            label={theme === 'dark' ? t('switch_to_light') : t('switch_to_dark')}
-            onClick={toggle}
-          />
         </div>
       </header>
 
@@ -495,9 +591,31 @@ export const TestView = () => {
         >
           {sourceOpen && wideSourceLayout ? t('hide_source') : t('view_source')}
         </Button>
-        <Button icon="pencil" onClick={goToRecorder} kbd={displayTestViewShortcut('edit')}>
+        <Button icon="pencil" onClick={editInRecorder} kbd={displayTestViewShortcut('edit')}>
           {t('edit_in_recorder')}
         </Button>
+        {window.testronDesktop && (
+          <Button
+            icon="eye"
+            pressed={showBrowser}
+            onClick={() => setShowBrowser((visible) => !visible)}
+          >
+            Show browser
+          </Button>
+        )}
+        {replay.screenshotPath && window.testronDesktop && (
+          <Button
+            icon="camera"
+            onClick={() => window.testronDesktop?.openReplayArtifact('screenshot')}
+          >
+            Failure screenshot
+          </Button>
+        )}
+        {replay.tracePath && window.testronDesktop && (
+          <Button icon="history" onClick={() => window.testronDesktop?.openReplayArtifact('trace')}>
+            Playwright trace
+          </Button>
+        )}
         <span className="mx-1 h-5 w-px bg-line" />
         <Button icon="suite" onClick={() => setMoveOpen(true)}>
           {t('move')}
@@ -523,6 +641,46 @@ export const TestView = () => {
               <DetailCard
                 detail={detail}
                 metadataEditable={false}
+                profiles={testProfiles}
+                profileId={selectedTest?.profileId ?? undefined}
+                environmentOptions={projectEnvironments.map(({ id, name }) => ({ id, name }))}
+                environmentIds={selectedTest?.environmentIds ?? []}
+                onEnvironments={(environmentIds) => {
+                  if (!selectedTestId || !selectedTest) return;
+                  const profile = snapshot.library.profiles.find(
+                    (candidate) => candidate.id === selectedTest.profileId,
+                  );
+                  const unsupported = environmentIds.find(
+                    (environmentId) => !profile?.environmentIds.includes(environmentId),
+                  );
+                  if (profile && unsupported) {
+                    const environment = projectEnvironments.find(
+                      (candidate) => candidate.id === unsupported,
+                    );
+                    setLog(
+                      `${profile.name} is not configured for ${environment?.name ?? 'that environment'}; change the profile first`,
+                    );
+                    return;
+                  }
+                  window.testron?.command({
+                    type: 'rename-test',
+                    testId: selectedTestId,
+                    title: selectedTest.title,
+                    environmentIds,
+                  });
+                  setLog('Saving test environments…');
+                }}
+                onProfile={(profileId) => {
+                  window.testron?.command({
+                    type: 'select-profile',
+                    ...(profileId ? { profileId } : {}),
+                  });
+                  setLog(
+                    profileId
+                      ? `Profile ${testProfiles.find((profile) => profile.id === profileId)?.name ?? ''} saved`
+                      : 'Profile removed from test',
+                  );
+                }}
                 onDetail={(next: TestDetail) => {
                   if (!selectedTestId || !next.name.trim() || next.name === detail.name) return;
                   window.testron?.command({
@@ -567,6 +725,19 @@ export const TestView = () => {
               hint={t('assertions_hint', { count: assertions.length })}
               width={360}
               contentTestId="steps-lane-scroll"
+              action={
+                <SegmentedControl
+                  label={t('step_view')}
+                  items={[
+                    { id: 'tester', label: t('tester'), icon: 'list' },
+                    { id: 'developer', label: t('developer'), icon: 'code' },
+                  ]}
+                  value={stepViewMode}
+                  onChange={setStepViewMode}
+                  variant="pill"
+                  iconOnly
+                />
+              }
             >
               {steps.map((step, index) => {
                 const branch = assertionsFor(board, index);
@@ -578,6 +749,7 @@ export const TestView = () => {
                       step={step}
                       index={index}
                       locatorEditable
+                      viewMode={stepViewMode}
                       failed={result?.status === 'failed'}
                       running={result?.status === 'running'}
                       passed={result?.status === 'passed'}
@@ -587,7 +759,7 @@ export const TestView = () => {
                         const original = originalIndex(step.id);
                         if (original < 0) return;
                         window.testron?.command({ type: 'set-repick-step', index: original });
-                        goToRecorder();
+                        editInRecorder();
                       }}
                       onAddAssertion={() => addAssertion(step)}
                       onDelete={() => {
@@ -622,6 +794,7 @@ export const TestView = () => {
                             kinds={allowedKinds}
                             subjectEditable={false}
                             locatorEditable
+                            viewMode={stepViewMode}
                             status={assertionResult?.status}
                             error={assertionResult?.error}
                             canMoveUp={index > 0}
@@ -704,23 +877,32 @@ export const TestView = () => {
           currentTestSuiteId={selectedTest?.testSuiteId}
           onMove={({ projectId, testSuiteId }) => {
             if (!selectedTestId || !selectedTest) return;
-            const currentEnvironment = snapshot.library.environments.find(
-              (environment) => environment.id === selectedTest.environmentId,
+            const currentEnvironments = snapshot.library.environments.filter((environment) =>
+              selectedTest.environmentIds.includes(environment.id),
             );
             const destinationEnvironments = snapshot.library.environments.filter(
               (environment) => environment.projectId === projectId,
             );
-            const environment =
-              destinationEnvironments.find(
-                (candidate) => candidate.name === currentEnvironment?.name,
-              ) ?? destinationEnvironments[0];
-            if (!environment) return;
+            const environmentIds = [
+              ...new Set(
+                currentEnvironments
+                  .map(
+                    (current) =>
+                      destinationEnvironments.find((candidate) => candidate.name === current.name)
+                        ?.id,
+                  )
+                  .filter((id): id is string => Boolean(id)),
+              ),
+            ];
+            if (environmentIds.length === 0 && destinationEnvironments[0])
+              environmentIds.push(destinationEnvironments[0].id);
+            if (environmentIds.length === 0) return;
             window.testron?.command({
               type: 'move-test',
               testId: selectedTestId,
               projectId,
               testSuiteId,
-              environmentId: environment.id,
+              environmentIds,
             });
             setMoveOpen(false);
             setLog('Moving test…');
@@ -754,6 +936,24 @@ export const TestView = () => {
           onDelete={() => {
             window.testron?.command({ type: 'delete-test', testId: selectedTestId });
             setDeleteOpen(false);
+          }}
+        />
+      )}
+
+      {browserInstallOpen && desktopRuntime.browserInstallation.status !== 'ready' && (
+        <BrowserInstallModal
+          installation={desktopRuntime.browserInstallation}
+          onInstall={() => {
+            runAfterInstall.current = true;
+            window.testronDesktop?.installBrowser();
+          }}
+          onCancel={() => {
+            runAfterInstall.current = false;
+            window.testronDesktop?.cancelBrowserInstall();
+          }}
+          onClose={() => {
+            runAfterInstall.current = false;
+            setBrowserInstallOpen(false);
           }}
         />
       )}

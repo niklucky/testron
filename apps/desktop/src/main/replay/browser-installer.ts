@@ -119,7 +119,7 @@ export class BrowserInstaller {
 
   constructor(
     readonly installPath: string,
-    private readonly cliPath: string,
+    cliPath: string,
     private readonly dependencies: BrowserInstallerDependencies,
   ) {
     this.lockPath = path.join(installPath, '.testron-install.lock');

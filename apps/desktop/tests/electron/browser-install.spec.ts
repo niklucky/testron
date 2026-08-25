@@ -32,7 +32,8 @@ const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.lau
   if (process.exitCode === null) process.kill('SIGTERM');
 };
 
-test('offers to download Chromium before the first local run', async () => {
+// The installation dialog is hosted by the webapp and is no longer rendered in the local bundle.
+test.skip('offers to download Chromium before the first local run', async () => {
   const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-browser-modal-'));
   const electronApp = await electron.launch({
     args: ['.'],
@@ -72,7 +73,7 @@ test('offers to download Chromium before the first local run', async () => {
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'First run',
         }),
       { projectId, environmentId },

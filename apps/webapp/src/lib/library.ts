@@ -1,5 +1,9 @@
 import type { Step } from '@testron/domain/steps/schema';
 import type {
+  DesktopRunRequest,
+  DesktopAuthenticationRefreshRequest,
+  DesktopAuthenticationClearRequest,
+  DesktopRuntimeState,
   ProjectActivity,
   ProjectInvitation,
   ProjectMember,
@@ -7,6 +11,10 @@ import type {
   TestRun,
   TestSuiteSummary,
   WebWorkspaceSnapshot,
+  BrowserAuthenticationFlow,
+  ProfileEnvironmentAuthentication,
+  ProjectSecretMetadata,
+  AuthenticationStateMetadata,
 } from '@testron/protocol';
 
 export interface ProjectRecord {
@@ -29,17 +37,19 @@ export interface EnvironmentRecord {
 
 export interface ProfileRecord {
   id: string;
-  environmentId: string;
+  projectId: string;
+  environmentIds: string[];
   name: string;
-  authenticationType: 'credentials';
+  authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
   revision?: number;
 }
 
 export interface TestRecord {
   id: string;
   projectId: string;
-  environmentId: string;
+  environmentIds: string[];
   testSuiteId?: string | null;
+  profileId?: string | null;
   title: string;
   prerequisites: string[];
   createdAt: string;
@@ -60,7 +70,17 @@ export interface LibrarySnapshot {
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];
-  profileVariables: Array<{ profileId: string; name: string; sensitive: boolean }>;
+  authenticationFlows?: BrowserAuthenticationFlow[];
+  profileEnvironmentAuthentications?: ProfileEnvironmentAuthentication[];
+  projectSecrets?: ProjectSecretMetadata[];
+  authenticationStates?: AuthenticationStateMetadata[];
+  authenticationFlowSecretNames?: Record<string, string[]>;
+  profileVariables: Array<{
+    profileId: string;
+    environmentId: string;
+    name: string;
+    sensitive: boolean;
+  }>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
   deletedTests?: TestRecord[];
@@ -144,8 +164,9 @@ declare global {
     testron?: TestronApi;
     testronDesktop?: {
       platform: 'desktop';
+      setLocale(locale: 'en' | 'ru'): void;
       openLocal(request: {
-        route: 'record' | 'test' | 'run' | 'recovery';
+        route: 'record' | 'recovery';
         projectId?: string;
         environmentId?: string;
         testId?: string;
@@ -153,6 +174,15 @@ declare global {
       showProduct(): void;
       login(email: string, password: string): void;
       register(name: string, email: string, password: string): void;
+      requestRuntimeState(): void;
+      openReplayArtifact(artifact: 'screenshot' | 'trace'): void;
+      runTest(request: DesktopRunRequest): void;
+      refreshAuthentication(request: DesktopAuthenticationRefreshRequest): void;
+      clearAuthentication(request: DesktopAuthenticationClearRequest): void;
+      cancelRun(): void;
+      installBrowser(): void;
+      cancelBrowserInstall(): void;
+      onRuntimeState(listener: (state: DesktopRuntimeState) => void): () => void;
     };
   }
 }

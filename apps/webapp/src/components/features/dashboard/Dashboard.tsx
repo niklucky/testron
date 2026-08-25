@@ -626,9 +626,6 @@ export const Dashboard = ({
           <span>
             {quarantined.length} {t('quarantined')}
           </span>
-          <a href="#/experiments" className="text-ink-3 no-underline hover:text-ink">
-            {t('ui_studies')}
-          </a>
         </span>
       </footer>
 
@@ -664,8 +661,14 @@ export const Dashboard = ({
       {newTestSuite !== undefined && (
         <NewTestForm
           suiteName={newTestSuite?.name}
+          environments={library?.environments.filter(
+            (environment) => environment.projectId === library.selectedProjectId,
+          )}
+          initialEnvironmentIds={
+            library?.selectedEnvironmentId ? [library.selectedEnvironmentId] : undefined
+          }
           onClose={() => setNewTestSuite(undefined)}
-          onStart={(title) => {
+          onStart={(title, environmentIds) => {
             setLog(
               newTestSuite ? `New test · ${title} in ${newTestSuite.name}` : `New test · ${title}`,
             );
@@ -675,15 +678,14 @@ export const Dashboard = ({
                 testSuiteId: newTestSuite.id,
               });
             const projectId = library?.selectedProjectId;
-            const environmentId = library?.selectedEnvironmentId;
-            if (!projectId || !environmentId) {
+            if (!projectId || environmentIds.length === 0) {
               setLog('Select a project environment before recording a test.');
               return;
             }
             window.testron?.command({
               type: 'create-test',
               projectId,
-              environmentId,
+              environmentIds,
               title,
             });
             setNewTestSuite(undefined);

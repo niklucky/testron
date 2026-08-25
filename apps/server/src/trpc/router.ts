@@ -7,6 +7,14 @@ import {
   cancelInvitationProcedure,
   changeAccountPasswordProcedure,
   createEnvironmentProcedure,
+  createBrowserAuthenticationFlowProcedure,
+  updateBrowserAuthenticationFlowProcedure,
+  deleteBrowserAuthenticationFlowProcedure,
+  configureProfileEnvironmentAuthenticationProcedure,
+  createProjectSecretProcedure,
+  replaceProjectSecretProcedure,
+  deleteProjectSecretProcedure,
+  manageAuthenticationStateProcedure,
   createInvitationProcedure,
   createProfileProcedure,
   createProjectProcedure,
@@ -179,6 +187,54 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .output(updateProfileProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.updateProfile(ctx.user, input))),
     }),
+    authenticationFlow: t.router({
+      create: authenticatedProcedure
+        .input(createBrowserAuthenticationFlowProcedure.input)
+        .output(createBrowserAuthenticationFlowProcedure.output)
+        .mutation(({ ctx, input }) =>
+          call(() => repository.createBrowserAuthenticationFlow(ctx.user, input)),
+        ),
+      update: authenticatedProcedure
+        .input(updateBrowserAuthenticationFlowProcedure.input)
+        .output(updateBrowserAuthenticationFlowProcedure.output)
+        .mutation(({ ctx, input }) =>
+          call(() => repository.updateBrowserAuthenticationFlow(ctx.user, input)),
+        ),
+      delete: authenticatedProcedure
+        .input(deleteBrowserAuthenticationFlowProcedure.input)
+        .output(deleteBrowserAuthenticationFlowProcedure.output)
+        .mutation(({ ctx, input }) =>
+          call(() => repository.deleteBrowserAuthenticationFlow(ctx.user, input)),
+        ),
+      configureProfile: authenticatedProcedure
+        .input(configureProfileEnvironmentAuthenticationProcedure.input)
+        .output(configureProfileEnvironmentAuthenticationProcedure.output)
+        .mutation(({ ctx, input }) =>
+          call(() => repository.configureProfileEnvironmentAuthentication(ctx.user, input)),
+        ),
+    }),
+    projectSecret: t.router({
+      create: authenticatedProcedure
+        .input(createProjectSecretProcedure.input)
+        .output(createProjectSecretProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.createProjectSecret(ctx.user, input))),
+      replace: authenticatedProcedure
+        .input(replaceProjectSecretProcedure.input)
+        .output(replaceProjectSecretProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.replaceProjectSecret(ctx.user, input))),
+      delete: authenticatedProcedure
+        .input(deleteProjectSecretProcedure.input)
+        .output(deleteProjectSecretProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.deleteProjectSecret(ctx.user, input))),
+    }),
+    authenticationState: t.router({
+      manage: authenticatedProcedure
+        .input(manageAuthenticationStateProcedure.input)
+        .output(manageAuthenticationStateProcedure.output)
+        .mutation(({ ctx, input }) =>
+          call(() => repository.manageAuthenticationState(ctx.user, input)),
+        ),
+    }),
     testSuite: t.router({
       create: authenticatedProcedure
         .input(createTestSuiteProcedure.input)
@@ -214,7 +270,13 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
               ...workspace,
               profiles: workspace.profiles.map((profile) => ({
                 ...profile,
-                variables: profile.variables.map(({ name, sensitive }) => ({ name, sensitive })),
+                environments: profile.environments.map((environment) => ({
+                  ...environment,
+                  variables: environment.variables.map(({ name, sensitive }) => ({
+                    name,
+                    sensitive,
+                  })),
+                })),
               })),
             };
           }),

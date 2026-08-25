@@ -19,14 +19,6 @@ export const goToRuns = () => {
   );
 };
 export const goToTest = (testId: string, targetProjectId = projectId()) => {
-  if (window.testronDesktop) {
-    window.testronDesktop.openLocal({
-      route: 'test',
-      projectId: targetProjectId,
-      testId,
-    });
-    return;
-  }
   void import('../router').then(({ router }) =>
     router.navigate({
       to: '/projects/$projectId/tests/$testId',
@@ -34,12 +26,12 @@ export const goToTest = (testId: string, targetProjectId = projectId()) => {
     }),
   );
 };
-export const goToRecorder = () => {
+export const goToRecorder = (selection?: { projectId: string; testId: string }) => {
   if (window.testronDesktop) {
     window.testronDesktop.openLocal({
       route: 'record',
-      projectId: projectId(),
-      testId: window.location.pathname.split('/')[4],
+      projectId: selection?.projectId ?? projectId(),
+      testId: selection?.testId ?? window.location.pathname.split('/')[4],
     });
     return;
   }

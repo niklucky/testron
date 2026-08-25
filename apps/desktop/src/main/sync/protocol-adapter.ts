@@ -76,7 +76,7 @@ export const toCreateTestRequest = (
     content: {
       stepSchemaVersion: 1,
       title: test.title,
-      environmentId: test.environmentId,
+      environmentIds: test.environmentIds,
       prerequisites: test.prerequisites,
       steps: createRevisionSteps(steps, createStepId),
     },
@@ -118,7 +118,8 @@ export const fromTestSnapshot = (
     record: {
       id: snapshot.test.id,
       projectId: snapshot.test.projectId,
-      environmentId: snapshot.currentRevision.content.environmentId,
+      environmentIds: snapshot.currentRevision.content.environmentIds,
+      profileId: snapshot.currentRevision.content.profileId ?? null,
       testSuiteId: snapshot.test.testSuiteId,
       title: snapshot.test.title,
       prerequisites: snapshot.currentRevision.content.prerequisites,

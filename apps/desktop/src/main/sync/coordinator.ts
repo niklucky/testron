@@ -97,12 +97,11 @@ export class DesktopSyncCoordinator {
         this.repository.setServerId('environment', environment.id, remote.id);
       }
       for (const { localTestId, draft } of this.repository.listDraftsNeedingSync()) {
-        const environmentId = this.repository.getServerId(
-          'environment',
-          draft.content.environmentId,
+        const environmentIds = draft.content.environmentIds.map((environmentId) =>
+          this.repository.getServerId('environment', environmentId),
         );
         const projectId = this.repository.getServerId('project', draft.projectId);
-        if (!environmentId || !projectId)
+        if (environmentIds.some((environmentId) => !environmentId) || !projectId)
           return {
             status: 'error',
             message: 'The project and environment must synchronize first.',
@@ -113,7 +112,7 @@ export class DesktopSyncCoordinator {
               meta: mutationMeta(this.clientVersion, `test-create-${draft.draftId}`),
               projectId,
               testSuiteId: draft.testSuiteId,
-              content: { ...draft.content, environmentId },
+              content: { ...draft.content, environmentIds: environmentIds as string[] },
             }),
           );
           this.repository.acknowledgeTest(localTestId, snapshot);
@@ -127,7 +126,7 @@ export class DesktopSyncCoordinator {
             ),
             testId: draft.testId,
             baseRevision: draft.baseRevision,
-            content: { ...draft.content, environmentId },
+            content: { ...draft.content, environmentIds: environmentIds as string[] },
           }),
         );
         if (result.status === 'conflict') {

@@ -19,6 +19,7 @@ export type RecordStatus = RecordPanelState['status'];
 /** What the next interaction becomes: an action, or an assertion about it. */
 export type CaptureMode = RecordPanelState['mode'];
 export type PanelId = WirePanelId;
+export type StepViewMode = 'tester' | 'developer';
 
 /** Named regions of the recorded page, so a step can point back at one. */
 export type SpotId =

@@ -32,17 +32,31 @@ export interface ReplaySnapshot {
   durationMs?: number;
   screenshotPath?: string;
   tracePath?: string;
-  authStatePath?: string;
   error?: string;
+}
+
+type PlaywrightStorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
+export type BrowserStorageState = Omit<PlaywrightStorageState, 'origins'> & {
+  origins: Array<PlaywrightStorageState['origins'][number] & { indexedDB?: unknown[] }>;
+};
+
+/** Internal main-process result. `capturedStorageState` must never be sent to a renderer. */
+export interface ReplayResult extends ReplaySnapshot {
+  capturedStorageState?: BrowserStorageState;
 }
 
 export interface ReplayOptions {
   steps: readonly Step[];
   environmentVariables: Readonly<Record<string, string>>;
+  secretValues?: Readonly<Record<string, string>>;
   timeoutMs: number;
+  headed?: boolean;
   artifactsDirectory: string;
-  authStatePath?: string;
-  saveAuthStatePath?: string;
+  initialStorageState?: BrowserStorageState;
+  captureStorageState?: boolean;
+  protectSensitiveArtifacts?: boolean;
+  cookies?: Array<{ name: string; value: string; url: string }>;
+  headers?: { origin: string; values: Record<string, string> };
   onProgress: (snapshot: ReplaySnapshot) => void;
 }
 
@@ -96,6 +110,7 @@ const executeStep = async (
   page: Page,
   step: Step,
   environmentVariables: Readonly<Record<string, string>>,
+  secretValues: Readonly<Record<string, string>>,
   expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
@@ -107,9 +122,21 @@ const executeStep = async (
       break;
     case 'fill': {
       const variableName = step.variable?.name;
-      const value = variableName ? environmentVariables[variableName] : step.value;
-      if (value === undefined || (variableName !== undefined && value === ''))
-        throw new Error(`Missing required profile variable: ${variableName}`);
+      const secretName = step.secret?.environmentVariable;
+      const value = secretName
+        ? secretValues[secretName]
+        : variableName
+          ? environmentVariables[variableName]
+          : step.value;
+      if (
+        value === undefined ||
+        ((variableName !== undefined || secretName !== undefined) && value === '')
+      )
+        throw new Error(
+          secretName
+            ? `Missing required authentication secret: ${secretName}`
+            : `Missing required profile variable: ${variableName}`,
+        );
       await resolveLocator(page, step.target.primary).fill(value);
       break;
     }
@@ -180,13 +207,20 @@ export class LocalReplayRunner {
     void this.context?.close().catch(() => undefined);
   }
 
-  async run(options: ReplayOptions): Promise<ReplaySnapshot> {
+  async run(options: ReplayOptions): Promise<ReplayResult> {
     // Loaded only after main.ts configures PLAYWRIGHT_BROWSERS_PATH. A static
     // import makes Playwright cache its default browser directory too early.
     const { chromium, expect } = await import('@playwright/test');
     this.cancelled = false;
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
+    const protectSensitiveArtifacts =
+      options.captureStorageState === true ||
+      options.protectSensitiveArtifacts === true ||
+      options.initialStorageState !== undefined ||
+      options.secretValues !== undefined ||
+      options.cookies !== undefined ||
+      options.headers !== undefined;
     const results: ReplayStepResult[] = options.steps.map((step, index) => ({
       index,
       action: presentStep(step),
@@ -202,16 +236,46 @@ export class LocalReplayRunner {
     const screenshotPath = path.join(options.artifactsDirectory, 'failure.png');
     await Promise.all([rm(tracePath, { force: true }), rm(screenshotPath, { force: true })]);
 
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({ headless: !options.headed });
     let timer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     try {
-      this.context = await browser.newContext(
-        options.authStatePath ? { storageState: options.authStatePath } : undefined,
-      );
+      this.context = await browser.newContext({
+        ...(options.initialStorageState ? { storageState: options.initialStorageState } : {}),
+      });
+      if (options.cookies?.length) await this.context.addCookies(options.cookies);
       this.context.setDefaultTimeout(options.timeoutMs);
-      await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+      // Authentication setup steps can contain resolved secrets. They must not enter a
+      // Playwright trace or screenshot, even when setup fails.
+      if (!protectSensitiveArtifacts)
+        await this.context.tracing.start({ screenshots: true, snapshots: true, sources: true });
       const page = await this.context.newPage();
+      if (options.headers) {
+        const profileHeaders = options.headers;
+        const profileOrigin = new URL(profileHeaders.origin).origin;
+        const cdp = await this.context.newCDPSession(page);
+        cdp.on('Fetch.requestPaused', (event) => {
+          const headers = { ...event.request.headers };
+          const sameProfileOrigin = new URL(event.request.url).origin === profileOrigin;
+          for (const [name, value] of Object.entries(profileHeaders.values)) {
+            const existingName = Object.keys(headers).find(
+              (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+            );
+            if (existingName) delete headers[existingName];
+            if (sameProfileOrigin) headers[name] = value;
+          }
+          void cdp.send('Fetch.continueRequest', {
+            requestId: event.requestId,
+            headers: Object.entries(headers).map(([name, value]) => ({ name, value })),
+          });
+        });
+        await cdp.send('Fetch.enable', {
+          patterns: [
+            { urlPattern: 'http://*/*', requestStage: 'Request' },
+            { urlPattern: 'https://*/*', requestStage: 'Request' },
+          ],
+        });
+      }
       timer = setTimeout(() => {
         timedOut = true;
         void this.context?.close().catch(() => undefined);
@@ -227,6 +291,7 @@ export class LocalReplayRunner {
             page,
             options.steps[result.index],
             options.environmentVariables,
+            options.secretValues ?? {},
             expect,
           );
           result.status = 'passed';
@@ -236,17 +301,22 @@ export class LocalReplayRunner {
         } catch (error) {
           result.status = 'failed';
           result.durationMs = Date.now() - stepStarted;
-          result.error = stripVTControlCharacters(
-            error instanceof Error ? error.message : String(error),
-          );
+          result.error = options.captureStorageState
+            ? 'Authentication flow step failed.'
+            : stripVTControlCharacters(error instanceof Error ? error.message : String(error));
           result.pageUrl = page.url();
-          await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => undefined);
+          const screenshotCaptured = protectSensitiveArtifacts
+            ? false
+            : await page
+                .screenshot({ path: screenshotPath, fullPage: true })
+                .then(() => true)
+                .catch(() => false);
           snapshot = {
             ...snapshot,
             status: timedOut ? 'timedOut' : this.cancelled ? 'cancelled' : 'failed',
             durationMs: Date.now() - started,
-            screenshotPath,
-            tracePath,
+            ...(screenshotCaptured ? { screenshotPath } : {}),
+            ...(!protectSensitiveArtifacts ? { tracePath } : {}),
           };
           break;
         }
@@ -254,23 +324,32 @@ export class LocalReplayRunner {
 
       if (snapshot.status === 'running') {
         const status = timedOut ? 'timedOut' : this.cancelled ? 'cancelled' : 'passed';
-        if (status === 'passed' && options.saveAuthStatePath) {
-          await mkdir(path.dirname(options.saveAuthStatePath), { recursive: true });
-          await this.context.storageState({ path: options.saveAuthStatePath });
-        }
+        const timeoutScreenshotCaptured =
+          status === 'timedOut' && !protectSensitiveArtifacts
+            ? await page
+                .screenshot({ path: screenshotPath, fullPage: true })
+                .then(() => true)
+                .catch(() => false)
+            : false;
+        const capturedStorageState =
+          status === 'passed' && options.captureStorageState
+            ? await this.context.storageState({ indexedDB: true })
+            : undefined;
         snapshot = {
           ...snapshot,
           status,
           durationMs: Date.now() - started,
-          tracePath,
-          ...(options.saveAuthStatePath ? { authStatePath: options.saveAuthStatePath } : {}),
+          ...(timeoutScreenshotCaptured ? { screenshotPath } : {}),
+          ...(!protectSensitiveArtifacts ? { tracePath } : {}),
         };
+        return { ...snapshot, ...(capturedStorageState ? { capturedStorageState } : {}) };
       }
       return snapshot;
     } finally {
       if (timer) clearTimeout(timer);
       if (this.context) {
-        await this.context.tracing.stop({ path: tracePath }).catch(() => undefined);
+        if (!protectSensitiveArtifacts)
+          await this.context.tracing.stop({ path: tracePath }).catch(() => undefined);
         await this.context.close().catch(() => undefined);
       }
       this.context = undefined;

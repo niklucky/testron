@@ -23,6 +23,7 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
       : environments[0]?.id;
   selectedProjectId = projectId;
   selectedEnvironmentId = environmentId;
+  const selectedTest = value.tests.find((item) => item.test.id === selectedTestId);
   return {
     viewer: value.viewer,
     members: value.members,
@@ -31,15 +32,44 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     inviteeLookup,
     projects: value.projects,
     environments: value.environments.map((item) => ({ ...item, authRevision: item.revision })),
-    profiles: value.profiles.map(({ variables: _variables, ...profile }) => profile),
+    profiles: value.profiles.map(({ environments: profileEnvironments, ...profile }) => ({
+      ...profile,
+      environmentIds: profileEnvironments.map(({ environmentId }) => environmentId),
+    })),
+    authenticationFlows: value.authenticationFlows ?? [],
+    profileEnvironmentAuthentications: value.profileEnvironmentAuthentications ?? [],
+    projectSecrets: value.projectSecrets ?? [],
+    authenticationStates: value.authenticationStates ?? [],
+    authenticationFlowSecretNames: Object.fromEntries(
+      (value.authenticationFlows ?? []).map((flow) => {
+        const setup = value.tests.find((snapshot) => snapshot.test.id === flow.setupTestId);
+        const names = [
+          ...new Set(
+            (setup?.currentRevision.content.steps ?? [])
+              .map(({ payload }) =>
+                payload.kind === 'fill' ? payload.secret?.environmentVariable : undefined,
+              )
+              .filter((name): name is string => name !== undefined),
+          ),
+        ];
+        return [flow.id, names];
+      }),
+    ),
     profileVariables: value.profiles.flatMap((profile) =>
-      profile.variables.map((variable) => ({ profileId: profile.id, ...variable })),
+      profile.environments.flatMap((environment) =>
+        environment.variables.map((variable) => ({
+          profileId: profile.id,
+          environmentId: environment.environmentId,
+          ...variable,
+        })),
+      ),
     ),
     tests: value.tests.map(({ test, currentRevision }) => ({
       id: test.id,
       projectId: test.projectId,
-      environmentId: currentRevision.content.environmentId,
+      environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
+      profileId: currentRevision.content.profileId ?? null,
       title: test.title,
       prerequisites: currentRevision.content.prerequisites,
       createdAt: test.createdAt,
@@ -49,8 +79,9 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     deletedTests: value.deletedTests?.map(({ test, currentRevision }) => ({
       id: test.id,
       projectId: test.projectId,
-      environmentId: currentRevision.content.environmentId,
+      environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
+      profileId: currentRevision.content.profileId ?? null,
       title: test.title,
       prerequisites: currentRevision.content.prerequisites,
       createdAt: test.createdAt,
@@ -65,6 +96,7 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     selectedProjectId: projectId,
     selectedEnvironmentId: environmentId,
     selectedTestSuiteId,
+    selectedProfileId: selectedTest?.currentRevision.content.profileId ?? undefined,
     selectedTestId,
     sync: { pending: 0, conflicts: 0 },
     runsInFlight: value.activeRuns.filter((run) => run.projectId === projectId).length,
@@ -76,7 +108,8 @@ const snapshotFromWorkspace = (value: WebWorkspaceSnapshot): AppSnapshot => {
   const library = libraryFromWorkspace(value);
   const selected = value.tests.find((item) => item.test.id === library.selectedTestId);
   const environment = value.environments.find(
-    (item) => item.id === selected?.currentRevision.content.environmentId,
+    (item) =>
+      item.id === (selectedEnvironmentId ?? selected?.currentRevision.content.environmentIds[0]),
   );
   return {
     title: selected?.test.title ?? 'Untitled test',
@@ -162,8 +195,29 @@ const command = (input: AppCommand): void => {
       break;
     case 'select-test':
       selectedTestId = value(input, 'testId');
+      selectedEnvironmentId = workspace?.tests.find((test) => test.test.id === selectedTestId)
+        ?.currentRevision.content.environmentIds[0];
       publish();
       break;
+    case 'select-profile': {
+      const selected = workspace?.tests.find((test) => test.test.id === selectedTestId);
+      if (!selected) break;
+      void trpcClient.test.saveRevision
+        .mutate({
+          meta,
+          testId: selected.test.id,
+          baseRevision: selected.test.currentRevision,
+          content: {
+            ...selected.currentRevision.content,
+            profileId: value<string | undefined>(input, 'profileId') ?? null,
+          },
+        })
+        .then(async (result) => {
+          if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+          await refresh();
+        });
+      break;
+    }
     case 'create-project':
       void trpcClient.project.create
         .mutate({ meta, name: value(input, 'name') })
@@ -210,10 +264,15 @@ const command = (input: AppCommand): void => {
       void mutate(
         trpcClient.profile.create.mutate({
           meta,
-          environmentId: value(input, 'environmentId'),
+          projectId: selectedProjectId!,
           name: value(input, 'name'),
-          authenticationType: 'credentials',
-          variables: value(input, 'variables'),
+          authenticationType: value(input, 'authenticationType'),
+          environments: [
+            {
+              environmentId: value(input, 'environmentId'),
+              variables: value(input, 'variables'),
+            },
+          ],
         }),
       );
       break;
@@ -224,7 +283,8 @@ const command = (input: AppCommand): void => {
           profileId: value(input, 'profileId'),
           baseRevision: value(input, 'baseRevision'),
           name: value(input, 'name'),
-          authenticationType: 'credentials',
+          authenticationType: value(input, 'authenticationType'),
+          environmentId: value(input, 'environmentId'),
           variables: value(input, 'variables'),
         }),
       );
@@ -266,17 +326,19 @@ const command = (input: AppCommand): void => {
           content: {
             stepSchemaVersion: 1,
             title: value(input, 'title'),
-            environmentId: value(input, 'environmentId'),
+            environmentIds: value(input, 'environmentIds'),
             steps: [],
           },
         })
         .then(async (snapshot) => {
           selectedTestId = snapshot.test.id;
+          selectedEnvironmentId =
+            snapshot.currentRevision.content.environmentIds[0] ?? selectedEnvironmentId;
           await refresh();
           window.testronDesktop?.openLocal({
             route: 'record',
             projectId: snapshot.test.projectId,
-            environmentId: snapshot.currentRevision.content.environmentId,
+            environmentId: snapshot.currentRevision.content.environmentIds[0],
             testId: snapshot.test.id,
           });
           if (!window.testronDesktop) goToTest(snapshot.test.id);
@@ -296,6 +358,32 @@ const command = (input: AppCommand): void => {
           if (selectedTestId === testId) selectedTestId = undefined;
           await refresh();
           goToDashboard();
+        });
+      break;
+    }
+    case 'rename-test': {
+      const testId = value<string>(input, 'testId');
+      const current = workspace?.tests.find((item) => item.test.id === testId);
+      if (!current) break;
+      const environmentIds =
+        value<string[] | undefined>(input, 'environmentIds') ??
+        current.currentRevision.content.environmentIds;
+      void trpcClient.test.saveRevision
+        .mutate({
+          meta,
+          testId,
+          baseRevision: current.test.currentRevision,
+          content: {
+            ...current.currentRevision.content,
+            title: value(input, 'title'),
+            environmentIds,
+          },
+        })
+        .then(async (result) => {
+          if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+          if (!selectedEnvironmentId || !environmentIds.includes(selectedEnvironmentId))
+            selectedEnvironmentId = environmentIds[0];
+          await refresh();
         });
       break;
     }
@@ -330,12 +418,12 @@ const command = (input: AppCommand): void => {
           baseRevision: test.test.currentRevision,
           projectId: value(input, 'projectId'),
           testSuiteId: value(input, 'testSuiteId'),
-          environmentId: value(input, 'environmentId'),
+          environmentIds: value(input, 'environmentIds'),
         })
         .then(async (moved) => {
           selectedProjectId = moved.test.projectId;
           selectedTestSuiteId = moved.test.testSuiteId ?? undefined;
-          selectedEnvironmentId = moved.currentRevision.content.environmentId;
+          selectedEnvironmentId = moved.currentRevision.content.environmentIds[0];
           selectedTestId = moved.test.id;
           await refresh();
           goToTest(moved.test.id, moved.test.projectId);
@@ -343,11 +431,80 @@ const command = (input: AppCommand): void => {
       break;
     }
     case 'run-test':
-      window.testronDesktop?.openLocal({
-        route: 'test',
-        projectId: selectedProjectId,
-        environmentId: selectedEnvironmentId,
-        testId: selectedTestId,
+      if (window.testronDesktop && selectedProjectId && selectedTestId)
+        window.testronDesktop.runTest({
+          projectId: selectedProjectId,
+          environmentId: selectedEnvironmentId,
+          testId: selectedTestId,
+          environmentVariables: value(input, 'environmentVariables'),
+          timeoutMs: value(input, 'timeoutMs'),
+          headed: Boolean(value(input, 'headed')),
+          authStateMode:
+            'authStateMode' in input
+              ? (value(input, 'authStateMode') as 'ignore' | 'reuse' | 'refresh')
+              : value(input, 'reuseAuthState')
+                ? 'reuse'
+                : 'ignore',
+        });
+      break;
+    case 'create-authentication-flow':
+      void mutate(
+        trpcClient.authenticationFlow.create.mutate({
+          meta,
+          projectId: value(input, 'projectId'),
+          name: value(input, 'name'),
+          setupTestId: value(input, 'setupTestId'),
+          refreshPolicy: {
+            mode: value(input, 'refreshMode'),
+            maxAgeSeconds: value(input, 'maxAgeSeconds'),
+            refreshBeforeExpirySeconds: value(input, 'refreshBeforeExpirySeconds'),
+          },
+        }),
+      );
+      break;
+    case 'create-project-secret':
+      void mutate(
+        trpcClient.projectSecret.create.mutate({
+          meta,
+          projectId: value(input, 'projectId'),
+          name: value(input, 'name'),
+          value: value(input, 'value'),
+        }),
+      );
+      break;
+    case 'configure-profile-authentication':
+      void mutate(
+        trpcClient.authenticationFlow.configureProfile.mutate({
+          meta,
+          profileId: value(input, 'profileId'),
+          environmentId: value(input, 'environmentId'),
+          authFlowId: value(input, 'authFlowId'),
+          secretBindings: value(input, 'secretBindings'),
+        }),
+      );
+      break;
+    case 'manage-server-authentication-state':
+      void mutate(
+        trpcClient.authenticationState.manage.mutate({
+          meta,
+          projectId: value(input, 'projectId'),
+          environmentId: value(input, 'environmentId'),
+          profileId: value(input, 'profileId'),
+          action: value(input, 'action'),
+        }),
+      );
+      break;
+    case 'refresh-desktop-authentication':
+      window.testronDesktop?.refreshAuthentication({
+        profileId: value(input, 'profileId'),
+        environmentId: value(input, 'environmentId'),
+        secretValues: value(input, 'secretValues'),
+      });
+      break;
+    case 'clear-desktop-authentication':
+      window.testronDesktop?.clearAuthentication({
+        profileId: value(input, 'profileId'),
+        environmentId: value(input, 'environmentId'),
       });
       break;
     case 'lookup-invitee':

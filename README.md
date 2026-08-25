@@ -52,3 +52,11 @@ This creates a portable Windows x64 ZIP under `apps/desktop/out/make/zip/win32/x
 The packaged app uses `https://testron.dev` as its server; the friend testing it
 can extract the ZIP and run `Testron.exe`. The build is unsigned, so Windows may
 show a SmartScreen warning.
+
+## Desktop releases
+
+Push a semantic-version tag such as `v1.2.0` to build and publish the four desktop
+archives. The release includes `update-manifest.json`; packaged apps check the
+latest manifest at startup and verify downloaded archives with SHA-256. Set the
+GitHub Actions variable `TESTRON_UPDATE_REQUIRED` to `true` before publishing a
+release that older desktop versions must install before continuing.

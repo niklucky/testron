@@ -23,7 +23,7 @@ describe('desktop application command schema', () => {
       appCommandSchema.safeParse({
         type: 'create-test',
         projectId: id,
-        environmentId: id,
+        environmentIds: [id],
         title: 'x'.repeat(201),
       }).success,
     ).toBe(false);
@@ -145,7 +145,7 @@ describe('desktop application command schema', () => {
         testId: id,
         projectId: id,
         testSuiteId: id,
-        environmentId: id,
+        environmentIds: [id],
       }),
     ).toMatchObject({ type: 'move-test', testSuiteId: id });
     expect(
@@ -154,7 +154,7 @@ describe('desktop application command schema', () => {
         testId: id,
         projectId: id,
         testSuiteId: 'not-an-id',
-        environmentId: id,
+        environmentIds: [id],
       }).success,
     ).toBe(false);
   });
@@ -164,6 +164,7 @@ describe('desktop application command schema', () => {
       appCommandSchema.parse({
         type: 'update-profile',
         profileId: id,
+        environmentId: id,
         baseRevision: 1,
         name: 'Administrator',
         authenticationType: 'credentials',
@@ -174,9 +175,31 @@ describe('desktop application command schema', () => {
       }),
     ).toMatchObject({ type: 'update-profile', baseRevision: 1 });
     expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'API token',
+        authenticationType: 'headers',
+        variables: [{ name: 'Authorization', value: 'Bearer secret', sensitive: true }],
+      }),
+    ).toMatchObject({ type: 'create-profile', authenticationType: 'headers' });
+    expect(
+      appCommandSchema.safeParse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Duplicate headers',
+        authenticationType: 'headers',
+        variables: [
+          { name: 'Authorization', value: 'one', sensitive: true },
+          { name: 'authorization', value: 'two', sensitive: true },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
       appCommandSchema.safeParse({
         type: 'update-profile',
         profileId: id,
+        environmentId: id,
         baseRevision: 1,
         name: 'Administrator',
         authenticationType: 'credentials',
@@ -186,6 +209,30 @@ describe('desktop application command schema', () => {
         ],
       }).success,
     ).toBe(false);
+    expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Browser administrator',
+        authenticationType: 'browser-session',
+        variables: [],
+      }),
+    ).toMatchObject({ authenticationType: 'browser-session' });
+    expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Saved browser session',
+        authenticationType: 'storage-state',
+        variables: [
+          {
+            name: 'storageState',
+            value: JSON.stringify({ cookies: [], origins: [] }),
+            sensitive: true,
+          },
+        ],
+      }),
+    ).toMatchObject({ authenticationType: 'storage-state' });
   });
 
   it('validates account and membership commands', () => {

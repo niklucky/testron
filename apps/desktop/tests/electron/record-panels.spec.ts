@@ -1,5 +1,6 @@
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -21,7 +22,7 @@ const openRecordScreen = async () => {
     window.location.hash = '#/record';
   });
   await appWindow
-    .getByRole('button', { name: 'Record R', exact: true })
+    .getByRole('button', { name: /^(Record|Continue recording)\s*R$/ })
     .waitFor({ timeout: 10_000 });
   await appWindow.evaluate(() =>
     window.testron.command({ type: 'navigate', url: 'http://127.0.0.1:4174/' }),
@@ -68,7 +69,7 @@ const closeElectron = async (electronApp: Awaited<ReturnType<typeof electron.lau
   if (process.exitCode === null) process.kill('SIGTERM');
 };
 
-test('remote product opens local TestView and fully reclaims the window after recording', async () => {
+test('remote product opens the local recorder and fully reclaims the window', async () => {
   test.setTimeout(60_000);
   const dataDirectory = mkdtempSync(path.join(tmpdir(), 'testron-remote-view-'));
   const electronApp = await electron.launch({
@@ -82,7 +83,7 @@ test('remote product opens local TestView and fully reclaims the window after re
   });
   try {
     const appWindow = await electronApp.firstWindow();
-    const openFromRemote = (route: 'record' | 'test') =>
+    const openFromRemote = (route: 'record') =>
       electronApp.evaluate(async ({ BrowserWindow, webContents }, nextRoute) => {
         const mainContents = BrowserWindow.getAllWindows()[0].webContents;
         const remote = webContents
@@ -96,6 +97,20 @@ test('remote product opens local TestView and fully reclaims the window after re
           `window.testronDesktop.openLocal(${JSON.stringify({ route: nextRoute })})`,
         );
       }, route);
+    const setRemoteLocale = (locale: 'en' | 'ru') =>
+      electronApp.evaluate(async ({ BrowserWindow, webContents }, nextLocale) => {
+        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+        const remote = webContents
+          .getAllWebContents()
+          .find(
+            (contents) =>
+              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+          );
+        if (!remote) throw new Error('Remote product WebContentsView was not found.');
+        await remote.executeJavaScript(
+          `window.testronDesktop.setLocale(${JSON.stringify(nextLocale)})`,
+        );
+      }, locale);
 
     await expect
       .poll(() =>
@@ -107,31 +122,25 @@ test('remote product opens local TestView and fully reclaims the window after re
       )
       .toBe(true);
 
-    await openFromRemote('test');
-    await expect(appWindow).toHaveURL(/#\/test$/);
-    await expect(appWindow.getByText('No test selected')).toBeVisible();
-
-    await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
-    await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
-
+    await setRemoteLocale('en');
     await openFromRemote('record');
     await appWindow
-      .getByRole('button', { name: 'Record R', exact: true })
+      .getByRole('button', { name: /^(Record|Continue recording)\s*R$/ })
       .waitFor({ timeout: 10_000 });
     await expect.poll(() => childBounds(electronApp)).toEqual([]);
 
-    await appWindow.getByRole('button', { name: 'recorded test' }).click();
-    await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
-    await expect.poll(() => childBounds(electronApp)).toEqual([]);
-    await appWindow.getByRole('button', { name: 'Cancel' }).click();
-
-    await appWindow.getByLabel('Create authentication profile').click();
-    await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
-    await expect.poll(() => childBounds(electronApp)).toEqual([]);
-    await appWindow.getByRole('button', { name: 'Cancel' }).click();
-
-    await appWindow.getByLabel('Back to the dashboard').click();
+    await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
     await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(
+          ({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL() === 'http://127.0.0.1:4174/').length,
+        ),
+      )
+      .toBe(1);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -164,6 +173,121 @@ test('recorder header controls stay above the tested website view', async () => 
       await expect(appWindow.locator('webview')).toBeVisible();
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
     });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('starting a new test resets only the tested website session', async () => {
+  test.setTimeout(60_000);
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    const usesDefaultSession = await electronApp.evaluate(
+      async ({ BrowserWindow, session, webContents }) => {
+        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+        const target = webContents
+          .getAllWebContents()
+          .find(
+            (contents) =>
+              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+          );
+        if (!target) throw new Error('Tested website webContents was not found.');
+
+        await session.defaultSession.cookies.set({
+          url: 'http://127.0.0.1:4174/',
+          name: 'testron-product-session',
+          value: 'keep',
+        });
+        await target.executeJavaScript(`
+          localStorage.setItem('login-state', 'authenticated');
+          sessionStorage.setItem('login-state', 'authenticated');
+          document.cookie = 'target-session=authenticated; path=/';
+        `);
+        return target.session === session.defaultSession;
+      },
+    );
+    expect(usesDefaultSession).toBe(false);
+
+    await appWindow.evaluate(() =>
+      window.testron.command({ type: 'prepare-new-test', title: 'Failed login' }),
+    );
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ BrowserWindow, webContents }) => {
+          const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+          const target = webContents
+            .getAllWebContents()
+            .find(
+              (contents) =>
+                contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+            );
+          if (!target || target.isLoading()) return null;
+          try {
+            return await target.executeJavaScript(
+              `[localStorage.getItem('login-state'), sessionStorage.getItem('login-state'), document.cookie]`,
+            );
+          } catch {
+            return null;
+          }
+        }),
+      )
+      .toEqual([null, null, '']);
+
+    const productCookies = await electronApp.evaluate(({ session }) =>
+      session.defaultSession.cookies.get({
+        url: 'http://127.0.0.1:4174/',
+        name: 'testron-product-session',
+      }),
+    );
+    expect(productCookies).toHaveLength(1);
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('test steps switch between tester summaries and developer locators', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.evaluate(() =>
+      window.testron.command({
+        type: 'replace-steps',
+        steps: [
+          {
+            version: 1,
+            kind: 'click',
+            target: {
+              primary: { strategy: 'role', role: 'textbox', name: 'Work email' },
+              alternatives: [{ strategy: 'testId', attribute: 'data-testid', value: 'email' }],
+            },
+            metadata: { recordedAt: '2026-08-22T10:00:00.000Z' },
+          },
+        ],
+      }),
+    );
+
+    const stepsPanel = appWindow.getByRole('complementary', { name: 'Test steps' });
+    const summary = stepsPanel.getByText('Click “Work email”', { exact: true });
+    await expect(summary).toBeVisible();
+    const locatorButton = stepsPanel.locator('button[aria-expanded]').filter({
+      hasText: "getByRole('textbox', { name: 'Work email' })",
+    });
+    await expect(locatorButton).toHaveCount(0);
+
+    await stepsPanel.getByRole('button', { name: 'Developer', exact: true }).click();
+    await expect(locatorButton).toBeVisible();
+
+    await stepsPanel.getByRole('button', { name: 'Tester', exact: true }).click();
+    await expect(locatorButton).toHaveCount(0);
+    const testerRow = summary.locator('xpath=ancestor::*[@role="button"][1]');
+    const details = testerRow.getByRole('tooltip');
+    await expect(details).toBeHidden();
+    await testerRow.hover();
+    await expect(details).toContainText("getByRole('textbox', { name: 'Work email' })");
+    await expect(details).toContainText("getByTestId('email')");
+    await expect(details).toBeVisible();
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -214,9 +338,18 @@ test('profile variables auto-fill exact field names and record only references',
 
       await appWindow.getByRole('button', { name: 'Recording profile' }).click({ timeout: 5_000 });
       await expect(appWindow.getByRole('listbox', { name: 'Recording profile' })).toBeVisible();
+      await expect(appWindow.getByRole('option', { name: 'No profile' })).toBeVisible();
       await expect(appWindow.getByRole('option', { name: 'Administrator' })).toBeVisible();
       await expect.poll(() => childBounds(electronApp)).toEqual([]);
+      await appWindow.getByRole('option', { name: 'No profile' }).click({ timeout: 5_000 });
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+        .toBeUndefined();
+      await appWindow.getByRole('button', { name: 'Recording profile' }).click({ timeout: 5_000 });
       await appWindow.getByRole('option', { name: 'Administrator' }).click({ timeout: 5_000 });
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+        .toBe((await appSnapshot(appWindow)).library.profiles[0]?.id);
 
       await appWindow.getByLabel('Configure Administrator').click({ timeout: 5_000 });
       await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
@@ -227,7 +360,7 @@ test('profile variables auto-fill exact field names and record only references',
       await appWindow.getByRole('button', { name: 'Cancel' }).click();
     });
 
-    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
     const resolvedValue = await electronApp.evaluate(async ({ webContents }) => {
       const website = webContents
         .getAllWebContents()
@@ -254,10 +387,242 @@ test('profile variables auto-fill exact field names and record only references',
   }
 });
 
+test('header, cookie, and saved storage-state profiles are applied while recording', async () => {
+  test.setTimeout(60_000);
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  const crossOriginHeaders: Array<string | undefined> = [];
+  const crossOriginServer = createServer((request, response) => {
+    crossOriginHeaders.push(request.headers['x-testron-profile'] as string | undefined);
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<p>Cross origin</p>');
+  });
+  await new Promise<void>((resolve) => crossOriginServer.listen(0, '127.0.0.1', resolve));
+  const crossOriginAddress = crossOriginServer.address();
+  if (!crossOriginAddress || typeof crossOriginAddress === 'string')
+    throw new Error('Cross-origin fixture server did not start.');
+  const crossOriginUrl = `http://127.0.0.1:${crossOriginAddress.port}/pixel.png`;
+  try {
+    appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'API' }));
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
+    const projectId = (await appSnapshot(appWindow)).library.selectedProjectId!;
+    appWindow.evaluate(
+      (id) =>
+        window.testron.command({
+          type: 'create-environment',
+          projectId: id,
+          name: 'Development',
+          baseUrl: 'http://127.0.0.1:4174/',
+          testIdAttribute: 'data-testid',
+        }),
+      projectId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.environments.length)
+      .toBe(1);
+    const environmentId = (await appSnapshot(appWindow)).library.selectedEnvironmentId!;
+
+    await appWindow.getByLabel('Create authentication profile').click();
+    await appWindow.getByLabel('Authentication type').selectOption('headers');
+    await appWindow.getByLabel('Variable 1 name').fill('X-Testron-Profile');
+    await appWindow.getByLabel('Variable 1 value').fill('header-secret');
+    await appWindow.getByRole('button', { name: 'Create and select' }).click();
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(1);
+
+    const requestEvidence = async (suffix: string) => {
+      const targetUrl = `http://127.0.0.1:4174/request-profile?${suffix}`;
+      await appWindow.evaluate(
+        (url) => window.testron.command({ type: 'navigate', url }),
+        targetUrl,
+      );
+      return expect
+        .poll(() =>
+          electronApp.evaluate(({ webContents }, expectedUrl) => {
+            const website = webContents
+              .getAllWebContents()
+              .find((contents) => contents.getURL() === expectedUrl);
+            return website?.executeJavaScript(
+              `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+            );
+          }, targetUrl),
+        )
+        .toBeDefined();
+    };
+
+    await requestEvidence(`headers&subresource=${encodeURIComponent(crossOriginUrl)}`);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.executeJavaScript(
+            `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+          );
+        }),
+      )
+      .toBe('header-secret|');
+    await expect.poll(() => crossOriginHeaders).toEqual([undefined]);
+    await appWindow.evaluate(
+      (url) => window.testron.command({ type: 'navigate', url }),
+      `http://127.0.0.1:4174/request-profile-redirect?target=${encodeURIComponent(crossOriginUrl)}`,
+    );
+    await expect.poll(() => crossOriginHeaders).toEqual([undefined, undefined]);
+
+    appWindow.evaluate(
+      ({ id }) =>
+        window.testron.command({
+          type: 'create-profile',
+          environmentId: id,
+          name: 'Session',
+          authenticationType: 'cookies',
+          variables: [{ name: 'sid', value: 'cookie-secret', sensitive: true }],
+        }),
+      { id: environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(2);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.session.cookies.get({
+            url: 'http://127.0.0.1:4174/',
+            name: 'sid',
+          });
+        }),
+      )
+      .toHaveLength(1);
+    await requestEvidence('cookies');
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          return website?.executeJavaScript(
+            `document.querySelector('[data-testid="profile-request"]')?.textContent`,
+          );
+        }),
+      )
+      .toBe('|sid=cookie-secret');
+
+    appWindow.evaluate(
+      ({ id }) =>
+        window.testron.command({
+          type: 'create-profile',
+          environmentId: id,
+          name: 'Saved session',
+          authenticationType: 'storage-state',
+          variables: [
+            {
+              name: 'storageState',
+              sensitive: true,
+              value: JSON.stringify({
+                cookies: [
+                  {
+                    name: 'saved_sid',
+                    value: 'saved-cookie',
+                    domain: '127.0.0.1',
+                    path: '/',
+                    expires: -1,
+                    httpOnly: false,
+                    secure: false,
+                    sameSite: 'Lax',
+                  },
+                ],
+                origins: [
+                  {
+                    origin: 'http://127.0.0.1:4174',
+                    localStorage: [{ name: 'accessToken', value: 'saved-local-token' }],
+                  },
+                ],
+              }),
+            },
+          ],
+        }),
+      { id: environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(3);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          if (!website) return undefined;
+          const [cookies, localValue] = await Promise.all([
+            website.session.cookies.get({
+              url: 'http://127.0.0.1:4174/',
+              name: 'saved_sid',
+            }),
+            website.executeJavaScript(`localStorage.getItem('accessToken')`),
+          ]);
+          return { cookie: cookies[0]?.value, localValue };
+        }),
+      )
+      .toEqual({ cookie: 'saved-cookie', localValue: 'saved-local-token' });
+
+    const snapshot = await appSnapshot(appWindow);
+    const headerProfileId = snapshot.library.profiles.find(
+      (profile) => profile.name === 'Administrator',
+    )!.id;
+    const storageProfileId = snapshot.library.profiles.find(
+      (profile) => profile.name === 'Saved session',
+    )!.id;
+    appWindow.evaluate(
+      ({ projectId: selectedProjectId, environmentId: selectedEnvironmentId }) =>
+        window.testron.command({
+          type: 'create-test',
+          projectId: selectedProjectId,
+          environmentIds: [selectedEnvironmentId],
+          title: 'authenticated request',
+        }),
+      { projectId, environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.tests.length).toBe(1);
+    const testId = (await appSnapshot(appWindow)).library.selectedTestId!;
+    appWindow.evaluate(
+      (profileId) => window.testron.command({ type: 'select-profile', profileId }),
+      headerProfileId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+      .toBe(headerProfileId);
+    appWindow.evaluate(
+      ({ projectId: selectedProjectId, environmentId: selectedEnvironmentId }) =>
+        window.testron.command({
+          type: 'create-test',
+          projectId: selectedProjectId,
+          environmentIds: [selectedEnvironmentId],
+          title: 'another authenticated request',
+        }),
+      { projectId, environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.tests.length).toBe(2);
+    appWindow.evaluate(
+      ({ selectedTestId, profileId }) => {
+        window.testron.command({ type: 'select-profile', profileId });
+        window.testron.command({ type: 'select-test', testId: selectedTestId });
+      },
+      { selectedTestId: testId, profileId: storageProfileId },
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+      .toBe(headerProfileId);
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+    await new Promise<void>((resolve, reject) =>
+      crossOriginServer.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
 test('records a table row collection count with its current match total', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
     await appWindow.getByRole('button', { name: 'Assert' }).click();
 
     const websiteEval = (source: string) =>
@@ -313,7 +678,8 @@ test('records a table row collection count with its current match total', async 
   }
 });
 
-test('failed assertions show their error and repeated runs append cards', async () => {
+// TestView is hosted by the webapp now; this scenario belongs in its browser suite.
+test.skip('failed assertions show their error and repeated runs append cards', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
     appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'Failures' }));
@@ -339,7 +705,7 @@ test('failed assertions show their error and repeated runs append cards', async 
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'visible heading fails hidden assertion',
         });
       },
@@ -380,7 +746,7 @@ test('failed assertions show their error and repeated runs append cards', async 
           type: 'run-test',
           environmentVariables: {},
           timeoutMs: 1_000,
-          reuseAuthState: false,
+          authStateMode: 'ignore',
         }),
       );
     await run();
@@ -424,7 +790,8 @@ test('failed assertions show their error and repeated runs append cards', async 
   }
 });
 
-test('test steps scroll without source and locators can be repaired inline', async () => {
+// TestView is hosted by the webapp now; this scenario belongs in its browser suite.
+test.skip('test steps scroll without source and locators can be repaired inline', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
     appWindow.evaluate(() => window.testron.command({ type: 'create-project', name: 'Editing' }));
@@ -436,7 +803,7 @@ test('test steps scroll without source and locators can be repaired inline', asy
           type: 'create-environment',
           projectId: id,
           name: 'Local',
-          baseUrl: 'http://127.0.0.1:4174/',
+          baseUrl: 'http://127.0.0.1:4174/welcome',
           testIdAttribute: 'data-testid',
         }),
       projectId,
@@ -450,7 +817,7 @@ test('test steps scroll without source and locators can be repaired inline', asy
         window.testron.command({
           type: 'create-test',
           projectId,
-          environmentId,
+          environmentIds: [environmentId],
           title: 'Editable menu',
         }),
       { projectId, environmentId },
@@ -494,6 +861,23 @@ test('test steps scroll without source and locators can be repaired inline', asy
       true,
     );
 
+    const firstSummary = lane.getByText('Click “div > div > button:nth-child(1)”', { exact: true });
+    await expect(firstSummary).toBeVisible();
+    await expect(appWindow.getByLabel('Step 1 locator — click to edit')).toHaveCount(0);
+    const firstCard = firstSummary.locator(
+      'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " group/step ")][1]',
+    );
+    const testerDetails = firstCard.getByRole('tooltip');
+    await expect(testerDetails).toBeHidden();
+    await firstCard.hover();
+    await expect(testerDetails).toContainText("locator('div > div > button:nth-child(1)')");
+    await expect(testerDetails).toContainText("getByRole('menuitem', { name: 'Dashboard' })");
+    await expect(testerDetails).toBeVisible();
+
+    await appWindow
+      .getByRole('group', { name: 'Step view' })
+      .getByRole('button', { name: 'Developer', exact: true })
+      .click();
     await appWindow.getByLabel('Step 1 locator — click to edit').click();
     const locatorInput = appWindow.getByLabel('Step 1 locator');
     await locatorInput.fill("getByRole('menuitem', { name: 'Dashboard' })");
@@ -506,14 +890,35 @@ test('test steps scroll without source and locators can be repaired inline', asy
       .toEqual({ strategy: 'role', role: 'menuitem', name: 'Dashboard' });
     await expect(appWindow.getByText('Click “Dashboard”', { exact: true })).toBeVisible();
 
+    await appWindow.evaluate(() => {
+      const observed = [] as string[];
+      (window as typeof window & { observedRecordSources?: string[] }).observedRecordSources =
+        observed;
+      new MutationObserver(() => {
+        const source = document.querySelector('webview')?.getAttribute('src');
+        if (source) observed.push(source);
+      }).observe(document.body, { childList: true, subtree: true, attributes: true });
+    });
     await appWindow.getByLabel('Repick element for step 1', { exact: true }).click();
-    await appWindow.getByRole('button', { name: /^(Continue recording|Record)( R)?$/ }).waitFor();
+    await appWindow.getByRole('button', { name: /^(Continue recording|Record) ?R$/ }).waitFor();
+    await expect
+      .poll(() => appWindow.locator('webview').getAttribute('src'))
+      .toBe('http://127.0.0.1:4174/welcome');
+    const observedSources = await appWindow.evaluate(
+      () =>
+        (window as typeof window & { observedRecordSources?: string[] }).observedRecordSources ??
+        [],
+    );
+    expect(observedSources.length).toBeGreaterThan(0);
+    expect(observedSources.every((source) => source === 'http://127.0.0.1:4174/welcome')).toBe(
+      true,
+    );
     await expect
       .poll(() =>
         electronApp.evaluate(({ webContents }) =>
           webContents
             .getAllWebContents()
-            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/'),
+            .some((contents) => contents.getURL() === 'http://127.0.0.1:4174/welcome'),
         ),
       )
       .toBe(true);
@@ -521,7 +926,7 @@ test('test steps scroll without source and locators can be repaired inline', asy
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
           .getAllWebContents()
-          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/welcome');
         if (!website) throw new Error('Fixture WebContentsView was not found.');
         return website.executeJavaScript(script);
       }, source);
@@ -600,7 +1005,7 @@ test('panel blocks are opaque over the tested website', async () => {
 test('hover inspector targets deep HTML and SVG content and re-hits after scrolling', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
     const websiteEval = (source: string) =>
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
@@ -665,31 +1070,36 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
 test('hover picker chooses a primary locator and an action can become an assertion', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
-    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
 
-    await electronApp.evaluate(async ({ webContents }) => {
-      const website = webContents
-        .getAllWebContents()
-        .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
-      if (!website) throw new Error('Fixture WebContentsView was not found.');
-      await website.executeJavaScript(`(() => {
-        const input = document.querySelector('[data-testid="email"]');
-        const rect = input.getBoundingClientRect();
-        input.dispatchEvent(new PointerEvent('pointermove', {
-          bubbles: true,
-          clientX: rect.left + 4,
-          clientY: rect.top + 4,
-        }));
-        const choices = [...document.querySelectorAll('[aria-label="Choose locator"] button')];
-        const idChoice = choices.find((button) => button.textContent === 'id=email');
-        if (!idChoice) throw new Error('The id locator choice was not shown.');
-        idChoice.click();
-        input.value = 'picked@example.test';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
-        input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-      })()`);
-    });
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+          if (!website) return false;
+          return website.executeJavaScript(`(() => {
+            const input = document.querySelector('[data-testid="email"]');
+            const rect = input.getBoundingClientRect();
+            input.dispatchEvent(new PointerEvent('pointermove', {
+              bubbles: true,
+              clientX: rect.left + 4,
+              clientY: rect.top + 4,
+            }));
+            const choices = [...document.querySelectorAll('[aria-label="Choose locator"] button')];
+            const idChoice = choices.find((button) => button.textContent === 'id=email');
+            if (!idChoice) return false;
+            idChoice.click();
+            input.value = 'picked@example.test';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+            input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+            return true;
+          })()`);
+        }),
+      )
+      .toBe(true);
 
     await expect.poll(async () => (await appSnapshot(appWindow)).steps.length).toBe(3);
     const before = await appSnapshot(appWindow);
@@ -784,7 +1194,7 @@ test('records live website interactions and saves the new test', async () => {
       .poll(async () => (await appSnapshot(appWindow)).library.selectedEnvironmentId)
       .toBeTruthy();
 
-    await appWindow.getByRole('button', { name: 'Record R', exact: true }).click();
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
     await expect(appWindow.getByRole('button', { name: 'Pause' })).toBeVisible();
 
     await electronApp.evaluate(async ({ webContents }) => {
@@ -804,26 +1214,12 @@ test('records live website interactions and saves the new test', async () => {
     await appWindow.getByLabel('Test name').fill('Phase 2 live flow');
     await appWindow.getByRole('button', { name: 'Save and open test' }).click();
 
-    await expect(appWindow.getByText('Phase 2 live flow', { exact: true }).first()).toBeVisible();
-    await expect(appWindow.getByText('phase-two@example.test', { exact: true })).toBeVisible();
-
-    await appWindow.getByRole('button', { name: 'Test name — click to edit' }).click();
-    await appWindow.getByLabel('Test name').fill('Phase 2 edited flow');
-    await appWindow.getByLabel('Test name').press('Enter');
-    await expect(appWindow.getByText('Phase 2 edited flow', { exact: true }).first()).toBeVisible();
-
-    await appWindow.getByRole('button', { name: 'Step 2 value — click to edit' }).click();
-    await appWindow.getByLabel('Step 2 value').fill('edited@example.test');
-    await appWindow.getByLabel('Step 2 value').press('Enter');
-    await expect(appWindow.getByText('edited@example.test', { exact: true })).toBeVisible();
-
-    await appWindow
-      .getByRole('button', { name: 'Assert something after step 2' })
-      .click({ force: true });
-    await expect(appWindow.getByLabel('Assertion', { exact: true })).toHaveValue('visible');
-
-    await appWindow.getByRole('button', { name: 'Run on Local' }).click();
-    await expect(appWindow.getByText('Passed', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.tests[0]?.title)
+      .toBe('Phase 2 live flow');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.some((step) => 'value' in step))
+      .toBe(true);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });

@@ -128,9 +128,9 @@ export const profiles = pgTable(
   'profiles',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    environmentId: uuid('environment_id')
+    projectId: uuid('project_id')
       .notNull()
-      .references(() => environments.id, { onDelete: 'cascade' }),
+      .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     authenticationType: text('authentication_type').notNull(),
     revision: integer('revision').notNull(),
@@ -139,7 +139,23 @@ export const profiles = pgTable(
     deletedAt: instant('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
   },
-  (table) => [index('profiles_environment_idx').on(table.environmentId)],
+  (table) => [index('profiles_project_idx').on(table.projectId)],
+);
+
+export const profileEnvironments = pgTable(
+  'profile_environments',
+  {
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.environmentId] }),
+    index('profile_environments_environment_idx').on(table.environmentId),
+  ],
 );
 
 export const profileVariables = pgTable(
@@ -148,11 +164,17 @@ export const profileVariables = pgTable(
     profileId: uuid('profile_id')
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     value: text('value').notNull(),
     sensitive: boolean('sensitive').notNull(),
   },
-  (table) => [primaryKey({ columns: [table.profileId, table.name] })],
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.environmentId, table.name] }),
+    index('profile_variables_environment_idx').on(table.environmentId),
+  ],
 );
 
 export const testSuites = pgTable(
@@ -221,6 +243,131 @@ export const testRevisions = pgTable(
   ],
 );
 
+export const browserAuthenticationFlows = pgTable(
+  'browser_authentication_flows',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    setupTestId: uuid('setup_test_id')
+      .notNull()
+      .references(() => tests.id),
+    refreshMode: text('refresh_mode').notNull(),
+    maxAgeSeconds: integer('max_age_seconds').notNull(),
+    refreshBeforeExpirySeconds: integer('refresh_before_expiry_seconds').notNull(),
+    revision: integer('revision').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+    deletedAt: instant('deleted_at'),
+    deletedBy: uuid('deleted_by').references(() => users.id),
+  },
+  (table) => [
+    index('browser_auth_flows_project_idx').on(table.projectId),
+    index('browser_auth_flows_setup_test_idx').on(table.setupTestId),
+  ],
+);
+
+export const projectSecrets = pgTable(
+  'project_secrets',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    encryptedValue: text('encrypted_value'),
+    keyVersion: integer('key_version'),
+    revision: integer('revision').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+    deletedAt: instant('deleted_at'),
+  },
+  (table) => [
+    index('project_secrets_project_idx').on(table.projectId),
+    uniqueIndex('project_secrets_active_name_unique')
+      .on(table.projectId, table.name)
+      .where(sql`${table.deletedAt} is null`),
+  ],
+);
+
+export const profileEnvironmentAuthentications = pgTable(
+  'profile_environment_authentications',
+  {
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
+    authFlowId: uuid('auth_flow_id')
+      .notNull()
+      .references(() => browserAuthenticationFlows.id),
+    secretBindings: jsonb('secret_bindings')
+      .$type<Record<string, { secretId: string }>>()
+      .notNull(),
+    revision: integer('revision').notNull(),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.environmentId] }),
+    index('profile_environment_auth_flow_idx').on(table.authFlowId),
+  ],
+);
+
+export const authenticationStates = pgTable(
+  'authentication_states',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    owner: text('owner').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id, { onDelete: 'cascade' }),
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    authFlowId: uuid('auth_flow_id')
+      .notNull()
+      .references(() => browserAuthenticationFlows.id, { onDelete: 'cascade' }),
+    identity: jsonb('identity').$type<Record<string, unknown>>().notNull(),
+    encryptedState: text('encrypted_state'),
+    keyVersion: integer('key_version'),
+    status: text('status').notNull(),
+    createdAt: instant('created_at'),
+    expiresAt: instant('expires_at'),
+    lastError: text('last_error'),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('authentication_states_scope_unique').on(
+      table.owner,
+      table.projectId,
+      table.environmentId,
+      table.profileId,
+    ),
+    index('authentication_states_expiry_idx').on(table.expiresAt),
+  ],
+);
+
+export const secretAuditEvents = pgTable(
+  'secret_audit_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    secretId: uuid('secret_id').references(() => projectSecrets.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+  },
+  (table) => [index('secret_audit_project_created_idx').on(table.projectId, table.createdAt)],
+);
+
 export const testRuns = pgTable(
   'test_runs',
   {
@@ -238,6 +385,7 @@ export const testRuns = pgTable(
     environmentId: uuid('environment_id')
       .notNull()
       .references(() => environments.id),
+    profileId: uuid('profile_id').references(() => profiles.id),
     status: text('status').notNull(),
     source: text('source').notNull(),
     startedAt: instant('started_at').defaultNow().notNull(),

@@ -103,25 +103,254 @@ export const environmentSchema = z
   })
   .strict();
 
+export const profileAuthenticationTypeSchema = z.enum([
+  'credentials',
+  'cookies',
+  'headers',
+  'storage-state',
+  'browser-session',
+]);
+
+export const browserStorageStateSchema = z
+  .object({
+    cookies: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            value: z.string(),
+            domain: z.string().min(1),
+            path: z.string().startsWith('/'),
+            expires: z.number().finite(),
+            httpOnly: z.boolean(),
+            secure: z.boolean(),
+            sameSite: z.enum(['Strict', 'Lax', 'None']),
+            partitionKey: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .max(1_000),
+    origins: z
+      .array(
+        z
+          .object({
+            origin: z
+              .url()
+              .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol)),
+            localStorage: z
+              .array(z.object({ name: z.string(), value: z.string() }).strict())
+              .max(10_000),
+            indexedDB: z.array(z.unknown()).optional(),
+          })
+          .strict(),
+      )
+      .max(1_000),
+  })
+  .strict();
+
 export const profileVariableSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
-    value: z.string().min(1).max(10_000),
+    value: z.string().min(1).max(1_000_000),
     sensitive: z.boolean(),
   })
   .strict();
 
+export const profileEnvironmentSchema = z
+  .object({
+    environmentId: entityIdSchema,
+    variables: z.array(profileVariableSchema).max(50),
+  })
+  .strict()
+  .superRefine((environment, context) => {
+    const names = environment.variables.map(({ name }) => name);
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['variables'],
+        message: 'Profile variable names must be unique.',
+      });
+  });
+
+type ProfileEnvironmentKeys = {
+  environmentId: string;
+  variables: Array<{ name: string; sensitive: boolean }>;
+};
+
+const validateHeaderVariableNames = (
+  profile: {
+    authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
+    environments: ProfileEnvironmentKeys[];
+  },
+  context: z.RefinementCtx,
+): void => {
+  if (profile.authenticationType !== 'headers') return;
+  profile.environments.forEach((environment, index) => {
+    const names = environment.variables.map(({ name }) => name.toLowerCase());
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Header names must be unique regardless of case.',
+      });
+  });
+};
+
+const validateProfileEnvironments = (
+  profile: { environments: ProfileEnvironmentKeys[] },
+  context: z.RefinementCtx,
+): void => {
+  const environmentIds = profile.environments.map(({ environmentId }) => environmentId);
+  if (new Set(environmentIds).size !== environmentIds.length)
+    context.addIssue({
+      code: 'custom',
+      path: ['environments'],
+      message: 'A profile can configure each environment only once.',
+    });
+
+  const signature = (variables: ProfileEnvironmentKeys['variables']) =>
+    variables
+      .map(({ name, sensitive }) => `${name}\u0000${sensitive}`)
+      .sort()
+      .join('\u0001');
+  const expected = profile.environments[0] ? signature(profile.environments[0].variables) : '';
+  profile.environments.forEach((environment, index) => {
+    const names = environment.variables.map(({ name }) => name);
+    if (new Set(names).size !== names.length)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Profile variable names must be unique.',
+      });
+    if (signature(environment.variables) !== expected)
+      context.addIssue({
+        code: 'custom',
+        path: ['environments', index, 'variables'],
+        message: 'Every environment must use the same profile variable keys.',
+      });
+  });
+};
+
+export const storageStateVariablesAreValid = (
+  variables: Array<{ name: string; value?: string }>,
+): boolean => {
+  if (variables.length !== 1 || variables[0]?.name !== 'storageState') return false;
+  try {
+    return browserStorageStateSchema.safeParse(JSON.parse(variables[0].value ?? '')).success;
+  } catch {
+    return false;
+  }
+};
+
 export const profileSchema = z
   .object({
     id: entityIdSchema,
-    environmentId: entityIdSchema,
+    projectId: entityIdSchema,
     name: z.string().trim().min(1).max(100),
-    authenticationType: z.literal('credentials'),
-    variables: z.array(profileVariableSchema).min(1).max(50),
+    authenticationType: profileAuthenticationTypeSchema,
+    environments: z.array(profileEnvironmentSchema).min(1).max(100),
     revision: revisionNumberSchema,
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
     deletion: deletionStateSchema,
+  })
+  .strict()
+  .superRefine((profile, context) => {
+    validateProfileEnvironments(profile, context);
+    validateHeaderVariableNames(profile, context);
+    if (
+      profile.authenticationType === 'storage-state' &&
+      profile.environments.some(
+        (environment) => !storageStateVariablesAreValid(environment.variables),
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['environments'],
+        message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
+      });
+    if (
+      profile.authenticationType !== 'browser-session' &&
+      profile.environments.some((environment) => environment.variables.length === 0)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['environments'],
+        message: 'This authentication type requires at least one profile variable.',
+      });
+  });
+
+export const browserAuthenticationFlowSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    type: z.literal('browser-login'),
+    setupTestId: entityIdSchema,
+    revision: revisionNumberSchema,
+    refreshPolicy: z
+      .object({
+        mode: z.enum(['when-stale', 'before-every-run']),
+        maxAgeSeconds: z.number().int().min(60).max(31_536_000),
+        refreshBeforeExpirySeconds: z.number().int().nonnegative().max(604_800),
+      })
+      .strict(),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict()
+  .refine(
+    (flow) => flow.refreshPolicy.refreshBeforeExpirySeconds < flow.refreshPolicy.maxAgeSeconds,
+    {
+      path: ['refreshPolicy', 'refreshBeforeExpirySeconds'],
+      message: 'Refresh lead time must be shorter than the maximum age.',
+    },
+  );
+
+export const secretBindingSchema = z.object({ secretId: entityIdSchema }).strict();
+
+export const profileEnvironmentAuthenticationSchema = z
+  .object({
+    profileId: entityIdSchema,
+    environmentId: entityIdSchema,
+    authFlowId: entityIdSchema,
+    secretBindings: z.record(z.string().trim().min(1).max(100), secretBindingSchema),
+    revision: revisionNumberSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const projectSecretMetadataSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    configured: z.boolean(),
+    revision: revisionNumberSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const authenticationStateStatusSchema = z.enum([
+  'not-created',
+  'refreshing',
+  'ready',
+  'stale',
+  'refresh-failed',
+]);
+
+export const authenticationStateMetadataSchema = z
+  .object({
+    owner: z.enum(['desktop', 'server']),
+    projectId: entityIdSchema,
+    environmentId: entityIdSchema,
+    profileId: entityIdSchema,
+    authFlowId: entityIdSchema,
+    status: authenticationStateStatusSchema,
+    createdAt: timestampSchema.nullable(),
+    expiresAt: timestampSchema.nullable(),
+    lastError: z.string().max(2_000).nullable(),
   })
   .strict();
 
@@ -181,7 +410,15 @@ export const testRevisionContentSchema = z
   .object({
     stepSchemaVersion: stepSchemaVersionSchema,
     title: testTitleSchema,
-    environmentId: entityIdSchema,
+    /** Authentication profile used while recording and replaying this test. */
+    profileId: entityIdSchema.nullable().optional(),
+    environmentIds: z
+      .array(entityIdSchema)
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Test environment assignments must be unique.',
+      }),
     prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
     steps: z.array(revisionStepSchema).max(10_000),
   })
@@ -281,6 +518,7 @@ export const testRunSchema = z
     testId: entityIdSchema,
     testRevision: revisionPointerSchema,
     environmentId: entityIdSchema,
+    profileId: entityIdSchema.nullable(),
     status: testRunStatusSchema,
     source: z.literal('desktop-local'),
     startedAt: timestampSchema,
@@ -300,6 +538,10 @@ export const workspaceSnapshotSchema = z
     projects: z.array(projectSchema),
     environments: z.array(environmentSchema),
     profiles: z.array(profileSchema),
+    authenticationFlows: z.array(browserAuthenticationFlowSchema).optional(),
+    profileEnvironmentAuthentications: z.array(profileEnvironmentAuthenticationSchema).optional(),
+    projectSecrets: z.array(projectSecretMetadataSchema).optional(),
+    authenticationStates: z.array(authenticationStateMetadataSchema).optional(),
     testSuites: z.array(testSuiteSummarySchema),
     tests: z.array(testSnapshotSchema),
     /** Deleted records are separated so existing workspace consumers stay active-only. */
@@ -324,9 +566,23 @@ export const workspaceSnapshotSchema = z
   })
   .strict();
 
-export const webProfileSchema = profileSchema.omit({ variables: true }).extend({
-  variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
-});
+export const webProfileSchema = z
+  .object({
+    ...profileSchema.shape,
+    environments: z
+      .array(
+        z
+          .object({
+            environmentId: entityIdSchema,
+            variables: z.array(profileVariableSchema.omit({ value: true })).max(50),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine(validateProfileEnvironments);
 
 /** Browser-safe workspace projection. Stored credential values stay server-side. */
 export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema
@@ -337,7 +593,15 @@ export const webWorkspaceSnapshotSchema = workspaceSnapshotSchema
 export type Project = z.infer<typeof projectSchema>;
 export type Environment = z.infer<typeof environmentSchema>;
 export type ProfileVariable = z.infer<typeof profileVariableSchema>;
+export type ProfileEnvironment = z.infer<typeof profileEnvironmentSchema>;
 export type Profile = z.infer<typeof profileSchema>;
+export type BrowserAuthenticationFlow = z.infer<typeof browserAuthenticationFlowSchema>;
+export type ProfileEnvironmentAuthentication = z.infer<
+  typeof profileEnvironmentAuthenticationSchema
+>;
+export type ProjectSecretMetadata = z.infer<typeof projectSecretMetadataSchema>;
+export type AuthenticationStateStatus = z.infer<typeof authenticationStateStatusSchema>;
+export type AuthenticationStateMetadata = z.infer<typeof authenticationStateMetadataSchema>;
 export type TestSuite = z.infer<typeof testSuiteSchema>;
 export type TestSuiteSummary = z.infer<typeof testSuiteSummarySchema>;
 export type ProjectRunDay = z.infer<typeof projectRunDaySchema>;

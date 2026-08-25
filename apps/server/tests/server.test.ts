@@ -39,6 +39,7 @@ beforeAll(async () => {
   server = await startTestronServer({
     databaseUrl,
     migrate: false,
+    authenticationEncryptionKeys: `1:${Buffer.alloc(32, 7).toString('base64')}`,
     invitationMailer: {
       sendInvitation: async (invitation) => {
         deliveredInvitationIds.push(invitation.id);
@@ -77,7 +78,7 @@ const mutationMeta = (key = randomUUID()): MutationMetadata => ({
 const content = (environmentId: string, title: string): TestRevisionContent => ({
   stepSchemaVersion: 1,
   title,
-  environmentId,
+  environmentIds: [environmentId],
   prerequisites: [],
   steps: [
     {
@@ -208,13 +209,20 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
     await cookieClient.profile.create.mutate({
       meta: mutationMeta(),
-      environmentId: environment.id,
+      projectId: project.id,
       name: 'Admin',
       authenticationType: 'credentials',
-      variables: [{ name: 'PASSWORD', value: 'never-send-this', sensitive: true }],
+      environments: [
+        {
+          environmentId: environment.id,
+          variables: [{ name: 'PASSWORD', value: 'never-send-this', sensitive: true }],
+        },
+      ],
     });
     const webWorkspace = await cookieClient.workspace.getWeb.query({ meta: requestMeta() });
-    expect(webWorkspace.profiles[0]?.variables).toEqual([{ name: 'PASSWORD', sensitive: true }]);
+    expect(webWorkspace.profiles[0]?.environments[0]?.variables).toEqual([
+      { name: 'PASSWORD', sensitive: true },
+    ]);
     expect(JSON.stringify(webWorkspace)).not.toContain('never-send-this');
 
     const logout = await fetch(`${server.url}/api/auth/logout`, {
@@ -399,6 +407,25 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(workspace.tests).toEqual([slice.snapshot]);
   });
 
+  it('reads legacy single-environment revisions while the data migration is rolling out', async () => {
+    const { api } = await signIn();
+    const { snapshot, environment } = await createSlice(api);
+    await server.database.db.execute(sql`
+      update test_revisions
+      set content = (content - 'environmentIds') ||
+        jsonb_build_object('environmentId', content -> 'environmentIds' -> 0)
+      where id = ${snapshot.currentRevision.id}
+    `);
+
+    await expect(api.workspace.getWeb.query({ meta: requestMeta() })).resolves.toMatchObject({
+      tests: [
+        {
+          currentRevision: { content: { environmentIds: [environment.id] } },
+        },
+      ],
+    });
+  });
+
   it('serializes revisions and returns a typed conflict without overwriting', async () => {
     const { api } = await signIn();
     const { environment, snapshot } = await createSlice(api);
@@ -477,25 +504,60 @@ describe('PostgreSQL tRPC vertical slice', () => {
 
   it('creates and updates environment profiles on the server', async () => {
     const { api } = await signIn();
-    const { environment } = await createSlice(api);
+    const { project, environment } = await createSlice(api);
+    const development = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Development',
+      baseUrl: 'https://dev.example.test/',
+      testIdAttribute: 'data-testid',
+    });
     const profile = await api.profile.create.mutate({
       meta: mutationMeta(),
-      environmentId: environment.id,
+      projectId: project.id,
       name: 'Administrator',
       authenticationType: 'credentials',
-      variables: [
-        { name: 'username', value: 'admin@example.test', sensitive: false },
-        { name: 'password', value: 'secret value', sensitive: true },
+      environments: [
+        {
+          environmentId: development.id,
+          variables: [
+            { name: 'username', value: 'admin', sensitive: false },
+            { name: 'password', value: 'dev secret', sensitive: true },
+          ],
+        },
+        {
+          environmentId: environment.id,
+          variables: [
+            { name: 'username', value: 'admin@example.test', sensitive: false },
+            { name: 'password', value: 'secret value', sensitive: true },
+          ],
+        },
       ],
     });
 
     expect(profile).toMatchObject({
-      environmentId: environment.id,
+      projectId: project.id,
       name: 'Administrator',
       revision: 1,
     });
+    expect(profile.environments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          environmentId: development.id,
+          variables: expect.arrayContaining([
+            expect.objectContaining({ name: 'username', value: 'admin' }),
+          ]),
+        }),
+        expect.objectContaining({
+          environmentId: environment.id,
+          variables: expect.arrayContaining([
+            expect.objectContaining({ name: 'username', value: 'admin@example.test' }),
+          ]),
+        }),
+      ]),
+    );
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
-      profiles: [{ id: profile.id, variables: expect.arrayContaining(profile.variables) }],
+      profiles: [{ id: profile.id, environments: profile.environments }],
     });
 
     const updated = await api.profile.update.mutate({
@@ -504,18 +566,79 @@ describe('PostgreSQL tRPC vertical slice', () => {
       baseRevision: profile.revision,
       name: 'QA administrator',
       authenticationType: 'credentials',
+      environmentId: environment.id,
       variables: [
         { name: 'username', value: 'qa@example.test', sensitive: false },
         { name: 'password', value: 'new secret value', sensitive: true },
       ],
     });
     expect(updated).toMatchObject({ name: 'QA administrator', revision: 2 });
-    expect(updated.variables).toEqual(
+    expect(updated.environments).toEqual(
       expect.arrayContaining([
-        { name: 'username', value: 'qa@example.test', sensitive: false },
-        { name: 'password', value: 'new secret value', sensitive: true },
+        expect.objectContaining({
+          environmentId: development.id,
+          variables: expect.arrayContaining([
+            expect.objectContaining({ name: 'username', value: 'admin' }),
+          ]),
+        }),
+        expect.objectContaining({
+          environmentId: environment.id,
+          variables: expect.arrayContaining([
+            { name: 'username', value: 'qa@example.test', sensitive: false },
+            { name: 'password', value: 'new secret value', sensitive: true },
+          ]),
+        }),
       ]),
     );
+    const cookieProfile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Cookie session',
+      authenticationType: 'cookies',
+      environments: [
+        {
+          environmentId: development.id,
+          variables: [{ name: 'session', value: 'dev-cookie', sensitive: true }],
+        },
+      ],
+    });
+    expect(cookieProfile.authenticationType).toBe('cookies');
+    const headerProfile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'API token',
+      authenticationType: 'headers',
+      environments: [
+        {
+          environmentId: development.id,
+          variables: [{ name: 'Authorization', value: 'Bearer secret', sensitive: true }],
+        },
+      ],
+    });
+    expect(headerProfile.authenticationType).toBe('headers');
+    const renamedCookieProfile = await api.profile.update.mutate({
+      meta: mutationMeta(),
+      profileId: cookieProfile.id,
+      baseRevision: cookieProfile.revision,
+      name: 'Cookie session',
+      authenticationType: 'cookies',
+      environmentId: development.id,
+      variables: [{ name: 'sid', value: 'dev-cookie', sensitive: true }],
+    });
+    expect(renamedCookieProfile.environments[0]?.variables).toEqual([
+      { name: 'sid', value: 'dev-cookie', sensitive: true },
+    ]);
+    await expect(
+      api.profile.update.mutate({
+        meta: mutationMeta(),
+        profileId: updated.id,
+        baseRevision: updated.revision,
+        name: 'Mismatched keys',
+        authenticationType: 'credentials',
+        environmentId: environment.id,
+        variables: [{ name: 'token', value: 'different', sensitive: true }],
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
     await expect(
       api.profile.update.mutate({
         meta: mutationMeta(),
@@ -523,7 +646,11 @@ describe('PostgreSQL tRPC vertical slice', () => {
         baseRevision: profile.revision,
         name: 'Stale profile',
         authenticationType: 'credentials',
-        variables: [{ name: 'username', value: 'stale', sensitive: false }],
+        environmentId: environment.id,
+        variables: [
+          { name: 'username', value: 'stale', sensitive: false },
+          { name: 'password', value: 'stale', sensitive: true },
+        ],
       }),
     ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
   });
@@ -679,7 +806,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       baseRevision: snapshot.test.currentRevision,
       projectId: destination.id,
       testSuiteId: suite.id,
-      environmentId: destinationEnvironment.id,
+      environmentIds: [destinationEnvironment.id],
     });
 
     expect(moved).toMatchObject({
@@ -692,7 +819,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       currentRevision: {
         projectId: destination.id,
         number: 2,
-        content: { environmentId: destinationEnvironment.id, title: 'Movable test' },
+        content: { environmentIds: [destinationEnvironment.id], title: 'Movable test' },
       },
     });
     const workspace = await api.workspace.get.query({ meta: requestMeta() });
@@ -708,24 +835,38 @@ describe('PostgreSQL tRPC vertical slice', () => {
         baseRevision: snapshot.test.currentRevision,
         projectId: destination.id,
         testSuiteId: suite.id,
-        environmentId: destinationEnvironment.id,
+        environmentIds: [destinationEnvironment.id],
       }),
     ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
   });
 
   it('uses the server as the source of truth for local runs in flight', async () => {
     const { api } = await signIn();
-    const { environment, snapshot } = await createSlice(api);
+    const { project, environment, snapshot } = await createSlice(api);
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Administrator',
+      authenticationType: 'credentials',
+      environments: [
+        {
+          environmentId: environment.id,
+          variables: [{ name: 'username', value: 'admin', sensitive: false }],
+        },
+      ],
+    });
     const run = await api.run.start.mutate({
       meta: mutationMeta(),
       testId: snapshot.test.id,
       environmentId: environment.id,
+      profileId: profile.id,
       source: 'desktop-local',
     });
 
     expect(run).toMatchObject({
       testId: snapshot.test.id,
       environmentId: environment.id,
+      profileId: profile.id,
       status: 'running',
       source: 'desktop-local',
     });
@@ -751,6 +892,22 @@ describe('PostgreSQL tRPC vertical slice', () => {
       recentRuns: [{ id: run.id, error: expect.stringContaining('login-button') }],
       projectOverviews: [{ projectId: snapshot.test.projectId, activeRunCount: 0 }],
     });
+
+    const unassignedEnvironment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Unassigned',
+      baseUrl: 'https://unassigned.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    await expect(
+      api.run.start.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        environmentId: unassignedEnvironment.id,
+        source: 'desktop-local',
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
   });
 
   it('records one authorized, newest-first activity event for each supported mutation', async () => {
@@ -897,6 +1054,134 @@ describe('PostgreSQL tRPC vertical slice', () => {
     );
   });
 
+  it('stores write-only secrets and validates browser authentication flow assignments', async () => {
+    const { api } = await signIn();
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Analytics' });
+    const environment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://analytics.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const setup = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: {
+        stepSchemaVersion: 1,
+        title: 'Analytics login',
+        environmentIds: [environment.id],
+        prerequisites: [],
+        steps: [
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'navigate',
+              url: 'https://analytics.example.test/login',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'fill',
+              target: {
+                primary: { strategy: 'name', value: 'password' },
+                alternatives: [],
+              },
+              value: '',
+              secret: { environmentVariable: 'E2E_PASSWORD' },
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'assertUrlPath',
+              expected: '/dashboard',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+        ],
+      },
+    });
+    const flow = await api.authenticationFlow.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Analytics login',
+      setupTestId: setup.test.id,
+      refreshPolicy: {
+        mode: 'when-stale',
+        maxAgeSeconds: 43_200,
+        refreshBeforeExpirySeconds: 900,
+      },
+    });
+    const secret = await api.projectSecret.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'E2E_ANALYTICS_PASSWORD',
+      value: 'never-return-this-password',
+    });
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Administrator',
+      authenticationType: 'browser-session',
+      environments: [{ environmentId: environment.id, variables: [] }],
+    });
+    const otherProject = await api.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Other project',
+    });
+    const foreignSecret = await api.projectSecret.create.mutate({
+      meta: mutationMeta(),
+      projectId: otherProject.id,
+      name: 'FOREIGN_PASSWORD',
+      value: 'foreign-value',
+    });
+    await expect(
+      api.authenticationFlow.configureProfile.mutate({
+        meta: mutationMeta(),
+        profileId: profile.id,
+        environmentId: environment.id,
+        authFlowId: flow.id,
+        secretBindings: { E2E_PASSWORD: { secretId: foreignSecret.id } },
+      }),
+    ).rejects.toMatchObject({ data: { code: 'NOT_FOUND' } });
+    await expect(
+      api.authenticationFlow.configureProfile.mutate({
+        meta: mutationMeta(),
+        profileId: profile.id,
+        environmentId: environment.id,
+        authFlowId: flow.id,
+        secretBindings: { E2E_PASSWORD: { secretId: secret.id } },
+      }),
+    ).resolves.toMatchObject({ revision: 1, authFlowId: flow.id });
+
+    const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+    expect(workspace.authenticationFlows).toEqual([expect.objectContaining({ id: flow.id })]);
+    expect(workspace.projectSecrets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: secret.id, configured: true })]),
+    );
+    expect(JSON.stringify(workspace)).not.toContain('never-return-this-password');
+    const encrypted = await server.database.pool.query<{ encryptedValue: string }>(
+      'select encrypted_value as "encryptedValue" from project_secrets where id = $1',
+      [secret.id],
+    );
+    expect(encrypted.rows[0]?.encryptedValue).not.toContain('never-return-this-password');
+
+    await expect(
+      api.test.delete.mutate({
+        meta: mutationMeta(),
+        testId: setup.test.id,
+        baseRevision: setup.test.currentRevision,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
   it('enforces project ownership through nested test procedures', async () => {
     const owner = await signIn();
     const { snapshot } = await createSlice(owner.api);
@@ -904,5 +1189,121 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       stranger.api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id }),
     ).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
+  });
+
+  it('single-flights server refreshes, preserves state on failure, and retries once', async () => {
+    const { api } = await signIn();
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Workers' });
+    const environment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://workers.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const setup = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: {
+        stepSchemaVersion: 1,
+        title: 'Worker login',
+        environmentIds: [environment.id],
+        prerequisites: [],
+        steps: [
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'assertUrlPath',
+              expected: '/dashboard',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+        ],
+      },
+    });
+    const flow = await api.authenticationFlow.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Worker login',
+      setupTestId: setup.test.id,
+      refreshPolicy: {
+        mode: 'when-stale',
+        maxAgeSeconds: 43_200,
+        refreshBeforeExpirySeconds: 900,
+      },
+    });
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Worker',
+      authenticationType: 'browser-session',
+      environments: [{ environmentId: environment.id, variables: [] }],
+    });
+    await api.authenticationFlow.configureProfile.mutate({
+      meta: mutationMeta(),
+      profileId: profile.id,
+      environmentId: environment.id,
+      authFlowId: flow.id,
+      secretBindings: {},
+    });
+    const stateStore = server.authenticationStates;
+    if (!stateStore) throw new Error('Authentication state encryption was not configured.');
+    const scope = { projectId: project.id, environmentId: environment.id, profileId: profile.id };
+    let refreshes = 0;
+    const refresh = async () => {
+      refreshes += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { cookies: [{ value: 'server-session' }], origins: [] };
+    };
+    const states = await Promise.all([
+      stateStore.getOrRefresh(scope, refresh),
+      stateStore.getOrRefresh(scope, refresh),
+    ]);
+    expect(refreshes).toBe(1);
+    expect(states[0]).toEqual(states[1]);
+
+    await server.database.pool.query(
+      "update authentication_states set encrypted_state = 'damaged' where profile_id = $1",
+      [profile.id],
+    );
+    await expect(stateStore.getOrRefresh(scope, refresh)).resolves.toEqual(states[0]);
+    expect(refreshes).toBe(2);
+
+    let attempts = 0;
+    const result = await stateStore.runWithAuthenticationRetry({
+      scope,
+      refresh,
+      execute: async (_state, attempt) => {
+        attempts += 1;
+        return { status: attempt === 1 ? 401 : 200 };
+      },
+      authenticationFailed: ({ status }) => status === 401,
+    });
+    expect(result.status).toBe(200);
+    expect(attempts).toBe(2);
+    expect(refreshes).toBe(3);
+
+    await stateStore.invalidate(scope);
+    const before = await server.database.pool.query<{ encryptedState: string }>(
+      'select encrypted_state as "encryptedState" from authentication_states where profile_id = $1',
+      [profile.id],
+    );
+    await expect(
+      stateStore.getOrRefresh(scope, async () => {
+        throw new Error('invalid credentials');
+      }),
+    ).rejects.toThrow('invalid credentials');
+    const after = await server.database.pool.query<{
+      encryptedState: string;
+      status: string;
+    }>(
+      'select encrypted_state as "encryptedState", status from authentication_states where profile_id = $1',
+      [profile.id],
+    );
+    expect(after.rows[0]).toEqual({
+      encryptedState: before.rows[0]?.encryptedState,
+      status: 'refresh-failed',
+    });
   });
 });

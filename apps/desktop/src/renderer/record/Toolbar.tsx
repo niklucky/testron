@@ -69,7 +69,7 @@ export const SessionBar = ({
       <header className="relative z-50 flex h-11 shrink-0 items-center gap-2 border-b border-line bg-plane px-3">
         <div className="desktop-window-drag h-full w-[74px] shrink-0" />
 
-        <div className="desktop-window-controls flex min-w-0 items-center gap-1.5">
+        <div className="desktop-window-controls flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           <IconButton
             icon="arrowLeft"
             size="sm"
@@ -112,7 +112,7 @@ export const SessionBar = ({
             aria-label={t('recording_profile')}
             value={profileId ?? ''}
             label={profiles.find((entry) => entry.id === profileId)?.name ?? t('no_profile')}
-            options={profiles}
+            options={[{ id: '', name: t('no_profile') }, ...profiles]}
             prefix={t('profile')}
             onSelect={onProfile}
           />
@@ -124,15 +124,19 @@ export const SessionBar = ({
             onClick={onConfigureProfile}
           />
           <Icon name="chevron" size={12} className="shrink-0 text-ink-3" />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="pencil"
-            className="desktop-window-controls min-w-0"
-            onClick={onTestEdit}
-          >
-            <span className="truncate">{test}</span>
-          </Button>
+          <div className="desktop-window-controls w-64 min-w-0 shrink">
+            <Button
+              block
+              variant="ghost"
+              size="sm"
+              icon="pencil"
+              className="desktop-window-controls min-w-0 overflow-hidden"
+              title={test}
+              onClick={onTestEdit}
+            >
+              <span className="min-w-0 truncate">{test}</span>
+            </Button>
+          </div>
         </div>
 
         <div className="desktop-window-controls ml-auto flex shrink-0 items-center gap-2">
@@ -177,7 +181,7 @@ const SessionMenu = ({
   onSelect: (id: string) => void;
 }) => {
   const hosted = typeof window.testron !== 'undefined';
-  const useDomMenu = !hosted || (menu === 'profile' && options.length === 1);
+  const useDomMenu = !hosted || (menu === 'profile' && options.length <= 2);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -326,7 +330,7 @@ export const BrowserBar = ({
   const recording = status === 'recording';
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-line px-3">
+    <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-line px-3 text-sm">
       <IconButton icon="arrowLeft" label={t('back')} onClick={() => onNavigate('back')} />
       <IconButton icon="arrowRight" label={t('forward')} onClick={() => onNavigate('forward')} />
       <IconButton
