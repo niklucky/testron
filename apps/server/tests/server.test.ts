@@ -199,6 +199,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(client().auth.requestPasswordReset.mutate({ email })).resolves.toEqual({
       accepted: true,
     });
+    await server.authentication.deliverPendingPasswordResets();
     expect(deliveredPasswordResets).toHaveLength(1);
     const resetUrl = new URL(deliveredPasswordResets[0]!.resetUrl);
     expect(resetUrl.origin).toBe('http://localhost');
@@ -217,6 +218,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
 
     await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
     const token = new URL(deliveredPasswordResets[1]!.resetUrl).searchParams.get('token');
     expect(token).toBeTruthy();
 
@@ -243,7 +245,9 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
 
     await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
     await client().auth.requestPasswordReset.mutate({ email });
+    await server.authentication.deliverPendingPasswordResets();
     expect(deliveredPasswordResets).toHaveLength(3);
   });
 

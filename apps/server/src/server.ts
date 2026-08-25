@@ -59,9 +59,10 @@ export const startTestronServer = async (options: {
       .catch((error: unknown) => console.error('Password reset outbox processing failed.', error));
   }, 30_000);
   passwordResetDeliveryTimer.unref();
-  void authentication
-    .deliverPendingPasswordResets()
-    .catch((error: unknown) => console.error('Password reset outbox processing failed.', error));
+  if (options.migrate !== false)
+    void authentication
+      .deliverPendingPasswordResets()
+      .catch((error: unknown) => console.error('Password reset outbox processing failed.', error));
   const authenticationEncryption = AuthenticationEncryption.fromEnvironment(
     options.authenticationEncryptionKeys,
   );
