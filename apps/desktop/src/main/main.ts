@@ -23,9 +23,18 @@ import { z } from 'zod';
 import { recorderCandidateSchema, targetObservationSchema } from '@testron/domain/recording/schema';
 import { redactStepSecrets, type Step } from '@testron/domain/steps/schema';
 import {
+  authenticationStateIsStale,
+  deriveAuthenticationStateExpiration,
+} from '@testron/domain/auth/storage-state';
+import {
   cancelInvitationRequestSchema,
+  browserStorageStateSchema,
   changeAccountPasswordRequestSchema,
   createEnvironmentRequestSchema,
+  createBrowserAuthenticationFlowRequestSchema,
+  configureProfileEnvironmentAuthenticationRequestSchema,
+  createProjectSecretRequestSchema,
+  manageAuthenticationStateRequestSchema,
   createInvitationRequestSchema,
   createProfileRequestSchema,
   createProjectRequestSchema,
@@ -52,19 +61,20 @@ import {
   type TestRun,
   type TestSuiteSummary,
   type WorkspaceSnapshot,
+  type AuthenticationStateMetadata,
 } from '@testron/protocol';
 import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../preload/app-command';
 import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
-import {
-  TestronRepository,
-  type EnvironmentRecord,
-  type LibrarySnapshot,
-  type ProfileRecord,
-} from './persistence/repository';
+import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
-import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
+import { LocalReplayRunner, type BrowserStorageState, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
+import {
+  SecureAuthenticationStateStore,
+  desktopSecretBindingsRevision,
+  type DesktopAuthenticationStateIdentity,
+} from './replay/auth-state-store';
 import { DesktopUpdater, type AvailableUpdate } from './update/updater';
 import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
@@ -96,6 +106,17 @@ const authenticationRequired = (error: unknown): boolean => {
   );
 };
 
+const redactSensitiveValues = (message: string, values: readonly string[]): string => {
+  let redacted = message;
+  for (const value of values) if (value) redacted = redacted.replaceAll(value, '[REDACTED]');
+  return redacted;
+};
+
+const parseBrowserStorageState = (value: string | undefined): BrowserStorageState | undefined => {
+  if (!value) return undefined;
+  return browserStorageStateSchema.parse(JSON.parse(value)) as BrowserStorageState;
+};
+
 const recorderControlSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('set-assertion'),
@@ -117,13 +138,31 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('show-product') }),
   z.object({ type: z.literal('request-runtime-state') }),
   z.object({
+    type: z.literal('open-replay-artifact'),
+    artifact: z.enum(['screenshot', 'trace']),
+  }),
+  z.object({
     type: z.literal('run-test'),
     projectId: z.string().uuid(),
     environmentId: z.string().uuid().optional(),
     testId: z.string().uuid(),
     environmentVariables: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string()),
     timeoutMs: z.number().int().min(1_000).max(600_000),
-    reuseAuthState: z.boolean(),
+    authStateMode: z.enum(['ignore', 'reuse', 'refresh']).optional(),
+    headed: z.boolean().optional(),
+    /** Compatibility for remote web clients deployed before protocol migration. */
+    reuseAuthState: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('refresh-desktop-authentication'),
+    profileId: z.string().uuid(),
+    environmentId: z.string().uuid(),
+    secretValues: z.record(z.string().min(1).max(100), z.string().min(1).max(100_000)),
+  }),
+  z.object({
+    type: z.literal('clear-desktop-authentication'),
+    profileId: z.string().uuid(),
+    environmentId: z.string().uuid(),
   }),
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('install-browser') }),
@@ -146,6 +185,7 @@ let webSessionToken: string | undefined;
 let serverClient: DesktopServerClient | undefined;
 let syncCoordinator: DesktopSyncCoordinator | undefined;
 let browserInstaller: BrowserInstaller | undefined;
+let authenticationStateStore: SecureAuthenticationStateStore | undefined;
 let remoteWorkspace: WorkspaceSnapshot | undefined;
 let inviteeLookup: LibrarySnapshot['inviteeLookup'];
 let accountAction: LibrarySnapshot['accountAction'];
@@ -390,6 +430,7 @@ const createWindow = async (): Promise<void> => {
           id: snapshot.test.id,
           projectId: snapshot.test.projectId,
           environmentIds: snapshot.currentRevision.content.environmentIds,
+          profileId: snapshot.currentRevision.content.profileId ?? null,
           testSuiteId: snapshot.test.testSuiteId,
           title: snapshot.test.title,
           prerequisites: snapshot.currentRevision.content.prerequisites,
@@ -407,6 +448,7 @@ const createWindow = async (): Promise<void> => {
       testSuiteId: snapshot.test.testSuiteId,
       title: snapshot.test.title,
       prerequisites: snapshot.currentRevision.content.prerequisites,
+      profileId: snapshot.currentRevision.content.profileId ?? null,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
     }));
@@ -464,6 +506,8 @@ const createWindow = async (): Promise<void> => {
     (profile) => selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId),
   )?.id;
   let selectedTestId = tests.find((test) => test.projectId === selectedProjectId)?.id;
+  const initiallySelectedTest = tests.find((test) => test.id === selectedTestId);
+  if (initiallySelectedTest) selectedProfileId = initiallySelectedTest.profileId ?? undefined;
   let selectedTestSuiteId =
     tests.find((test) => test.id === selectedTestId)?.testSuiteId ??
     allTestSuites().find((suite) => suite.projectId === selectedProjectId)?.id;
@@ -507,13 +551,18 @@ const createWindow = async (): Promise<void> => {
       (!selectedEnvironmentId || !selectedTest.environmentIds.includes(selectedEnvironmentId))
     )
       selectedEnvironmentId = selectedTest.environmentIds[0];
+    const selectedTestForProfile = allTests().find((test) => test.id === selectedTestId);
+    if (selectedTestForProfile) selectedProfileId = selectedTestForProfile.profileId ?? undefined;
     if (
-      !selectedProfileId ||
-      !allProfiles().some(
-        (profile) =>
-          profile.id === selectedProfileId &&
-          Boolean(selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId)),
-      )
+      !selectedTestForProfile &&
+      (!selectedProfileId ||
+        !allProfiles().some(
+          (profile) =>
+            profile.id === selectedProfileId &&
+            Boolean(
+              selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId),
+            ),
+        ))
     )
       selectedProfileId = allProfiles().find((profile) =>
         Boolean(selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId)),
@@ -530,6 +579,32 @@ const createWindow = async (): Promise<void> => {
     projects: allProjects(),
     environments: allEnvironments(),
     profiles: allProfiles(),
+    authenticationFlows: remoteWorkspace?.authenticationFlows ?? [],
+    profileEnvironmentAuthentications: remoteWorkspace?.profileEnvironmentAuthentications ?? [],
+    projectSecrets: remoteWorkspace?.projectSecrets ?? [],
+    authenticationStates: [
+      ...(remoteWorkspace?.authenticationStates ?? []),
+      ...desktopAuthenticationStates.values(),
+    ],
+    authenticationFlowSecretNames: Object.fromEntries(
+      (remoteWorkspace?.authenticationFlows ?? []).map((flow) => {
+        const setup = remoteWorkspace?.tests.find(
+          (snapshot) => snapshot.test.id === flow.setupTestId,
+        );
+        return [
+          flow.id,
+          [
+            ...new Set(
+              (setup?.currentRevision.content.steps ?? [])
+                .map(({ payload }) =>
+                  payload.kind === 'fill' ? payload.secret?.environmentVariable : undefined,
+                )
+                .filter((name): name is string => name !== undefined),
+            ),
+          ],
+        ];
+      }),
+    ),
     profileVariables: allProfileVariables().map(
       ({ profileId, environmentId, name, sensitive }) => ({
         profileId,
@@ -560,11 +635,13 @@ const createWindow = async (): Promise<void> => {
       0,
     server: serverState,
   });
+  let remoteWorkspaceRevision = 0;
   const reloadRemoteWorkspace = async (): Promise<void> => {
     if (!serverClient) return;
     remoteWorkspace = await serverClient.getWorkspace(
       getWorkspaceRequestSchema.parse({ meta: requestMeta() }),
     );
+    remoteWorkspaceRevision += 1;
     reconcileLibrarySelection();
   };
   const restoreDesktopSessionFromWeb = async (): Promise<boolean> => {
@@ -586,6 +663,9 @@ const createWindow = async (): Promise<void> => {
   };
   const runner = new LocalReplayRunner();
   let replaySnapshot: ReplaySnapshot = { status: 'idle', steps: [] };
+  const desktopAuthenticationStates = new Map<string, AuthenticationStateMetadata>();
+  const desktopAuthenticationStateKey = (profileId: string, environmentId: string): string =>
+    `${profileId}:${environmentId}`;
   let verifyAssertion: VerifyAssertion = 'visible';
   let repickIndex: number | undefined;
   const replayHistory = new Map<string, ReplaySnapshot[]>();
@@ -607,6 +687,7 @@ const createWindow = async (): Promise<void> => {
     contents.send(REMOTE_APP_CHANNELS.runtimeState, {
       replay: replaySnapshot,
       browserInstallation: installer.status(),
+      workspaceRevision: remoteWorkspaceRevision,
     });
   };
   const sendSnapshot = (snapshot: ReturnType<RecordingSession['snapshot']>): void => {
@@ -717,6 +798,7 @@ const createWindow = async (): Promise<void> => {
   let testSaveQueue = Promise.resolve();
   queueTestRevision = (testId, title, environmentIds, steps, prerequisites) => {
     const queuedSteps = structuredClone(steps);
+    const queuedProfileId = selectedProfileId ?? null;
     testSaveQueue = testSaveQueue
       .then(async () => {
         if (!serverClient || serverState.authentication !== 'signedIn')
@@ -732,6 +814,7 @@ const createWindow = async (): Promise<void> => {
               content: {
                 stepSchemaVersion: 1,
                 title,
+                profileId: queuedProfileId,
                 environmentIds,
                 prerequisites: prerequisites ?? canonical.currentRevision.content.prerequisites,
                 steps: reconcileRevisionSteps(canonical.currentRevision.content.steps, queuedSteps),
@@ -859,9 +942,14 @@ const createWindow = async (): Promise<void> => {
     },
   );
   let appliedProfileCookies: Array<{ name: string; url: string }> = [];
+  let appliedProfileLocalStorage: Array<{ origin: string; name: string }> = [];
   let recordingAuthenticationUpdate = Promise.resolve();
   const applyRecordingAuthentication = (): Promise<void> => {
     const { environment, profile, values } = selectedProfileContext();
+    const storageState =
+      profile?.authenticationType === 'storage-state'
+        ? parseBrowserStorageState(values.find(({ name }) => name === 'storageState')?.value)
+        : undefined;
     recordingAuthenticationUpdate = recordingAuthenticationUpdate
       .then(async () => {
         await Promise.all(
@@ -870,13 +958,57 @@ const createWindow = async (): Promise<void> => {
           ),
         );
         appliedProfileCookies = [];
-        if (!environment || profile?.authenticationType !== 'cookies') return;
-        await Promise.all(
-          values.map(async ({ name, value }) => {
-            await testedWebsiteSession.cookies.set({ url: environment.baseUrl, name, value });
-            appliedProfileCookies.push({ url: environment.baseUrl, name });
-          }),
-        );
+        const contents = websiteContents;
+        if (contents && !contents.isDestroyed() && contents.getURL()) {
+          const currentOrigin = new URL(contents.getURL()).origin;
+          const removals = appliedProfileLocalStorage
+            .filter(({ origin }) => origin === currentOrigin)
+            .map(({ name }) => name);
+          const additions =
+            storageState?.origins.find(({ origin }) => origin === currentOrigin)?.localStorage ??
+            [];
+          if (removals.length || additions.length)
+            await contents.executeJavaScript(
+              `(() => {
+                for (const name of ${JSON.stringify(removals)}) localStorage.removeItem(name);
+                for (const entry of ${JSON.stringify(additions)}) localStorage.setItem(entry.name, entry.value);
+              })()`,
+            );
+          appliedProfileLocalStorage = [
+            ...appliedProfileLocalStorage.filter(({ origin }) => origin !== currentOrigin),
+            ...additions.map(({ name }) => ({ origin: currentOrigin, name })),
+          ];
+        }
+        if (environment && profile?.authenticationType === 'cookies')
+          await Promise.all(
+            values.map(async ({ name, value }) => {
+              await testedWebsiteSession.cookies.set({ url: environment.baseUrl, name, value });
+              appliedProfileCookies.push({ url: environment.baseUrl, name });
+            }),
+          );
+        if (storageState)
+          await Promise.all(
+            storageState.cookies.map(async (cookie) => {
+              const url = `${cookie.secure ? 'https' : 'http'}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
+              await testedWebsiteSession.cookies.set({
+                url,
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.domain,
+                path: cookie.path,
+                secure: cookie.secure,
+                httpOnly: cookie.httpOnly,
+                expirationDate: cookie.expires > 0 ? cookie.expires : undefined,
+                sameSite:
+                  cookie.sameSite === 'Strict'
+                    ? 'strict'
+                    : cookie.sameSite === 'None'
+                      ? 'no_restriction'
+                      : 'lax',
+              });
+              appliedProfileCookies.push({ url, name: cookie.name });
+            }),
+          );
       })
       .catch((error: unknown) => {
         session.warn(
@@ -888,16 +1020,6 @@ const createWindow = async (): Promise<void> => {
       });
     return recordingAuthenticationUpdate;
   };
-  const authenticationStatePath = (
-    dataDirectory: string,
-    environment: EnvironmentRecord,
-    profile: ProfileRecord | undefined,
-  ): string =>
-    path.join(
-      dataDirectory,
-      'auth',
-      `${environment.id}-${profile?.id ?? 'no-profile'}-revision-${profile?.revision ?? environment.authRevision}.json`,
-    );
   const applyContext = (): void => {
     const { selectedTest, environment } = selectedContext();
     session.setGenerationContext(selectedTest?.title ?? 'recorded test');
@@ -920,6 +1042,26 @@ const createWindow = async (): Promise<void> => {
       });
     }
     void applyRecordingAuthentication();
+  };
+  const reloadWebsiteAfterProfileApplied = (): void => {
+    void applyRecordingAuthentication().then(() => {
+      if (websiteContents && !websiteContents.isDestroyed()) websiteContents.reload();
+    });
+  };
+  const persistSelectedProfile = (): void => {
+    if (!selectedTestId) return;
+    if (localMode) {
+      store.setTestProfile(selectedTestId, selectedProfileId ?? null);
+      return;
+    }
+    const test = remoteTest(selectedTestId);
+    if (test)
+      queueTestRevision(
+        test.test.id,
+        test.test.title,
+        test.currentRevision.content.environmentIds,
+        session.snapshot().steps,
+      );
   };
   if (selectedTestId) {
     const { selectedTest } = selectedContext();
@@ -969,6 +1111,7 @@ const createWindow = async (): Promise<void> => {
       testedWebsiteSession.clearAuthCache(),
     ]);
     appliedProfileCookies = [];
+    appliedProfileLocalStorage = [];
     await applyRecordingAuthentication();
 
     if (
@@ -979,6 +1122,14 @@ const createWindow = async (): Promise<void> => {
       contents.getURL()
     )
       contents.reloadIgnoringCache();
+  };
+
+  const unloadRecorderWebsite = (): void => {
+    const contents = websiteContents;
+    websiteContents = undefined;
+    if (!contents || contents.isDestroyed()) return;
+    contents.stop();
+    contents.close();
   };
 
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
@@ -1031,12 +1182,14 @@ const createWindow = async (): Promise<void> => {
   const handleAppCommand = (command: AppCommand): void => {
     switch (command.type) {
       case 'show-product':
+        unloadRecorderWebsite();
         productVisible = Boolean(remoteView);
         if (remoteView && !isWebappLocation(remoteView.webContents.getURL()))
           void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
         layout();
         break;
       case 'show-selected-test': {
+        unloadRecorderWebsite();
         productVisible = Boolean(remoteView);
         if (remoteView && selectedProjectId && selectedTestId) {
           const target = new URL(webappUrl);
@@ -1049,6 +1202,7 @@ const createWindow = async (): Promise<void> => {
         break;
       }
       case 'reload-product':
+        unloadRecorderWebsite();
         productVisible = Boolean(remoteView);
         if (remoteView) {
           if (isWebappLocation(remoteView.webContents.getURL()))
@@ -1662,7 +1816,9 @@ const createWindow = async (): Promise<void> => {
               };
               selectedEnvironmentId = command.environmentId;
               selectedProfileId = profile.id;
+              persistSelectedProfile();
               applyContext();
+              reloadWebsiteAfterProfileApplied();
               sendSnapshot(session.snapshot());
             })
             .catch((error: unknown) => {
@@ -1680,7 +1836,9 @@ const createWindow = async (): Promise<void> => {
         );
         selectedEnvironmentId = command.environmentId;
         selectedProfileId = profile.id;
+        persistSelectedProfile();
         applyContext();
+        reloadWebsiteAfterProfileApplied();
         break;
       }
       case 'update-profile': {
@@ -1706,7 +1864,9 @@ const createWindow = async (): Promise<void> => {
               ),
             };
             selectedProfileId = profile.id;
+            persistSelectedProfile();
             applyContext();
+            reloadWebsiteAfterProfileApplied();
             sendSnapshot(session.snapshot());
           })
           .catch((error: unknown) => {
@@ -1724,6 +1884,7 @@ const createWindow = async (): Promise<void> => {
               command.title,
               selectedTestSuiteId,
             );
+            store.setTestProfile(test.id, selectedProfileId ?? null);
             selectedProjectId = test.projectId;
             selectedEnvironmentId = test.environmentIds[0];
             selectedTestId = test.id;
@@ -1742,6 +1903,7 @@ const createWindow = async (): Promise<void> => {
           content: {
             stepSchemaVersion: 1,
             title: command.title,
+            profileId: selectedProfileId ?? null,
             environmentIds: command.environmentIds,
             steps: [],
           },
@@ -1814,8 +1976,242 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'select-profile':
         selectedProfileId = command.profileId;
+        persistSelectedProfile();
         applyContext();
+        reloadWebsiteAfterProfileApplied();
         break;
+      case 'create-authentication-flow': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .createAuthenticationFlow(
+            createBrowserAuthenticationFlowRequestSchema.parse({
+              meta: mutationMeta(`authentication-flow-create-${randomUUID()}`),
+              projectId: command.projectId,
+              name: command.name,
+              setupTestId: command.setupTestId,
+              refreshPolicy: {
+                mode: command.refreshMode,
+                maxAgeSeconds: command.maxAgeSeconds,
+                refreshBeforeExpirySeconds: command.refreshBeforeExpirySeconds,
+              },
+            }),
+          )
+          .then(reloadRemoteWorkspace)
+          .then(() => sendSnapshot(session.snapshot()))
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Could not create the flow.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'create-project-secret': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .createProjectSecret(
+            createProjectSecretRequestSchema.parse({
+              meta: mutationMeta(`project-secret-create-${randomUUID()}`),
+              projectId: command.projectId,
+              name: command.name,
+              value: command.value,
+            }),
+          )
+          .then(reloadRemoteWorkspace)
+          .then(() => sendSnapshot(session.snapshot()))
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Could not create the secret.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'configure-profile-authentication': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .configureProfileAuthentication(
+            configureProfileEnvironmentAuthenticationRequestSchema.parse({
+              meta: mutationMeta(`profile-authentication-configure-${randomUUID()}`),
+              profileId: command.profileId,
+              environmentId: command.environmentId,
+              authFlowId: command.authFlowId,
+              secretBindings: command.secretBindings,
+            }),
+          )
+          .then(reloadRemoteWorkspace)
+          .then(() => sendSnapshot(session.snapshot()))
+          .catch((error: unknown) => {
+            session.warn(
+              error instanceof Error ? error.message : 'Could not configure authentication.',
+            );
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'manage-server-authentication-state': {
+        if (!serverClient || serverState.authentication !== 'signedIn') break;
+        void serverClient
+          .manageAuthenticationState(
+            manageAuthenticationStateRequestSchema.parse({
+              meta: mutationMeta(`authentication-state-manage-${randomUUID()}`),
+              projectId: command.projectId,
+              environmentId: command.environmentId,
+              profileId: command.profileId,
+              action: command.action,
+            }),
+          )
+          .then(reloadRemoteWorkspace)
+          .then(() => sendSnapshot(session.snapshot()))
+          .catch((error: unknown) => {
+            session.warn(
+              error instanceof Error ? error.message : 'Could not manage authentication state.',
+            );
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
+      case 'refresh-desktop-authentication': {
+        if (replaySnapshot.status === 'running' || installer.status().status !== 'ready') break;
+        const environment = allEnvironments().find(
+          (candidate) => candidate.id === command.environmentId,
+        );
+        const profile = allProfiles().find((candidate) => candidate.id === command.profileId);
+        const assignment = remoteWorkspace?.profileEnvironmentAuthentications?.find(
+          (candidate) =>
+            candidate.profileId === command.profileId &&
+            candidate.environmentId === command.environmentId,
+        );
+        const flow = assignment
+          ? remoteWorkspace?.authenticationFlows?.find(
+              (candidate) => candidate.id === assignment.authFlowId,
+            )
+          : undefined;
+        const setup = flow
+          ? remoteWorkspace?.tests.find((candidate) => candidate.test.id === flow.setupTestId)
+          : undefined;
+        if (
+          !environment ||
+          !profile ||
+          !assignment ||
+          !flow ||
+          !setup ||
+          !authenticationStateStore
+        ) {
+          session.warn(
+            'Browser authentication is not configured for this profile and environment.',
+          );
+          break;
+        }
+        const identity: DesktopAuthenticationStateIdentity = {
+          owner: 'desktop',
+          testronAccountId: remoteWorkspace?.viewer.id,
+          projectId: profile.projectId,
+          environmentId: environment.id,
+          environmentAuthRevision: environment.revision ?? environment.authRevision,
+          profileId: profile.id,
+          profileRevision: profile.revision ?? 1,
+          authFlowId: flow.id,
+          authFlowRevision: flow.revision,
+          setupTestId: setup.test.id,
+          setupTestRevision: setup.currentRevision.number,
+          secretBindingsRevision: desktopSecretBindingsRevision(
+            assignment.revision,
+            Object.values(assignment.secretBindings).map(({ secretId }) => {
+              const secret = remoteWorkspace?.projectSecrets?.find(
+                (candidate) => candidate.id === secretId,
+              );
+              return { id: secretId, revision: secret?.revision ?? 0 };
+            }),
+          ),
+          browserEngine: 'chromium',
+          formatVersion: 1,
+        };
+        const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
+        const stateKey = desktopAuthenticationStateKey(profile.id, environment.id);
+        desktopAuthenticationStates.set(stateKey, {
+          owner: 'desktop',
+          projectId: profile.projectId,
+          environmentId: environment.id,
+          profileId: profile.id,
+          authFlowId: flow.id,
+          status: 'refreshing',
+          createdAt: null,
+          expiresAt: null,
+          lastError: null,
+        });
+        void runner
+          .run({
+            steps: setup.currentRevision.content.steps.map(({ payload }) => payload),
+            environmentVariables: {},
+            secretValues: command.secretValues,
+            timeoutMs: 30_000,
+            artifactsDirectory: path.join(
+              dataDirectory,
+              'authentication-refreshes',
+              setup.test.id,
+              new Date().toISOString().replaceAll(':', '-'),
+            ),
+            captureStorageState: true,
+            onProgress: (progress) => {
+              replaySnapshot = progress;
+              rememberReplay(setup.test.id, progress);
+              sendSnapshot(session.snapshot());
+            },
+          })
+          .then(async (result) => {
+            const { capturedStorageState, ...safeResult } = result;
+            replaySnapshot = safeResult;
+            rememberReplay(setup.test.id, safeResult);
+            if (safeResult.status !== 'passed' || !capturedStorageState)
+              throw new Error('The desktop authentication flow failed.');
+            const createdAt = new Date();
+            await authenticationStateStore!.save({
+              identity,
+              storageState: capturedStorageState,
+              createdAt: createdAt.toISOString(),
+              expiresAt: deriveAuthenticationStateExpiration(
+                capturedStorageState,
+                createdAt,
+                flow.refreshPolicy.maxAgeSeconds,
+              ).toISOString(),
+            });
+            const expiresAt = deriveAuthenticationStateExpiration(
+              capturedStorageState,
+              createdAt,
+              flow.refreshPolicy.maxAgeSeconds,
+            ).toISOString();
+            desktopAuthenticationStates.set(stateKey, {
+              owner: 'desktop',
+              projectId: profile.projectId,
+              environmentId: environment.id,
+              profileId: profile.id,
+              authFlowId: flow.id,
+              status: 'ready',
+              createdAt: createdAt.toISOString(),
+              expiresAt,
+              lastError: null,
+            });
+            session.warn(`Refreshed desktop authentication for ${profile.name}.`);
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? redactSensitiveValues(error.message, Object.values(command.secretValues))
+                : 'Desktop authentication refresh failed.';
+            desktopAuthenticationStates.set(stateKey, {
+              owner: 'desktop',
+              projectId: profile.projectId,
+              environmentId: environment.id,
+              profileId: profile.id,
+              authFlowId: flow.id,
+              status: 'refresh-failed',
+              createdAt: null,
+              expiresAt: null,
+              lastError: message,
+            });
+            session.warn(message);
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
       case 'select-test': {
         const test = allTests().find((candidate) => candidate.id === command.testId);
         if (!test) break;
@@ -1825,9 +2221,7 @@ const createWindow = async (): Promise<void> => {
           test.testSuiteId ??
           allTestSuites().find((suite) => suite.projectId === test.projectId)?.id;
         selectedEnvironmentId = test.environmentIds[0];
-        selectedProfileId = allProfiles().find((profile) =>
-          Boolean(selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId)),
-        )?.id;
+        selectedProfileId = test.profileId ?? undefined;
         replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
         session.load(test.title, stepsFor(test.id));
         break;
@@ -1891,6 +2285,7 @@ const createWindow = async (): Promise<void> => {
             if (!remoteWorkspace) return;
             await reloadRemoteWorkspace();
             sendSnapshot(session.snapshot());
+            unloadRecorderWebsite();
             productVisible = Boolean(remoteView);
             if (remoteView) {
               if (isWebappLocation(remoteView.webContents.getURL()))
@@ -1969,6 +2364,7 @@ const createWindow = async (): Promise<void> => {
                 command.title,
                 selectedTestSuiteId,
               );
+            store.setTestProfile(saved.id, selectedProfileId ?? null);
             store.replaceSteps(saved.id, steps);
             selectedTestId = saved.id;
             session.load(command.title, steps);
@@ -2030,7 +2426,6 @@ const createWindow = async (): Promise<void> => {
         }
         const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
         const selectedProfile = allProfiles().find((profile) => profile.id === selectedProfileId);
-        const authStatePath = authenticationStatePath(dataDirectory, environment, selectedProfile);
         const artifactsDirectory = path.join(
           dataDirectory,
           'runs',
@@ -2047,7 +2442,199 @@ const createWindow = async (): Promise<void> => {
           selectedProfile?.authenticationType === 'credentials'
             ? Object.fromEntries(profileValues.map((variable) => [variable.name, variable.value]))
             : {};
+        const authStateMode = command.authStateMode;
+        const browserAuthentication =
+          selectedProfile?.authenticationType === 'browser-session'
+            ? remoteWorkspace?.profileEnvironmentAuthentications?.find(
+                (assignment) =>
+                  assignment.profileId === selectedProfile.id &&
+                  assignment.environmentId === environment.id,
+              )
+            : undefined;
+        const authenticationFlow = browserAuthentication
+          ? remoteWorkspace?.authenticationFlows?.find(
+              (flow) => flow.id === browserAuthentication.authFlowId,
+            )
+          : undefined;
+        const setupTest = authenticationFlow
+          ? remoteWorkspace?.tests.find(
+              (snapshot) => snapshot.test.id === authenticationFlow.setupTestId,
+            )
+          : undefined;
+        const authenticationIdentity =
+          selectedProfile && browserAuthentication && authenticationFlow && setupTest
+            ? ({
+                owner: 'desktop',
+                testronAccountId: remoteWorkspace?.viewer.id,
+                projectId: selectedProfile.projectId,
+                environmentId: environment.id,
+                environmentAuthRevision: environment.revision ?? environment.authRevision,
+                profileId: selectedProfile.id,
+                profileRevision: selectedProfile.revision ?? 1,
+                authFlowId: authenticationFlow.id,
+                authFlowRevision: authenticationFlow.revision,
+                setupTestId: setupTest.test.id,
+                setupTestRevision: setupTest.currentRevision.number,
+                secretBindingsRevision: desktopSecretBindingsRevision(
+                  browserAuthentication.revision,
+                  Object.values(browserAuthentication.secretBindings).map(({ secretId }) => {
+                    const secret = remoteWorkspace?.projectSecrets?.find(
+                      (candidate) => candidate.id === secretId,
+                    );
+                    return { id: secretId, revision: secret?.revision ?? 0 };
+                  }),
+                ),
+                browserEngine: 'chromium',
+                formatVersion: 1,
+              } satisfies DesktopAuthenticationStateIdentity)
+            : undefined;
         void (async () => {
+          let initialStorageState =
+            selectedProfile?.authenticationType === 'storage-state'
+              ? parseBrowserStorageState(
+                  profileValues.find(({ name }) => name === 'storageState')?.value,
+                )
+              : undefined;
+          if (
+            selectedProfile?.authenticationType === 'browser-session' &&
+            authStateMode !== 'ignore'
+          ) {
+            const stateKey = desktopAuthenticationStateKey(selectedProfile.id, environment.id);
+            try {
+              if (
+                !authenticationStateStore ||
+                !browserAuthentication ||
+                !authenticationFlow ||
+                !setupTest ||
+                !authenticationIdentity
+              )
+                throw new Error(
+                  'Browser authentication is not configured for this profile and environment.',
+                );
+              const loaded =
+                authStateMode === 'refresh' ||
+                authenticationFlow.refreshPolicy.mode === 'before-every-run'
+                  ? undefined
+                  : await authenticationStateStore.load(authenticationIdentity);
+              const cached =
+                loaded &&
+                !authenticationStateIsStale(
+                  new Date(loaded.expiresAt),
+                  authenticationFlow.refreshPolicy.refreshBeforeExpirySeconds,
+                )
+                  ? loaded
+                  : undefined;
+              if (cached) {
+                initialStorageState = cached.storageState;
+                desktopAuthenticationStates.set(stateKey, {
+                  owner: 'desktop',
+                  projectId: selectedProfile.projectId,
+                  environmentId: environment.id,
+                  profileId: selectedProfile.id,
+                  authFlowId: authenticationFlow.id,
+                  status: 'ready',
+                  createdAt: cached.createdAt,
+                  expiresAt: cached.expiresAt,
+                  lastError: null,
+                });
+              } else {
+                desktopAuthenticationStates.set(stateKey, {
+                  owner: 'desktop',
+                  projectId: selectedProfile.projectId,
+                  environmentId: environment.id,
+                  profileId: selectedProfile.id,
+                  authFlowId: authenticationFlow.id,
+                  status: 'refreshing',
+                  createdAt: null,
+                  expiresAt: null,
+                  lastError: null,
+                });
+                const secretNames = Object.keys(browserAuthentication.secretBindings);
+                const secretValues = Object.fromEntries(
+                  secretNames.map((name) => [name, command.environmentVariables[name] ?? '']),
+                );
+                const missingSecret = secretNames.find((name) => !secretValues[name]);
+                if (missingSecret)
+                  throw new Error(
+                    `Desktop authentication refresh requires a value for ${missingSecret}.`,
+                  );
+                const authenticationResult = await runner.run({
+                  steps: setupTest.currentRevision.content.steps.map(({ payload }) => payload),
+                  environmentVariables: {},
+                  secretValues,
+                  timeoutMs: command.timeoutMs,
+                  headed: command.headed,
+                  artifactsDirectory: path.join(artifactsDirectory, 'authentication'),
+                  captureStorageState: true,
+                  onProgress: (progress) => {
+                    replaySnapshot = progress;
+                    rememberReplay(runTestId, progress);
+                    sendSnapshot(session.snapshot());
+                  },
+                });
+                const { capturedStorageState, ...safeAuthenticationResult } = authenticationResult;
+                if (safeAuthenticationResult.status !== 'passed' || !capturedStorageState) {
+                  replaySnapshot = safeAuthenticationResult;
+                  rememberReplay(runTestId, safeAuthenticationResult);
+                  throw new Error('The browser authentication flow failed.');
+                }
+                const createdAt = new Date();
+                const expiresAt = deriveAuthenticationStateExpiration(
+                  capturedStorageState,
+                  createdAt,
+                  authenticationFlow.refreshPolicy.maxAgeSeconds,
+                );
+                await authenticationStateStore.save({
+                  identity: authenticationIdentity,
+                  storageState: capturedStorageState,
+                  createdAt: createdAt.toISOString(),
+                  expiresAt: expiresAt.toISOString(),
+                });
+                desktopAuthenticationStates.set(stateKey, {
+                  owner: 'desktop',
+                  projectId: selectedProfile.projectId,
+                  environmentId: environment.id,
+                  profileId: selectedProfile.id,
+                  authFlowId: authenticationFlow.id,
+                  status: 'ready',
+                  createdAt: createdAt.toISOString(),
+                  expiresAt: expiresAt.toISOString(),
+                  lastError: null,
+                });
+                initialStorageState = capturedStorageState;
+              }
+            } catch (error) {
+              const secretValues = browserAuthentication
+                ? Object.keys(browserAuthentication.secretBindings).map(
+                    (name) => command.environmentVariables[name] ?? '',
+                  )
+                : [];
+              replaySnapshot = {
+                status: 'failed',
+                steps: replaySnapshot.steps,
+                error:
+                  error instanceof Error
+                    ? redactSensitiveValues(error.message, secretValues)
+                    : 'Authentication refresh failed.',
+              };
+              if (browserAuthentication && authenticationFlow)
+                desktopAuthenticationStates.set(stateKey, {
+                  owner: 'desktop',
+                  projectId: selectedProfile.projectId,
+                  environmentId: environment.id,
+                  profileId: selectedProfile.id,
+                  authFlowId: authenticationFlow.id,
+                  status: 'refresh-failed',
+                  createdAt: null,
+                  expiresAt: null,
+                  lastError: replaySnapshot.error ?? 'Authentication refresh failed.',
+                });
+              rememberReplay(runTestId, replaySnapshot);
+              session.warn(replaySnapshot.error ?? 'Authentication refresh failed.');
+              sendSnapshot(session.snapshot());
+              return;
+            }
+          }
           let serverRun: TestRun | undefined;
           if (serverClient && serverState.authentication === 'signedIn') {
             try {
@@ -2144,11 +2731,24 @@ const createWindow = async (): Promise<void> => {
           try {
             const result = await runner.run({
               steps,
-              environmentVariables: { ...profileVariables, ...command.environmentVariables },
+              environmentVariables: {
+                ...profileVariables,
+                ...Object.fromEntries(
+                  Object.entries(command.environmentVariables).filter(
+                    ([name]) => !browserAuthentication?.secretBindings[name],
+                  ),
+                ),
+              },
               timeoutMs: command.timeoutMs,
+              headed: command.headed,
               artifactsDirectory,
-              ...(command.reuseAuthState && existsSync(authStatePath) ? { authStatePath } : {}),
-              ...(command.reuseAuthState ? { saveAuthStatePath: authStatePath } : {}),
+              ...(initialStorageState ? { initialStorageState } : {}),
+              protectSensitiveArtifacts:
+                Boolean(initialStorageState) ||
+                profileValues.some((variable) => variable.sensitive) ||
+                selectedProfile?.authenticationType === 'cookies' ||
+                selectedProfile?.authenticationType === 'headers' ||
+                selectedProfile?.authenticationType === 'storage-state',
               ...(selectedProfile?.authenticationType === 'cookies'
                 ? {
                     cookies: profileValues.map(({ name, value }) => ({
@@ -2211,18 +2811,41 @@ const createWindow = async (): Promise<void> => {
         // Panels now render in the record renderer and share its state.
         break;
       case 'clear-auth-state': {
-        const { environment } = selectedContext();
+        const environment = allEnvironments().find(
+          (candidate) => candidate.id === (command.environmentId ?? selectedEnvironmentId),
+        );
         if (!environment) break;
         const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
-        const selectedProfile = allProfiles().find((profile) => profile.id === selectedProfileId);
-        const authStatePath = authenticationStatePath(dataDirectory, environment, selectedProfile);
-        void rm(authStatePath, { force: true }).then(() => {
-          const revision = store.rotateAuthenticationRevision(environment.id);
-          session.warn(
-            `Cleared local authentication state for ${environment.name}; new revision is ${revision}.`,
-          );
-          sendSnapshot(session.snapshot());
-        });
+        const profileId = command.profileId ?? selectedProfileId ?? 'no-profile';
+        void Promise.all([
+          authenticationStateStore?.clearScope({
+            testronAccountId: remoteWorkspace?.viewer.id,
+            projectId: environment.projectId,
+            environmentId: environment.id,
+            profileId,
+          }),
+          rm(path.join(dataDirectory, 'auth'), { recursive: true, force: true }),
+        ])
+          .then(() => {
+            desktopAuthenticationStates.delete(
+              desktopAuthenticationStateKey(profileId, environment.id),
+            );
+            const revision = store.getEnvironment(environment.id)
+              ? store.rotateAuthenticationRevision(environment.id)
+              : environment.authRevision;
+            session.warn(
+              `Cleared local authentication state for ${environment.name}; new revision is ${revision}.`,
+            );
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(
+              error instanceof Error
+                ? `Could not clear local authentication state: ${error.message}`
+                : 'Could not clear local authentication state.',
+            );
+            sendSnapshot(session.snapshot());
+          });
         break;
       }
       case 'login-server':
@@ -2410,6 +3033,17 @@ const createWindow = async (): Promise<void> => {
       sendRuntimeState();
       return;
     }
+    if (command.type === 'open-replay-artifact') {
+      const artifactPath =
+        command.artifact === 'screenshot'
+          ? replaySnapshot.screenshotPath
+          : replaySnapshot.tracePath;
+      if (artifactPath)
+        void shell.openPath(artifactPath).then((message) => {
+          if (message) session.warn(`Could not open the run artifact: ${message}`);
+        });
+      return;
+    }
     if (command.type === 'cancel-run') {
       handleAppCommand({ type: 'cancel-run' });
       return;
@@ -2435,9 +3069,9 @@ const createWindow = async (): Promise<void> => {
           !remoteWorkspace
         )
           throw new Error('The recorder workspace is unavailable. Please sign in again.');
-        if (command.projectId) selectedProjectId = command.projectId;
+        if ('projectId' in command && command.projectId) selectedProjectId = command.projectId;
         if (command.environmentId) selectedEnvironmentId = command.environmentId;
-        if (command.testId) selectedTestId = command.testId;
+        if ('testId' in command && command.testId) selectedTestId = command.testId;
         reconcileLibrarySelection();
         const selectedTest = allTests().find((test) => test.id === selectedTestId);
         if (selectedTest) {
@@ -2448,11 +3082,7 @@ const createWindow = async (): Promise<void> => {
           )
             selectedEnvironmentId = selectedTest.environmentIds[0];
           selectedTestSuiteId = selectedTest.testSuiteId ?? undefined;
-          selectedProfileId = allProfiles().find((profile) =>
-            Boolean(
-              selectedEnvironmentId && profile.environmentIds.includes(selectedEnvironmentId),
-            ),
-          )?.id;
+          selectedProfileId = selectedTest.profileId ?? undefined;
           replaySnapshot = historyFor(selectedTest.id)[0] ?? { status: 'idle', steps: [] };
           session.load(selectedTest.title, stepsFor(selectedTest.id));
         }
@@ -2461,7 +3091,25 @@ const createWindow = async (): Promise<void> => {
             type: 'run-test',
             environmentVariables: command.environmentVariables,
             timeoutMs: command.timeoutMs,
-            reuseAuthState: command.reuseAuthState,
+            authStateMode: command.authStateMode ?? (command.reuseAuthState ? 'reuse' : 'ignore'),
+            headed: command.headed ?? false,
+          });
+          return;
+        }
+        if (command.type === 'refresh-desktop-authentication') {
+          handleAppCommand({
+            type: 'refresh-desktop-authentication',
+            profileId: command.profileId,
+            environmentId: command.environmentId,
+            secretValues: command.secretValues,
+          });
+          return;
+        }
+        if (command.type === 'clear-desktop-authentication') {
+          handleAppCommand({
+            type: 'clear-auth-state',
+            profileId: command.profileId,
+            environmentId: command.environmentId,
           });
           return;
         }
@@ -2537,6 +3185,15 @@ app.whenReady().then(async () => {
   });
   await browserInstaller.check();
   repository = new TestronRepository(path.join(dataDirectory, 'testron.sqlite'));
+  authenticationStateStore = new SecureAuthenticationStateStore(
+    path.join(dataDirectory, 'authentication-states'),
+    {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (value) => safeStorage.decryptString(value),
+    },
+  );
+  await authenticationStateStore.removeLegacyPlaintextDirectory(dataDirectory);
   if (!localMode) {
     const serverUrl = safeUrl(__TESTRON_DEFAULT_SERVER_URL__);
     tokenStore = new SecureTokenStore(path.join(dataDirectory, 'credentials'), {

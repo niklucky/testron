@@ -4,6 +4,7 @@ import { stepSchema, stepsSchema } from '@testron/domain/steps/schema';
 import {
   authLoginInputSchema,
   authRegisterInputSchema,
+  browserStorageStateSchema,
   entityIdSchema,
   environmentNameSchema,
   httpUrlSchema,
@@ -23,7 +24,7 @@ export type SessionMenuId = z.infer<typeof sessionMenuIdSchema>;
 
 const validateHeaderVariableNames = (
   command: {
-    authenticationType: 'credentials' | 'cookies' | 'headers';
+    authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
     variables: Array<{ name: string }>;
   },
   context: z.RefinementCtx,
@@ -35,6 +36,65 @@ const validateHeaderVariableNames = (
       code: 'custom',
       path: ['variables'],
       message: 'Header names must be unique regardless of case.',
+    });
+};
+
+const storageStateVariablesAreValid = (
+  variables: Array<{ name: string; value: string }>,
+): boolean => {
+  if (variables.length !== 1 || variables[0]?.name !== 'storageState') return false;
+  try {
+    return browserStorageStateSchema.safeParse(JSON.parse(variables[0].value)).success;
+  } catch {
+    return false;
+  }
+};
+
+const profileAuthenticationTypeSchema = z.enum([
+  'credentials',
+  'cookies',
+  'headers',
+  'storage-state',
+  'browser-session',
+]);
+const profileVariableSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  value: z.string().min(1).max(1_000_000),
+  sensitive: z.boolean(),
+});
+const profileVariablesSchema = z
+  .array(profileVariableSchema)
+  .max(50)
+  .refine(
+    (variables) => new Set(variables.map((variable) => variable.name)).size === variables.length,
+  );
+const profileAuthenticationFields = {
+  name: z.string().trim().min(1).max(100),
+  authenticationType: profileAuthenticationTypeSchema,
+  variables: profileVariablesSchema,
+} as const;
+const validateProfileAuthentication = (
+  command: {
+    authenticationType: z.infer<typeof profileAuthenticationTypeSchema>;
+    variables: z.infer<typeof profileVariablesSchema>;
+  },
+  context: z.RefinementCtx,
+): void => {
+  validateHeaderVariableNames(command, context);
+  if (command.authenticationType !== 'browser-session' && command.variables.length === 0)
+    context.addIssue({
+      code: 'custom',
+      path: ['variables'],
+      message: 'Variables are required.',
+    });
+  if (
+    command.authenticationType === 'storage-state' &&
+    !storageStateVariablesAreValid(command.variables)
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['variables'],
+      message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
     });
 };
 
@@ -167,24 +227,9 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('create-profile'),
       environmentId: entityIdSchema,
-      name: z.string().trim().min(1).max(100),
-      authenticationType: z.enum(['credentials', 'cookies', 'headers']),
-      variables: z
-        .array(
-          z.object({
-            name: z.string().trim().min(1).max(100),
-            value: z.string().min(1).max(10_000),
-            sensitive: z.boolean(),
-          }),
-        )
-        .min(1)
-        .max(50)
-        .refine(
-          (variables) =>
-            new Set(variables.map((variable) => variable.name)).size === variables.length,
-        ),
+      ...profileAuthenticationFields,
     })
-    .superRefine(validateHeaderVariableNames),
+    .superRefine(validateProfileAuthentication),
   z.object({ type: z.literal('select-profile'), profileId: entityIdSchema.optional() }),
   z
     .object({
@@ -192,25 +237,48 @@ export const appCommandSchema = z.discriminatedUnion('type', [
       profileId: entityIdSchema,
       environmentId: entityIdSchema,
       baseRevision: z.number().int().positive(),
-      name: z.string().trim().min(1).max(100),
-      authenticationType: z.enum(['credentials', 'cookies', 'headers']),
-      variables: z
-        .array(
-          z.object({
-            name: z.string().trim().min(1).max(100),
-            value: z.string().min(1).max(10_000),
-            sensitive: z.boolean(),
-          }),
-        )
-        .min(1)
-        .max(50)
-        .refine(
-          (variables) =>
-            new Set(variables.map((variable) => variable.name)).size === variables.length,
-        ),
+      ...profileAuthenticationFields,
     })
-    .superRefine(validateHeaderVariableNames),
+    .superRefine(validateProfileAuthentication),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
+  z.object({
+    type: z.literal('create-authentication-flow'),
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    setupTestId: entityIdSchema,
+    refreshMode: z.enum(['when-stale', 'before-every-run']),
+    maxAgeSeconds: z.number().int().min(60).max(31_536_000),
+    refreshBeforeExpirySeconds: z.number().int().nonnegative().max(604_800),
+  }),
+  z.object({
+    type: z.literal('create-project-secret'),
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    value: z.string().min(1).max(100_000),
+  }),
+  z.object({
+    type: z.literal('configure-profile-authentication'),
+    profileId: entityIdSchema,
+    environmentId: entityIdSchema,
+    authFlowId: entityIdSchema,
+    secretBindings: z.record(
+      z.string().trim().min(1).max(100),
+      z.object({ secretId: entityIdSchema }),
+    ),
+  }),
+  z.object({
+    type: z.literal('manage-server-authentication-state'),
+    projectId: entityIdSchema,
+    environmentId: entityIdSchema,
+    profileId: entityIdSchema,
+    action: z.enum(['invalidate', 'clear']),
+  }),
+  z.object({
+    type: z.literal('refresh-desktop-authentication'),
+    profileId: entityIdSchema,
+    environmentId: entityIdSchema,
+    secretValues: z.record(z.string().trim().min(1).max(100), z.string().min(1).max(100_000)),
+  }),
   z.object({
     type: z.literal('rename-test'),
     testId: entityIdSchema,
@@ -238,12 +306,17 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('run-test'),
     environmentVariables: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string()),
     timeoutMs: z.number().int().min(1_000).max(600_000),
-    reuseAuthState: z.boolean(),
+    authStateMode: z.enum(['ignore', 'reuse', 'refresh']).default('ignore'),
+    headed: z.boolean().optional(),
   }),
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('install-browser') }),
   z.object({ type: z.literal('cancel-browser-install') }),
-  z.object({ type: z.literal('clear-auth-state') }),
+  z.object({
+    type: z.literal('clear-auth-state'),
+    profileId: entityIdSchema.optional(),
+    environmentId: entityIdSchema.optional(),
+  }),
   authLoginInputSchema.extend({ type: z.literal('login-server') }),
   authRegisterInputSchema.extend({ type: z.literal('register-server') }),
   z.object({ type: z.literal('logout-server') }),

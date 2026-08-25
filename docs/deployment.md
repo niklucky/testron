@@ -39,6 +39,10 @@ Create an environment named `production`. Add these encrypted secrets:
 - `VPS_KNOWN_HOSTS`: pinned SSH host-key line for the VPS. Generate it from a
   trusted machine with `ssh-keyscan -H your-host` and verify its fingerprint.
 - `POSTGRES_PASSWORD`: strong URL-safe password, such as a long hex value.
+- `TESTRON_AUTH_ENCRYPTION_KEYS`: versioned 32-byte key used for project
+  secrets and derived server browser state, for example `1:<base64-key>`.
+  Generate the key material with `openssl rand -base64 32`; retain old
+  versions comma-separated during rotation.
 - `RESEND_API_KEY`: optional Resend key with sending access. Set it to enable
   invitation email delivery.
 

@@ -4,6 +4,23 @@ import { presentRecordedSteps, recordingContext } from '../record/live';
 import type { RecordedStep } from '../record/types';
 import type { Assertion, Run, TestBoard } from './types';
 
+export const withDesktopReplay = (
+  snapshot: AppSnapshot,
+  replay: AppSnapshot['replay'],
+): AppSnapshot => {
+  if (replay.status === 'idle') return snapshot;
+  return {
+    ...snapshot,
+    replay,
+    replayHistory: [
+      replay,
+      ...snapshot.replayHistory.filter(
+        (entry) => !replay.startedAt || entry.startedAt !== replay.startedAt,
+      ),
+    ],
+  };
+};
+
 const assertionFrom = (step: RecordedStep, afterStep: number): Assertion => ({
   id: step.id,
   afterStep: Math.max(1, afterStep),

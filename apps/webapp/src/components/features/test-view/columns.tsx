@@ -31,13 +31,30 @@ export const DetailCard = ({
   onDetail,
   onLog,
   metadataEditable = true,
+  profiles = [],
+  profileId,
+  onProfile,
+  environmentOptions,
+  environmentIds = [],
+  onEnvironments,
 }: {
   detail: TestDetail;
   onDetail: (detail: TestDetail) => void;
   onLog: (message: string) => void;
   metadataEditable?: boolean;
+  profiles?: Array<{ id: string; name: string; supported?: boolean }>;
+  profileId?: string;
+  onProfile?: (profileId?: string) => void;
+  environmentOptions?: Array<{ id: string; name: string }>;
+  environmentIds?: string[];
+  onEnvironments?: (environmentIds: string[]) => void;
 }) => {
   const { t } = useTranslation();
+  const environmentChoices =
+    environmentOptions ??
+    (metadataEditable ? allEnvironments : detail.environments).map((name) => ({ id: name, name }));
+  const selectedEnvironmentIds = environmentOptions ? environmentIds : detail.environments;
+  const environmentsEditable = Boolean(onEnvironments) || metadataEditable;
   return (
     <Card className="!p-3">
       <InlineText
@@ -50,29 +67,58 @@ export const DetailCard = ({
         className="font-semibold"
       />
 
+      {onProfile && (
+        <>
+          <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">Authentication profile</p>
+          <InlineSelect
+            label="Authentication profile"
+            value={profileId ?? ''}
+            options={[
+              { id: '', label: 'No profile' },
+              ...profiles.map((profile) => ({
+                id: profile.id,
+                label:
+                  profile.supported === false
+                    ? `${profile.name} (${t('unsupported')})`
+                    : profile.name,
+              })),
+            ]}
+            onChange={(next) => onProfile(next || undefined)}
+          />
+        </>
+      )}
+
       <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('environments')}</p>
       <div className="flex flex-wrap gap-1">
-        {(metadataEditable ? allEnvironments : detail.environments).map((environment) => {
-          const on = detail.environments.includes(environment);
+        {environmentChoices.map((environment) => {
+          const on = selectedEnvironmentIds.includes(environment.id);
           return (
             <Chip
-              key={environment}
+              key={environment.id}
               on={on}
               onClick={
-                metadataEditable
+                environmentsEditable
                   ? () => {
-                      onDetail({
-                        ...detail,
-                        environments: on
-                          ? detail.environments.filter((one) => one !== environment)
-                          : [...detail.environments, environment],
-                      });
-                      onLog(`${environment} ${on ? 'removed from' : 'added to'} this test`);
+                      if (on && selectedEnvironmentIds.length === 1) {
+                        onLog('A test must have at least one environment');
+                        return;
+                      }
+                      const next = on
+                        ? selectedEnvironmentIds.filter((id) => id !== environment.id)
+                        : [...selectedEnvironmentIds, environment.id];
+                      if (onEnvironments) onEnvironments(next);
+                      else {
+                        onDetail({
+                          ...detail,
+                          environments: next,
+                        });
+                        onLog(`${environment.name} ${on ? 'removed from' : 'added to'} this test`);
+                      }
                     }
                   : undefined
               }
             >
-              {environment}
+              {environment.name}
             </Chip>
           );
         })}

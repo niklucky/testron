@@ -10,6 +10,8 @@ import {
   createInvitationRequestSchema,
   finishTestRunRequestSchema,
   createProfileRequestSchema,
+  createBrowserAuthenticationFlowRequestSchema,
+  createProjectSecretRequestSchema,
   moveTestRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
@@ -300,6 +302,109 @@ describe('project settings mutations', () => {
         ],
       }).success,
     ).toBe(false);
+    expect(
+      createProfileRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'Browser administrator',
+        authenticationType: 'browser-session',
+        environments: [{ environmentId: ids.environment, variables: [] }],
+      }),
+    ).toMatchObject({ authenticationType: 'browser-session' });
+    const storageState = JSON.stringify({
+      cookies: [
+        {
+          name: 'access_token',
+          value: 'saved-token',
+          domain: 'example.test',
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: true,
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [
+        {
+          origin: 'https://example.test',
+          localStorage: [{ name: 'accessToken', value: 'saved-token' }],
+        },
+      ],
+    });
+    expect(
+      createProfileRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'Saved browser session',
+        authenticationType: 'storage-state',
+        environments: [
+          {
+            environmentId: ids.environment,
+            variables: [{ name: 'storageState', value: storageState, sensitive: true }],
+          },
+        ],
+      }),
+    ).toMatchObject({ authenticationType: 'storage-state' });
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Broken browser session',
+        authenticationType: 'storage-state',
+        environments: [
+          {
+            environmentId: ids.environment,
+            variables: [{ name: 'storageState', value: '{broken', sensitive: true }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      createProfileRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Invalid empty credentials',
+        authenticationType: 'credentials',
+        environments: [{ environmentId: ids.environment, variables: [] }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates flow refresh bounds while accepting write-only secret input', () => {
+    expect(
+      createBrowserAuthenticationFlowRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'Login',
+        setupTestId: ids.test,
+        refreshPolicy: {
+          mode: 'when-stale',
+          maxAgeSeconds: 43_200,
+          refreshBeforeExpirySeconds: 900,
+        },
+      }),
+    ).toMatchObject({ refreshPolicy: { mode: 'when-stale' } });
+    expect(
+      createBrowserAuthenticationFlowRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Login',
+        setupTestId: ids.test,
+        refreshPolicy: {
+          mode: 'when-stale',
+          maxAgeSeconds: 900,
+          refreshBeforeExpirySeconds: 900,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      createProjectSecretRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'E2E_PASSWORD',
+        value: 'write-only-value',
+      }),
+    ).toMatchObject({ name: 'E2E_PASSWORD' });
   });
 
   it('rejects duplicate move environments and invalid browser-safe profiles', () => {

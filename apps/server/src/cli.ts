@@ -28,6 +28,9 @@ const server = await startTestronServer({
   publicBaseUrl,
   ...(webappDirectory ? { webappDirectory } : {}),
   ...(resendApiKey && resendFrom ? { resend: { apiKey: resendApiKey, from: resendFrom } } : {}),
+  ...(process.env.TESTRON_AUTH_ENCRYPTION_KEYS
+    ? { authenticationEncryptionKeys: process.env.TESTRON_AUTH_ENCRYPTION_KEYS }
+    : {}),
 });
 
 if (process.env.TESTRON_BOOTSTRAP_EMAIL && process.env.TESTRON_BOOTSTRAP_PASSWORD)

@@ -2,6 +2,7 @@ import { useTranslation } from '@warpunit/slang-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { browserStorageStateSchema } from '@testron/protocol';
 import { Button } from '../design';
 
 export interface ProfileVariableInput {
@@ -10,7 +11,8 @@ export interface ProfileVariableInput {
   sensitive: boolean;
 }
 
-type ProfileAuthenticationType = 'credentials' | 'cookies' | 'headers';
+type ProfileAuthenticationType =
+  'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
 
 export interface EditableProfile {
   name: string;
@@ -29,12 +31,16 @@ const variableOrder = (left: { name: string }, right: { name: string }): number 
 };
 
 const defaultVariables = (authenticationType: ProfileAuthenticationType): ProfileVariableInput[] =>
-  authenticationType === 'credentials'
-    ? [
-        { name: 'username', value: '', sensitive: false },
-        { name: 'password', value: '', sensitive: true },
-      ]
-    : [{ name: '', value: '', sensitive: true }];
+  authenticationType === 'browser-session'
+    ? []
+    : authenticationType === 'storage-state'
+      ? [{ name: 'storageState', value: '', sensitive: true }]
+      : authenticationType === 'credentials'
+        ? [
+            { name: 'username', value: '', sensitive: false },
+            { name: 'password', value: '', sensitive: true },
+          ]
+        : [{ name: '', value: '', sensitive: true }];
 
 export const ProfileSheet = ({
   environment,
@@ -70,6 +76,14 @@ export const ProfileSheet = ({
     authenticationType === 'headers' ? variable.name.trim().toLowerCase() : variable.name.trim();
   const unique = new Set(validVariables.map(normalizedVariableName)).size === validVariables.length;
   const complete = validVariables.every((variable) => variable.value.length > 0);
+  const storageStateValid = (() => {
+    if (authenticationType !== 'storage-state') return true;
+    try {
+      return browserStorageStateSchema.safeParse(JSON.parse(variables[0]?.value ?? '')).success;
+    } catch {
+      return false;
+    }
+  })();
 
   return createPortal(
     <div
@@ -116,93 +130,132 @@ export const ProfileSheet = ({
             <option disabled>{t('oauth_coming_later')}</option>
             <option value="cookies">{t('cookies')}</option>
             <option value="headers">{t('browser_headers')}</option>
+            <option value="storage-state">{t('saved_browser_storage_state')}</option>
+            <option value="browser-session">{t('browser_login')}</option>
           </select>
         </label>
 
-        <div className="mt-4">
-          {editing && (
-            <p className="mb-3 text-ink-3">
-              {t('re_enter_variable_values_to_replace_the_saved_credentials')}
-            </p>
-          )}
-          <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-ink-3">
-            <span>{t('name')}</span>
-            <span>{t('value')}</span>
-            <span />
+        {authenticationType === 'browser-session' ? (
+          <p className="mt-4 text-ink-3">{t('browser_login_profile_hint')}</p>
+        ) : authenticationType === 'storage-state' ? (
+          <div className="mt-4">
+            {editing && <p className="mb-3 text-ink-3">{t('replace_storage_state_hint')}</p>}
+            <label className="block">
+              <span className="text-ink-3">{t('storage_state_json')}</span>
+              <textarea
+                aria-label={t('storage_state_json')}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={1_000_000}
+                rows={12}
+                value={variables[0]?.value ?? ''}
+                onChange={(event) =>
+                  setVariables([
+                    { name: 'storageState', value: event.target.value, sensitive: true },
+                  ])
+                }
+                placeholder={'{\n  "cookies": [],\n  "origins": []\n}'}
+                className="mt-1.5 w-full resize-y rounded-md border border-line bg-plane p-2.5 font-mono text-xs outline-none focus:border-accent"
+              />
+            </label>
+            {!storageStateValid && variables[0]?.value && (
+              <p className="mt-2 text-critical">{t('invalid_storage_state_json')}</p>
+            )}
           </div>
-          {variables.map((variable, index) => (
-            <div key={index} className="mb-2 grid grid-cols-[1fr_1.35fr_70px] gap-2">
-              <input
-                aria-label={t('variable_name', { value1: index + 1 })}
-                value={variable.name}
-                onChange={(event) =>
-                  setVariables((current) =>
-                    current.map((entry, entryIndex) =>
-                      entryIndex === index
-                        ? {
-                            ...entry,
-                            name: event.target.value,
-                            sensitive:
-                              authenticationType !== 'credentials' ||
-                              /password|secret|token/i.test(event.target.value),
-                          }
-                        : entry,
-                    ),
-                  )
-                }
-                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
-              />
-              <input
-                aria-label={t('variable_value', { value1: index + 1 })}
-                type={
-                  authenticationType !== 'credentials' || variable.sensitive ? 'password' : 'text'
-                }
-                value={variable.value}
-                onChange={(event) =>
-                  setVariables((current) =>
-                    current.map((entry, entryIndex) =>
-                      entryIndex === index ? { ...entry, value: event.target.value } : entry,
-                    ),
-                  )
-                }
-                className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  setVariables((current) => current.filter((_, entryIndex) => entryIndex !== index))
-                }
-              >
-                {t('remove')}
-              </Button>
+        ) : (
+          <div className="mt-4">
+            {editing && (
+              <p className="mb-3 text-ink-3">
+                {t('re_enter_variable_values_to_replace_the_saved_credentials')}
+              </p>
+            )}
+            <div className="mb-1.5 grid grid-cols-[1fr_1.35fr_70px] gap-2 text-ink-3">
+              <span>{t('name')}</span>
+              <span>{t('value')}</span>
+              <span />
             </div>
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setVariables((current) => [
-                ...current,
-                { name: '', value: '', sensitive: authenticationType !== 'credentials' },
-              ])
-            }
-          >
-            {authenticationType === 'cookies'
-              ? t('add_cookie')
-              : authenticationType === 'headers'
-                ? t('add_header')
-                : t('variable')}
-          </Button>
-          {!unique && <p className="mt-2 text-critical">{t('variable_names_must_be_unique')}</p>}
-        </div>
+            {variables.map((variable, index) => (
+              <div key={index} className="mb-2 grid grid-cols-[1fr_1.35fr_70px] gap-2">
+                <input
+                  aria-label={t('variable_name', { value1: index + 1 })}
+                  value={variable.name}
+                  onChange={(event) =>
+                    setVariables((current) =>
+                      current.map((entry, entryIndex) =>
+                        entryIndex === index
+                          ? {
+                              ...entry,
+                              name: event.target.value,
+                              sensitive:
+                                authenticationType !== 'credentials' ||
+                                /password|secret|token/i.test(event.target.value),
+                            }
+                          : entry,
+                      ),
+                    )
+                  }
+                  className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
+                />
+                <input
+                  aria-label={t('variable_value', { value1: index + 1 })}
+                  type={
+                    authenticationType !== 'credentials' || variable.sensitive ? 'password' : 'text'
+                  }
+                  value={variable.value}
+                  onChange={(event) =>
+                    setVariables((current) =>
+                      current.map((entry, entryIndex) =>
+                        entryIndex === index ? { ...entry, value: event.target.value } : entry,
+                      ),
+                    )
+                  }
+                  className="h-9 rounded-md border border-line bg-plane px-2.5 outline-none focus:border-accent"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setVariables((current) =>
+                      current.filter((_, entryIndex) => entryIndex !== index),
+                    )
+                  }
+                >
+                  {t('remove')}
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setVariables((current) => [
+                  ...current,
+                  { name: '', value: '', sensitive: authenticationType !== 'credentials' },
+                ])
+              }
+            >
+              {authenticationType === 'cookies'
+                ? t('add_cookie')
+                : authenticationType === 'headers'
+                  ? t('add_header')
+                  : t('variable')}
+            </Button>
+            {!unique && <p className="mt-2 text-critical">{t('variable_names_must_be_unique')}</p>}
+          </div>
+        )}
 
         <div className="mt-5 flex items-center gap-2">
           <Button
             variant="primary"
             icon="check"
             disabled={
-              disabled || !name.trim() || validVariables.length === 0 || !unique || !complete
+              disabled ||
+              !name.trim() ||
+              (authenticationType !== 'browser-session' && validVariables.length === 0) ||
+              !unique ||
+              !complete ||
+              !storageStateValid
             }
             onClick={() =>
               onSave(

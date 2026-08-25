@@ -27,6 +27,10 @@ import type {
   UpdateProjectRequest,
   UpdateProfileRequest,
   UpdateTestSuiteRequest,
+  CreateBrowserAuthenticationFlowRequest,
+  ConfigureProfileEnvironmentAuthenticationRequest,
+  CreateProjectSecretRequest,
+  ManageAuthenticationStateRequest,
 } from '@testron/protocol';
 import type { AppRouter } from '@testron/server/router';
 
@@ -105,6 +109,22 @@ export class DesktopServerClient {
 
   updateProfile(value: UpdateProfileRequest) {
     return this.api.profile.update.mutate(value);
+  }
+
+  createAuthenticationFlow(value: CreateBrowserAuthenticationFlowRequest) {
+    return this.api.authenticationFlow.create.mutate(value);
+  }
+
+  configureProfileAuthentication(value: ConfigureProfileEnvironmentAuthenticationRequest) {
+    return this.api.authenticationFlow.configureProfile.mutate(value);
+  }
+
+  createProjectSecret(value: CreateProjectSecretRequest) {
+    return this.api.projectSecret.create.mutate(value);
+  }
+
+  manageAuthenticationState(value: ManageAuthenticationStateRequest) {
+    return this.api.authenticationState.manage.mutate(value);
   }
 
   createTest(value: CreateTestRequest) {

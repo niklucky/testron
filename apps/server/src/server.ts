@@ -2,6 +2,8 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 import { AuthenticationService } from './auth.js';
+import { AuthenticationEncryption } from './authentication-state/encryption.js';
+import { ServerAuthenticationStateStore } from './authentication-state/store.js';
 import { createDatabase, type ServerDatabase } from './database/database.js';
 import { CanonicalRepository } from './database/repository.js';
 import {
@@ -16,6 +18,7 @@ export interface RunningTestronServer {
   url: string;
   database: ServerDatabase;
   authentication: AuthenticationService;
+  authenticationStates?: ServerAuthenticationStateStore;
   router: AppRouter;
   close(): Promise<void>;
 }
@@ -29,6 +32,7 @@ export const startTestronServer = async (options: {
   invitationMailer?: InvitationMailer;
   resend?: { apiKey: string; from: string };
   webappDirectory?: string;
+  authenticationEncryptionKeys?: string;
 }): Promise<RunningTestronServer> => {
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
@@ -37,7 +41,17 @@ export const startTestronServer = async (options: {
   const invitationMailer =
     options.invitationMailer ??
     (options.resend ? new ResendInvitationMailer(options.resend) : disabledInvitationMailer);
-  const repository = new CanonicalRepository(database.db, invitationMailer);
+  const authenticationEncryption = AuthenticationEncryption.fromEnvironment(
+    options.authenticationEncryptionKeys,
+  );
+  const repository = new CanonicalRepository(
+    database.db,
+    invitationMailer,
+    authenticationEncryption,
+  );
+  const authenticationStates = authenticationEncryption
+    ? new ServerAuthenticationStateStore(database.db, authenticationEncryption)
+    : undefined;
   const router = createAppRouter({ authentication, repository });
   const server = createHttpServer({
     router,
@@ -55,6 +69,7 @@ export const startTestronServer = async (options: {
     url,
     database,
     authentication,
+    ...(authenticationStates ? { authenticationStates } : {}),
     router,
     close: () =>
       new Promise<void>((resolve, reject) => {

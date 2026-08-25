@@ -39,6 +39,7 @@ beforeAll(async () => {
   server = await startTestronServer({
     databaseUrl,
     migrate: false,
+    authenticationEncryptionKeys: `1:${Buffer.alloc(32, 7).toString('base64')}`,
     invitationMailer: {
       sendInvitation: async (invitation) => {
         deliveredInvitationIds.push(invitation.id);
@@ -1053,6 +1054,134 @@ describe('PostgreSQL tRPC vertical slice', () => {
     );
   });
 
+  it('stores write-only secrets and validates browser authentication flow assignments', async () => {
+    const { api } = await signIn();
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Analytics' });
+    const environment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://analytics.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const setup = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: {
+        stepSchemaVersion: 1,
+        title: 'Analytics login',
+        environmentIds: [environment.id],
+        prerequisites: [],
+        steps: [
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'navigate',
+              url: 'https://analytics.example.test/login',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'fill',
+              target: {
+                primary: { strategy: 'name', value: 'password' },
+                alternatives: [],
+              },
+              value: '',
+              secret: { environmentVariable: 'E2E_PASSWORD' },
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'assertUrlPath',
+              expected: '/dashboard',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+        ],
+      },
+    });
+    const flow = await api.authenticationFlow.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Analytics login',
+      setupTestId: setup.test.id,
+      refreshPolicy: {
+        mode: 'when-stale',
+        maxAgeSeconds: 43_200,
+        refreshBeforeExpirySeconds: 900,
+      },
+    });
+    const secret = await api.projectSecret.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'E2E_ANALYTICS_PASSWORD',
+      value: 'never-return-this-password',
+    });
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Administrator',
+      authenticationType: 'browser-session',
+      environments: [{ environmentId: environment.id, variables: [] }],
+    });
+    const otherProject = await api.project.create.mutate({
+      meta: mutationMeta(),
+      name: 'Other project',
+    });
+    const foreignSecret = await api.projectSecret.create.mutate({
+      meta: mutationMeta(),
+      projectId: otherProject.id,
+      name: 'FOREIGN_PASSWORD',
+      value: 'foreign-value',
+    });
+    await expect(
+      api.authenticationFlow.configureProfile.mutate({
+        meta: mutationMeta(),
+        profileId: profile.id,
+        environmentId: environment.id,
+        authFlowId: flow.id,
+        secretBindings: { E2E_PASSWORD: { secretId: foreignSecret.id } },
+      }),
+    ).rejects.toMatchObject({ data: { code: 'NOT_FOUND' } });
+    await expect(
+      api.authenticationFlow.configureProfile.mutate({
+        meta: mutationMeta(),
+        profileId: profile.id,
+        environmentId: environment.id,
+        authFlowId: flow.id,
+        secretBindings: { E2E_PASSWORD: { secretId: secret.id } },
+      }),
+    ).resolves.toMatchObject({ revision: 1, authFlowId: flow.id });
+
+    const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+    expect(workspace.authenticationFlows).toEqual([expect.objectContaining({ id: flow.id })]);
+    expect(workspace.projectSecrets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: secret.id, configured: true })]),
+    );
+    expect(JSON.stringify(workspace)).not.toContain('never-return-this-password');
+    const encrypted = await server.database.pool.query<{ encryptedValue: string }>(
+      'select encrypted_value as "encryptedValue" from project_secrets where id = $1',
+      [secret.id],
+    );
+    expect(encrypted.rows[0]?.encryptedValue).not.toContain('never-return-this-password');
+
+    await expect(
+      api.test.delete.mutate({
+        meta: mutationMeta(),
+        testId: setup.test.id,
+        baseRevision: setup.test.currentRevision,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
   it('enforces project ownership through nested test procedures', async () => {
     const owner = await signIn();
     const { snapshot } = await createSlice(owner.api);
@@ -1060,5 +1189,121 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       stranger.api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id }),
     ).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
+  });
+
+  it('single-flights server refreshes, preserves state on failure, and retries once', async () => {
+    const { api } = await signIn();
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Workers' });
+    const environment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Production',
+      baseUrl: 'https://workers.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    const setup = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: {
+        stepSchemaVersion: 1,
+        title: 'Worker login',
+        environmentIds: [environment.id],
+        prerequisites: [],
+        steps: [
+          {
+            id: randomUUID(),
+            payload: {
+              version: 1,
+              kind: 'assertUrlPath',
+              expected: '/dashboard',
+              metadata: { recordedAt: '2026-01-01T00:00:00.000Z' },
+            },
+          },
+        ],
+      },
+    });
+    const flow = await api.authenticationFlow.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Worker login',
+      setupTestId: setup.test.id,
+      refreshPolicy: {
+        mode: 'when-stale',
+        maxAgeSeconds: 43_200,
+        refreshBeforeExpirySeconds: 900,
+      },
+    });
+    const profile = await api.profile.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Worker',
+      authenticationType: 'browser-session',
+      environments: [{ environmentId: environment.id, variables: [] }],
+    });
+    await api.authenticationFlow.configureProfile.mutate({
+      meta: mutationMeta(),
+      profileId: profile.id,
+      environmentId: environment.id,
+      authFlowId: flow.id,
+      secretBindings: {},
+    });
+    const stateStore = server.authenticationStates;
+    if (!stateStore) throw new Error('Authentication state encryption was not configured.');
+    const scope = { projectId: project.id, environmentId: environment.id, profileId: profile.id };
+    let refreshes = 0;
+    const refresh = async () => {
+      refreshes += 1;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { cookies: [{ value: 'server-session' }], origins: [] };
+    };
+    const states = await Promise.all([
+      stateStore.getOrRefresh(scope, refresh),
+      stateStore.getOrRefresh(scope, refresh),
+    ]);
+    expect(refreshes).toBe(1);
+    expect(states[0]).toEqual(states[1]);
+
+    await server.database.pool.query(
+      "update authentication_states set encrypted_state = 'damaged' where profile_id = $1",
+      [profile.id],
+    );
+    await expect(stateStore.getOrRefresh(scope, refresh)).resolves.toEqual(states[0]);
+    expect(refreshes).toBe(2);
+
+    let attempts = 0;
+    const result = await stateStore.runWithAuthenticationRetry({
+      scope,
+      refresh,
+      execute: async (_state, attempt) => {
+        attempts += 1;
+        return { status: attempt === 1 ? 401 : 200 };
+      },
+      authenticationFailed: ({ status }) => status === 401,
+    });
+    expect(result.status).toBe(200);
+    expect(attempts).toBe(2);
+    expect(refreshes).toBe(3);
+
+    await stateStore.invalidate(scope);
+    const before = await server.database.pool.query<{ encryptedState: string }>(
+      'select encrypted_state as "encryptedState" from authentication_states where profile_id = $1',
+      [profile.id],
+    );
+    await expect(
+      stateStore.getOrRefresh(scope, async () => {
+        throw new Error('invalid credentials');
+      }),
+    ).rejects.toThrow('invalid credentials');
+    const after = await server.database.pool.query<{
+      encryptedState: string;
+      status: string;
+    }>(
+      'select encrypted_state as "encryptedState", status from authentication_states where profile_id = $1',
+      [profile.id],
+    );
+    expect(after.rows[0]).toEqual({
+      encryptedState: before.rows[0]?.encryptedState,
+      status: 'refresh-failed',
+    });
   });
 });

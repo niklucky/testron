@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { liveTestBoard } from '../../src/components/features/test-view/live';
+import { liveTestBoard, withDesktopReplay } from '../../src/components/features/test-view/live';
 import type { AppSnapshot } from '../../src/lib/library';
 
 const snapshot: AppSnapshot = {
@@ -133,5 +133,24 @@ describe('live test board', () => {
     expect(board.runs).toHaveLength(2);
     expect(board.runs.map((run) => run.verdict)).toEqual(['failed', 'passed']);
     expect(board.runs[0].id).not.toBe(board.runs[1].id);
+  });
+
+  it('puts desktop progress ahead of stale web replay history', () => {
+    const stale = snapshot.replay;
+    const running = {
+      status: 'running' as const,
+      startedAt: '2026-08-16T10:07:00.000Z',
+      steps: [
+        { index: 0, action: 'Fill Email', status: 'passed' as const },
+        { index: 1, action: 'Verify Welcome', status: 'running' as const },
+        { index: 2, action: 'Click Continue', status: 'pending' as const },
+      ],
+    };
+
+    const live = withDesktopReplay({ ...snapshot, replayHistory: [stale] }, running);
+    const board = liveTestBoard(live);
+
+    expect(live.replayHistory).toEqual([running, stale]);
+    expect(board.runs[0]).toMatchObject({ id: `run-${running.startedAt}`, verdict: 'running' });
   });
 });
