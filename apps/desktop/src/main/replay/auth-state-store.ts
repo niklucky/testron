@@ -33,6 +33,7 @@ const stable = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   if (typeof value === 'object' && value !== null)
     return `{${Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, entry]) => `${JSON.stringify(key)}:${stable(entry)}`)
       .join(',')}}`;
@@ -50,7 +51,14 @@ export const desktopSecretBindingsRevision = (
 ): number =>
   Number.parseInt(
     createHash('sha256')
-      .update(stable({ assignmentRevision, secretRevisions }))
+      .update(
+        stable({
+          assignmentRevision,
+          secretRevisions: [...secretRevisions].sort((left, right) =>
+            left.id.localeCompare(right.id),
+          ),
+        }),
+      )
       .digest('hex')
       .slice(0, 7),
     16,

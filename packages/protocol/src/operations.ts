@@ -25,7 +25,7 @@ import {
   testRunSchema,
   testRunStatusSchema,
   testRevisionContentSchema,
-  browserStorageStateSchema,
+  storageStateVariablesAreValid,
   testRevisionSchema,
   testSnapshotSchema,
   testSuiteNameSchema,
@@ -147,17 +147,6 @@ const headerVariableNamesAreUnique = (variables: Array<{ name: string }>): boole
   return new Set(names).size === names.length;
 };
 
-const storageStateVariableIsValid = (
-  variables: Array<{ name: string; value: string }>,
-): boolean => {
-  if (variables.length !== 1 || variables[0]?.name !== 'storageState') return false;
-  try {
-    return browserStorageStateSchema.safeParse(JSON.parse(variables[0].value)).success;
-  } catch {
-    return false;
-  }
-};
-
 const profileCreateFields = {
   ...profileIdentityFields,
   environments: z
@@ -210,7 +199,7 @@ export const createProfileRequestSchema = z
         });
       if (
         request.authenticationType === 'storage-state' &&
-        !storageStateVariableIsValid(environment.variables)
+        !storageStateVariablesAreValid(environment.variables)
       )
         context.addIssue({
           code: 'custom',
@@ -248,7 +237,7 @@ export const updateProfileRequestSchema = z
       });
     if (
       request.authenticationType === 'storage-state' &&
-      !storageStateVariableIsValid(request.variables)
+      !storageStateVariablesAreValid(request.variables)
     )
       context.addIssue({
         code: 'custom',

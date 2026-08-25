@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  desktopSecretBindingsRevision,
   SecureAuthenticationStateStore,
   type DesktopAuthenticationStateIdentity,
 } from '../../src/main/replay/auth-state-store';
@@ -55,8 +56,28 @@ describe('SecureAuthenticationStateStore', () => {
     expect(files).not.toContain('cookie');
     expect(await store.load(identity, new Date('2026-01-01T01:00:00.000Z'))).toBeDefined();
     expect(
+      await store.load(
+        { ...identity, testronAccountId: undefined },
+        new Date('2026-01-01T01:00:00.000Z'),
+      ),
+    ).toBeDefined();
+    expect(
       await store.load({ ...identity, profileRevision: 2 }, new Date('2026-01-01T01:00:00.000Z')),
     ).toBeUndefined();
     expect(await store.load(identity, new Date('2026-01-01T03:00:00.000Z'))).toBeUndefined();
+  });
+
+  it('derives the same binding revision regardless of secret order', () => {
+    expect(
+      desktopSecretBindingsRevision(3, [
+        { id: 'secret-b', revision: 2 },
+        { id: 'secret-a', revision: 1 },
+      ]),
+    ).toBe(
+      desktopSecretBindingsRevision(3, [
+        { id: 'secret-a', revision: 1 },
+        { id: 'secret-b', revision: 2 },
+      ]),
+    );
   });
 });

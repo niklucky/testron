@@ -1263,6 +1263,13 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(refreshes).toBe(1);
     expect(states[0]).toEqual(states[1]);
 
+    await server.database.pool.query(
+      "update authentication_states set encrypted_state = 'damaged' where profile_id = $1",
+      [profile.id],
+    );
+    await expect(stateStore.getOrRefresh(scope, refresh)).resolves.toEqual(states[0]);
+    expect(refreshes).toBe(2);
+
     let attempts = 0;
     const result = await stateStore.runWithAuthenticationRetry({
       scope,
@@ -1275,7 +1282,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
     expect(result.status).toBe(200);
     expect(attempts).toBe(2);
-    expect(refreshes).toBe(2);
+    expect(refreshes).toBe(3);
 
     await stateStore.invalidate(scope);
     const before = await server.database.pool.query<{ encryptedState: string }>(

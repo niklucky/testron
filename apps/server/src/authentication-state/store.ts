@@ -70,7 +70,15 @@ const bindingRevision = (
   secrets: ReadonlyArray<{ id: string; revision: number }>,
 ): number =>
   Number.parseInt(
-    createHash('sha256').update(stable({ assignmentRevision, secrets })).digest('hex').slice(0, 7),
+    createHash('sha256')
+      .update(
+        stable({
+          assignmentRevision,
+          secrets: [...secrets].sort((left, right) => left.id.localeCompare(right.id)),
+        }),
+      )
+      .digest('hex')
+      .slice(0, 7),
     16,
   ) + 1;
 
@@ -80,6 +88,11 @@ const redactSecrets = (message: string, secrets: Readonly<Record<string, string>
     if (value) redacted = redacted.replaceAll(value, '[REDACTED]');
   return redacted.slice(0, 2_000);
 };
+
+const REFRESH_LEASE_MS = 10 * 60 * 1_000;
+const REFRESH_POLL_MS = 100;
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class ServerAuthenticationStateStore {
   constructor(
@@ -92,8 +105,8 @@ export class ServerAuthenticationStateStore {
     refresh: (input: ServerAuthenticationRefreshInput) => Promise<AuthenticationStorageState>,
     now = new Date(),
   ): Promise<AuthenticationStorageState> {
+    const lockScope = `authentication-state:${scope.projectId}:${scope.environmentId}:${scope.profileId}`;
     const outcome = await this.db.transaction(async (tx) => {
-      const lockScope = `authentication-state:${scope.projectId}:${scope.environmentId}:${scope.profileId}`;
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockScope}))`);
       const resolved = await this.resolve(tx, scope);
       const [cached] = await tx
@@ -121,31 +134,85 @@ export class ServerAuthenticationStateStore {
           now,
         )
       ) {
-        const value = this.encryption.decrypt(cached.encryptedState, cached.keyVersion, lockScope);
-        return { ok: true as const, state: JSON.parse(value) as AuthenticationStorageState };
+        try {
+          const value = this.encryption.decrypt(
+            cached.encryptedState,
+            cached.keyVersion,
+            lockScope,
+          );
+          return {
+            kind: 'cached' as const,
+            state: JSON.parse(value) as AuthenticationStorageState,
+          };
+        } catch {
+          // A missing rotation key or damaged payload is recoverable by logging in again.
+        }
       }
 
+      if (
+        cached?.status === 'refreshing' &&
+        sameIdentity(cached.identity, resolved.identity) &&
+        Date.parse(cached.updatedAt) > Date.now() - REFRESH_LEASE_MS
+      )
+        return {
+          kind: 'wait' as const,
+          identity: resolved.identity,
+          refreshStartedAt: cached.updatedAt,
+        };
+
       await this.markRefreshing(tx, resolved.identity);
-      try {
-        const state = await refresh({
+      return { kind: 'refresh' as const, resolved };
+    });
+    if (outcome.kind === 'cached') return outcome.state;
+    if (outcome.kind === 'wait')
+      return this.waitForRefresh(
+        scope,
+        outcome.identity,
+        outcome.refreshStartedAt,
+        lockScope,
+        refresh,
+        now,
+      );
+
+    const { resolved } = outcome;
+    try {
+      const state = await refresh({
+        ...scope,
+        authFlowId: resolved.identity.authFlowId,
+        setupTestId: resolved.identity.setupTestId,
+        setupTest: resolved.setupTest,
+        secrets: resolved.secrets,
+      });
+      const createdAt = now.toISOString();
+      const expiresAt = deriveAuthenticationStateExpiration(
+        state,
+        now,
+        resolved.maxAgeSeconds,
+      ).toISOString();
+      const encrypted = this.encryption.encrypt(JSON.stringify(state), lockScope);
+      await this.db
+        .insert(authenticationStates)
+        .values({
+          owner: 'server',
           ...scope,
           authFlowId: resolved.identity.authFlowId,
-          setupTestId: resolved.identity.setupTestId,
-          setupTest: resolved.setupTest,
-          secrets: resolved.secrets,
-        });
-        const createdAt = now.toISOString();
-        const expiresAt = deriveAuthenticationStateExpiration(
-          state,
-          now,
-          resolved.maxAgeSeconds,
-        ).toISOString();
-        const encrypted = this.encryption.encrypt(JSON.stringify(state), lockScope);
-        await tx
-          .insert(authenticationStates)
-          .values({
-            owner: 'server',
-            ...scope,
+          identity: identityRecord(resolved.identity),
+          encryptedState: encrypted.value,
+          keyVersion: encrypted.keyVersion,
+          status: 'ready',
+          createdAt,
+          expiresAt,
+          lastError: null,
+          updatedAt: createdAt,
+        })
+        .onConflictDoUpdate({
+          target: [
+            authenticationStates.owner,
+            authenticationStates.projectId,
+            authenticationStates.environmentId,
+            authenticationStates.profileId,
+          ],
+          set: {
             authFlowId: resolved.identity.authFlowId,
             identity: identityRecord(resolved.identity),
             encryptedState: encrypted.value,
@@ -155,52 +222,80 @@ export class ServerAuthenticationStateStore {
             expiresAt,
             lastError: null,
             updatedAt: createdAt,
-          })
-          .onConflictDoUpdate({
-            target: [
-              authenticationStates.owner,
-              authenticationStates.projectId,
-              authenticationStates.environmentId,
-              authenticationStates.profileId,
-            ],
-            set: {
-              authFlowId: resolved.identity.authFlowId,
-              identity: identityRecord(resolved.identity),
-              encryptedState: encrypted.value,
-              keyVersion: encrypted.keyVersion,
-              status: 'ready',
-              createdAt,
-              expiresAt,
-              lastError: null,
-              updatedAt: createdAt,
-            },
-          });
-        return { ok: true as const, state };
-      } catch (error) {
-        const message = redactSecrets(
-          error instanceof Error ? error.message : 'Authentication refresh failed.',
-          resolved.secrets,
+          },
+        });
+      return state;
+    } catch (error) {
+      const message = redactSecrets(
+        error instanceof Error ? error.message : 'Authentication refresh failed.',
+        resolved.secrets,
+      );
+      await this.db
+        .update(authenticationStates)
+        .set({
+          status: 'refresh-failed',
+          lastError: message,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(authenticationStates.owner, 'server'),
+            eq(authenticationStates.projectId, scope.projectId),
+            eq(authenticationStates.environmentId, scope.environmentId),
+            eq(authenticationStates.profileId, scope.profileId),
+            eq(authenticationStates.status, 'refreshing'),
+          ),
         );
-        await tx
-          .update(authenticationStates)
-          .set({
-            status: 'refresh-failed',
-            lastError: message,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(
-            and(
-              eq(authenticationStates.owner, 'server'),
-              eq(authenticationStates.projectId, scope.projectId),
-              eq(authenticationStates.environmentId, scope.environmentId),
-              eq(authenticationStates.profileId, scope.profileId),
-            ),
-          );
-        return { ok: false as const, error: new Error(message) };
+      // The original error may contain decrypted secret values; keep only the redacted symptom.
+      // eslint-disable-next-line preserve-caught-error
+      throw new Error(message);
+    }
+  }
+
+  private async waitForRefresh(
+    scope: { projectId: string; environmentId: string; profileId: string },
+    identity: ServerAuthenticationStateIdentity,
+    refreshStartedAt: string,
+    lockScope: string,
+    refresh: (input: ServerAuthenticationRefreshInput) => Promise<AuthenticationStorageState>,
+    now: Date,
+  ): Promise<AuthenticationStorageState> {
+    const deadline = Date.parse(refreshStartedAt) + REFRESH_LEASE_MS;
+    while (Date.now() < deadline) {
+      await delay(REFRESH_POLL_MS);
+      const [state] = await this.db
+        .select()
+        .from(authenticationStates)
+        .where(
+          and(
+            eq(authenticationStates.owner, 'server'),
+            eq(authenticationStates.projectId, scope.projectId),
+            eq(authenticationStates.environmentId, scope.environmentId),
+            eq(authenticationStates.profileId, scope.profileId),
+          ),
+        )
+        .limit(1);
+      if (state?.status === 'refreshing' && state.updatedAt === refreshStartedAt) continue;
+      if (
+        state?.status === 'ready' &&
+        state.encryptedState &&
+        state.keyVersion !== null &&
+        sameIdentity(state.identity, identity)
+      ) {
+        try {
+          return JSON.parse(
+            this.encryption.decrypt(state.encryptedState, state.keyVersion, lockScope),
+          ) as AuthenticationStorageState;
+        } catch {
+          await this.invalidate(scope);
+          return this.getOrRefresh(scope, refresh, now);
+        }
       }
-    });
-    if (!outcome.ok) throw outcome.error;
-    return outcome.state;
+      if (state?.status === 'refresh-failed')
+        throw new Error(state.lastError ?? 'Authentication refresh failed.');
+      return this.getOrRefresh(scope, refresh, now);
+    }
+    return this.getOrRefresh(scope, refresh, now);
   }
 
   async clear(scope: {

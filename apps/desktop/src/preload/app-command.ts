@@ -50,6 +50,54 @@ const storageStateVariablesAreValid = (
   }
 };
 
+const profileAuthenticationTypeSchema = z.enum([
+  'credentials',
+  'cookies',
+  'headers',
+  'storage-state',
+  'browser-session',
+]);
+const profileVariableSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  value: z.string().min(1).max(1_000_000),
+  sensitive: z.boolean(),
+});
+const profileVariablesSchema = z
+  .array(profileVariableSchema)
+  .max(50)
+  .refine(
+    (variables) => new Set(variables.map((variable) => variable.name)).size === variables.length,
+  );
+const profileAuthenticationFields = {
+  name: z.string().trim().min(1).max(100),
+  authenticationType: profileAuthenticationTypeSchema,
+  variables: profileVariablesSchema,
+} as const;
+const validateProfileAuthentication = (
+  command: {
+    authenticationType: z.infer<typeof profileAuthenticationTypeSchema>;
+    variables: z.infer<typeof profileVariablesSchema>;
+  },
+  context: z.RefinementCtx,
+): void => {
+  validateHeaderVariableNames(command, context);
+  if (command.authenticationType !== 'browser-session' && command.variables.length === 0)
+    context.addIssue({
+      code: 'custom',
+      path: ['variables'],
+      message: 'Variables are required.',
+    });
+  if (
+    command.authenticationType === 'storage-state' &&
+    !storageStateVariablesAreValid(command.variables)
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['variables'],
+      message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
+    });
+};
+
 /**
  * Desktop IPC is a separate compatibility boundary from the server protocol.
  * Its resource fields reuse protocol invariants, while its command envelope
@@ -179,46 +227,9 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('create-profile'),
       environmentId: entityIdSchema,
-      name: z.string().trim().min(1).max(100),
-      authenticationType: z.enum([
-        'credentials',
-        'cookies',
-        'headers',
-        'storage-state',
-        'browser-session',
-      ]),
-      variables: z
-        .array(
-          z.object({
-            name: z.string().trim().min(1).max(100),
-            value: z.string().min(1).max(1_000_000),
-            sensitive: z.boolean(),
-          }),
-        )
-        .max(50)
-        .refine(
-          (variables) =>
-            new Set(variables.map((variable) => variable.name)).size === variables.length,
-        ),
+      ...profileAuthenticationFields,
     })
-    .superRefine((command, context) => {
-      validateHeaderVariableNames(command, context);
-      if (command.authenticationType !== 'browser-session' && command.variables.length === 0)
-        context.addIssue({
-          code: 'custom',
-          path: ['variables'],
-          message: 'Variables are required.',
-        });
-      if (
-        command.authenticationType === 'storage-state' &&
-        !storageStateVariablesAreValid(command.variables)
-      )
-        context.addIssue({
-          code: 'custom',
-          path: ['variables'],
-          message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
-        });
-    }),
+    .superRefine(validateProfileAuthentication),
   z.object({ type: z.literal('select-profile'), profileId: entityIdSchema.optional() }),
   z
     .object({
@@ -226,46 +237,9 @@ export const appCommandSchema = z.discriminatedUnion('type', [
       profileId: entityIdSchema,
       environmentId: entityIdSchema,
       baseRevision: z.number().int().positive(),
-      name: z.string().trim().min(1).max(100),
-      authenticationType: z.enum([
-        'credentials',
-        'cookies',
-        'headers',
-        'storage-state',
-        'browser-session',
-      ]),
-      variables: z
-        .array(
-          z.object({
-            name: z.string().trim().min(1).max(100),
-            value: z.string().min(1).max(1_000_000),
-            sensitive: z.boolean(),
-          }),
-        )
-        .max(50)
-        .refine(
-          (variables) =>
-            new Set(variables.map((variable) => variable.name)).size === variables.length,
-        ),
+      ...profileAuthenticationFields,
     })
-    .superRefine((command, context) => {
-      validateHeaderVariableNames(command, context);
-      if (command.authenticationType !== 'browser-session' && command.variables.length === 0)
-        context.addIssue({
-          code: 'custom',
-          path: ['variables'],
-          message: 'Variables are required.',
-        });
-      if (
-        command.authenticationType === 'storage-state' &&
-        !storageStateVariablesAreValid(command.variables)
-      )
-        context.addIssue({
-          code: 'custom',
-          path: ['variables'],
-          message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
-        });
-    }),
+    .superRefine(validateProfileAuthentication),
   z.object({ type: z.literal('select-test'), testId: entityIdSchema }),
   z.object({
     type: z.literal('create-authentication-flow'),

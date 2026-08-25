@@ -470,16 +470,6 @@ export class CanonicalRepository {
             'A configured secret was not found in this project.',
           );
       }
-      const [existing] = await tx
-        .select({ revision: profileEnvironmentAuthentications.revision })
-        .from(profileEnvironmentAuthentications)
-        .where(
-          and(
-            eq(profileEnvironmentAuthentications.profileId, request.profileId),
-            eq(profileEnvironmentAuthentications.environmentId, request.environmentId),
-          ),
-        )
-        .limit(1);
       const [row] = await tx
         .insert(profileEnvironmentAuthentications)
         .values({
@@ -487,7 +477,7 @@ export class CanonicalRepository {
           environmentId: request.environmentId,
           authFlowId: request.authFlowId,
           secretBindings: request.secretBindings,
-          revision: (existing?.revision ?? 0) + 1,
+          revision: 1,
           updatedAt: new Date().toISOString(),
         })
         .onConflictDoUpdate({
@@ -498,7 +488,7 @@ export class CanonicalRepository {
           set: {
             authFlowId: request.authFlowId,
             secretBindings: request.secretBindings,
-            revision: (existing?.revision ?? 0) + 1,
+            revision: sql`${profileEnvironmentAuthentications.revision} + 1`,
             updatedAt: new Date().toISOString(),
           },
         })
@@ -566,7 +556,13 @@ export class CanonicalRepository {
           revision: current.revision + 1,
           updatedAt: new Date().toISOString(),
         })
-        .where(and(eq(projectSecrets.id, request.secretId), isNull(projectSecrets.deletedAt)))
+        .where(
+          and(
+            eq(projectSecrets.id, request.secretId),
+            eq(projectSecrets.revision, current.revision),
+            isNull(projectSecrets.deletedAt),
+          ),
+        )
         .returning();
       if (!row) throw new RepositoryError('CONFLICT', 'The project secret changed.');
       await tx.insert(secretAuditEvents).values({

@@ -281,6 +281,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@testron/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@warpunit/slang-react':
         specifier: 0.4.0
         version: 0.4.0(react@19.2.8)

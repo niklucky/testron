@@ -41,4 +41,19 @@ describe('authentication storage-state expiry', () => {
       ),
     ).toBe(true);
   });
+
+  it('ignores expiration values that predate state creation', () => {
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    const expiration = deriveAuthenticationStateExpiration(
+      {
+        cookies: [
+          { value: jwt(Date.parse('2025-12-31T22:00:00Z') / 1_000), expires: 1_700_000_000 },
+        ],
+        origins: [],
+      },
+      createdAt,
+      60 * 60,
+    );
+    expect(expiration.toISOString()).toBe('2026-01-01T01:00:00.000Z');
+  });
 });

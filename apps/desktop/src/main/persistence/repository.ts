@@ -313,17 +313,20 @@ export class TestronRepository {
         'SELECT id, project_id, environment_ids, test_suite_id, title, created_at, updated_at FROM tests ORDER BY updated_at DESC',
       )
       .all()
-      .map((row) => ({
-        id: String(row.id),
-        projectId: String(row.project_id),
-        environmentIds: JSON.parse(String(row.environment_ids)) as string[],
-        testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
-        profileId: this.getDraft(String(row.id))?.content.profileId ?? null,
-        title: String(row.title),
-        prerequisites: this.getDraft(String(row.id))?.content.prerequisites ?? [],
-        createdAt: String(row.created_at),
-        updatedAt: String(row.updated_at),
-      }));
+      .map((row) => {
+        const draft = this.getDraft(String(row.id));
+        return {
+          id: String(row.id),
+          projectId: String(row.project_id),
+          environmentIds: JSON.parse(String(row.environment_ids)) as string[],
+          testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
+          profileId: draft?.content.profileId ?? null,
+          title: String(row.title),
+          prerequisites: draft?.content.prerequisites ?? [],
+          createdAt: String(row.created_at),
+          updatedAt: String(row.updated_at),
+        };
+      });
   }
 
   getProject(id: string): ProjectRecord | undefined {

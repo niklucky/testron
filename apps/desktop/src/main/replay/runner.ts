@@ -278,6 +278,7 @@ export class LocalReplayRunner {
       }
       timer = setTimeout(() => {
         timedOut = true;
+        void this.context?.close().catch(() => undefined);
       }, options.timeoutMs);
 
       for (const result of results) {
@@ -304,7 +305,7 @@ export class LocalReplayRunner {
             ? 'Authentication flow step failed.'
             : stripVTControlCharacters(error instanceof Error ? error.message : String(error));
           result.pageUrl = page.url();
-          const screenshotCaptured = options.captureStorageState
+          const screenshotCaptured = protectSensitiveArtifacts
             ? false
             : await page
                 .screenshot({ path: screenshotPath, fullPage: true })
@@ -324,7 +325,7 @@ export class LocalReplayRunner {
       if (snapshot.status === 'running') {
         const status = timedOut ? 'timedOut' : this.cancelled ? 'cancelled' : 'passed';
         const timeoutScreenshotCaptured =
-          status === 'timedOut' && !options.captureStorageState
+          status === 'timedOut' && !protectSensitiveArtifacts
             ? await page
                 .screenshot({ path: screenshotPath, fullPage: true })
                 .then(() => true)

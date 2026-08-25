@@ -231,7 +231,9 @@ const validateProfileEnvironments = (
   });
 };
 
-const validStorageStateVariable = (variables: Array<{ name: string; value?: string }>): boolean => {
+export const storageStateVariablesAreValid = (
+  variables: Array<{ name: string; value?: string }>,
+): boolean => {
   if (variables.length !== 1 || variables[0]?.name !== 'storageState') return false;
   try {
     return browserStorageStateSchema.safeParse(JSON.parse(variables[0].value ?? '')).success;
@@ -258,7 +260,9 @@ export const profileSchema = z
     validateHeaderVariableNames(profile, context);
     if (
       profile.authenticationType === 'storage-state' &&
-      profile.environments.some((environment) => !validStorageStateVariable(environment.variables))
+      profile.environments.some(
+        (environment) => !storageStateVariablesAreValid(environment.variables),
+      )
     )
       context.addIssue({
         code: 'custom',

@@ -52,7 +52,8 @@ Separate three concepts:
 Add a profile authentication type:
 
 ```ts
-type ProfileAuthenticationType = 'credentials' | 'cookies' | 'headers' | 'browser-session';
+type ProfileAuthenticationType =
+  'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
 ```
 
 Add a synchronized authentication-flow resource:

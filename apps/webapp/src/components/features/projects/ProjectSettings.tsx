@@ -68,7 +68,7 @@ export const ProjectSettings = ({
   const [newEnvironmentUrl, setNewEnvironmentUrl] = useState('');
   const creationOriginId = useRef<string | undefined>(undefined);
   const [editingProfileId, setEditingProfileId] = useState<string | 'new'>();
-  const [newFlowName, setNewFlowName] = useState('Browser login');
+  const [newFlowName, setNewFlowName] = useState(() => t('browser_login'));
   const [setupTestId, setSetupTestId] = useState('');
   const [refreshMode, setRefreshMode] = useState<'when-stale' | 'before-every-run'>('when-stale');
   const [maxAgeHours, setMaxAgeHours] = useState(12);
@@ -405,11 +405,11 @@ export const ProjectSettings = ({
                                     : profile.authenticationType === 'headers'
                                       ? t('browser_headers')
                                       : profile.authenticationType === 'storage-state'
-                                        ? 'Saved browser storage state'
+                                        ? t('saved_browser_storage_state')
                                         : profile.authenticationType === 'browser-session'
-                                          ? 'Browser login'
+                                          ? t('browser_login')
                                           : t('login_password')
-                                  : 'Configure'}
+                                  : t('configure')}
                               </span>
                               <IconButton
                                 icon="pencil"
@@ -433,27 +433,25 @@ export const ProjectSettings = ({
 
                     {browserProfiles.length > 0 && selectedEnvironment && (
                       <section className="border-t border-line pt-5">
-                        <h4 className="text-md font-semibold">Browser authentication</h4>
-                        <p className="mt-1 text-ink-3">
-                          Login tests create separate encrypted desktop and server sessions.
-                        </p>
+                        <h4 className="text-md font-semibold">{t('browser_authentication')}</h4>
+                        <p className="mt-1 text-ink-3">{t('browser_authentication_hint')}</p>
 
                         <div className="mt-4 rounded-lg border border-line p-4">
-                          <h5 className="font-medium">Authentication flows</h5>
+                          <h5 className="font-medium">{t('authentication_flows')}</h5>
                           <div className="mt-3 grid gap-2 sm:grid-cols-2">
                             <input
-                              aria-label="Authentication flow name"
+                              aria-label={t('authentication_flow_name')}
                               value={newFlowName}
                               onChange={(event) => setNewFlowName(event.target.value)}
                               className={fieldClass}
                             />
                             <select
-                              aria-label="Setup test"
+                              aria-label={t('setup_test')}
                               value={setupTestId}
                               onChange={(event) => setSetupTestId(event.target.value)}
                               className={fieldClass}
                             >
-                              <option value="">Select login test</option>
+                              <option value="">{t('select_login_test')}</option>
                               {setupTests.map((test) => (
                                 <option key={test.id} value={test.id}>
                                   {test.title}
@@ -461,7 +459,7 @@ export const ProjectSettings = ({
                               ))}
                             </select>
                             <select
-                              aria-label="Refresh policy"
+                              aria-label={t('refresh_policy')}
                               value={refreshMode}
                               onChange={(event) =>
                                 setRefreshMode(
@@ -470,11 +468,11 @@ export const ProjectSettings = ({
                               }
                               className={fieldClass}
                             >
-                              <option value="when-stale">Automatically when stale</option>
-                              <option value="before-every-run">Before every run</option>
+                              <option value="when-stale">{t('automatically_when_stale')}</option>
+                              <option value="before-every-run">{t('before_every_run')}</option>
                             </select>
                             <label className="text-ink-3">
-                              Maximum age (hours)
+                              {t('maximum_age_hours')}
                               <input
                                 type="number"
                                 min={1}
@@ -485,7 +483,7 @@ export const ProjectSettings = ({
                               />
                             </label>
                             <label className="text-ink-3">
-                              Refresh before expiry (minutes)
+                              {t('refresh_before_expiry_minutes')}
                               <input
                                 type="number"
                                 min={0}
@@ -518,23 +516,23 @@ export const ProjectSettings = ({
                                 });
                               }}
                             >
-                              Create flow
+                              {t('create_flow')}
                             </Button>
                           </div>
                         </div>
 
                         <div className="mt-3 rounded-lg border border-line p-4">
-                          <h5 className="font-medium">Write-only project secrets</h5>
+                          <h5 className="font-medium">{t('write_only_project_secrets')}</h5>
                           <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                             <input
-                              aria-label="Secret name"
+                              aria-label={t('secret_name')}
                               placeholder="E2E_PASSWORD"
                               value={newSecretName}
                               onChange={(event) => setNewSecretName(event.target.value)}
                               className={fieldClass}
                             />
                             <input
-                              aria-label="Secret value"
+                              aria-label={t('secret_value')}
                               type="password"
                               value={newSecretValue}
                               onChange={(event) => setNewSecretValue(event.target.value)}
@@ -554,7 +552,7 @@ export const ProjectSettings = ({
                                 setNewSecretName('');
                               }}
                             >
-                              Save secret
+                              {t('save_secret')}
                             </Button>
                           </div>
                         </div>
@@ -602,12 +600,16 @@ export const ProjectSettings = ({
                               <div className="flex items-center justify-between gap-3">
                                 <h5 className="font-medium">{profile.name}</h5>
                                 <span className="text-right text-ink-3">
-                                  Desktop: {desktopState?.status ?? 'not-created'} · Server:{' '}
-                                  {state?.status ?? 'not-created'}
+                                  {t('authentication_state_summary', {
+                                    value1: desktopState?.status ?? t('not_created'),
+                                    value2: state?.status ?? t('not_created'),
+                                  })}
                                 </span>
                               </div>
                               <select
-                                aria-label={`Authentication flow for ${profile.name}`}
+                                aria-label={t('authentication_flow_for', {
+                                  value1: profile.name,
+                                })}
                                 value={flowId}
                                 onChange={(event) =>
                                   setSelectedFlows((current) => ({
@@ -617,7 +619,7 @@ export const ProjectSettings = ({
                                 }
                                 className={fieldClass}
                               >
-                                <option value="">Select authentication flow</option>
+                                <option value="">{t('select_authentication_flow')}</option>
                                 {authenticationFlows.map((flow) => (
                                   <option key={flow.id} value={flow.id}>
                                     {flow.name}
@@ -628,7 +630,7 @@ export const ProjectSettings = ({
                                 <label key={name} className="mt-3 block">
                                   <span className="text-ink-3">{name}</span>
                                   <select
-                                    aria-label={`Secret binding ${name}`}
+                                    aria-label={t('secret_binding', { value1: name })}
                                     value={bindings[name]?.secretId ?? ''}
                                     onChange={(event) =>
                                       setSelectedBindings((current) => ({
@@ -638,7 +640,7 @@ export const ProjectSettings = ({
                                     }
                                     className={fieldClass}
                                   >
-                                    <option value="">Select project secret</option>
+                                    <option value="">{t('select_project_secret')}</option>
                                     {projectSecrets.map((secret) => (
                                       <option key={secret.id} value={secret.id}>
                                         {secret.name}
@@ -647,9 +649,9 @@ export const ProjectSettings = ({
                                   </select>
                                   {window.testronDesktop && (
                                     <input
-                                      aria-label={`Desktop value ${name}`}
+                                      aria-label={t('desktop_value', { value1: name })}
                                       type="password"
-                                      placeholder="Enter only when refreshing desktop"
+                                      placeholder={t('desktop_secret_refresh_hint')}
                                       value={desktopSecretValues[`${profile.id}:${name}`] ?? ''}
                                       onChange={(event) =>
                                         setDesktopSecretValues((current) => ({
@@ -680,7 +682,7 @@ export const ProjectSettings = ({
                                     })
                                   }
                                 >
-                                  Save authentication
+                                  {t('save_authentication')}
                                 </Button>
                                 {window.testronDesktop && (
                                   <Button
@@ -709,7 +711,7 @@ export const ProjectSettings = ({
                                       );
                                     }}
                                   >
-                                    Refresh desktop session
+                                    {t('refresh_desktop_session')}
                                   </Button>
                                 )}
                                 {window.testronDesktop && (
@@ -723,7 +725,7 @@ export const ProjectSettings = ({
                                       })
                                     }
                                   >
-                                    Clear desktop session
+                                    {t('clear_desktop_session')}
                                   </Button>
                                 )}
                                 <Button
@@ -738,7 +740,7 @@ export const ProjectSettings = ({
                                     })
                                   }
                                 >
-                                  Refresh server session
+                                  {t('refresh_server_session')}
                                 </Button>
                                 <Button
                                   type="button"
@@ -752,7 +754,7 @@ export const ProjectSettings = ({
                                     })
                                   }
                                 >
-                                  Clear server session
+                                  {t('clear_server_session')}
                                 </Button>
                               </div>
                             </div>

@@ -48,15 +48,18 @@ export const deriveAuthenticationStateExpiration = (
   createdAt: Date,
   maxAgeSeconds: number,
 ): Date => {
-  const candidates = [createdAt.getTime() + maxAgeSeconds * 1_000];
+  const maximum = createdAt.getTime() + maxAgeSeconds * 1_000;
+  const discovered: number[] = [];
   for (const cookie of state.cookies) {
-    if (cookie.expires !== undefined && cookie.expires > 0) candidates.push(cookie.expires * 1_000);
-    candidates.push(...expirationsInValue(cookie.value));
+    if (cookie.expires !== undefined && cookie.expires > 0) discovered.push(cookie.expires * 1_000);
+    discovered.push(...expirationsInValue(cookie.value));
   }
   for (const origin of state.origins)
     for (const entry of origin.localStorage ?? [])
-      candidates.push(...expirationsInValue(entry.value));
-  return new Date(Math.min(...candidates));
+      discovered.push(...expirationsInValue(entry.value));
+  return new Date(
+    Math.min(maximum, ...discovered.filter((candidate) => candidate > createdAt.getTime())),
+  );
 };
 
 export const authenticationStateIsStale = (

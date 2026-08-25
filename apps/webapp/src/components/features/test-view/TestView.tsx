@@ -146,15 +146,25 @@ export const TestView = () => {
   const projectEnvironments = snapshot.library.environments.filter(
     (environment) => environment.projectId === selectedTest?.projectId,
   );
-  const testProfiles = snapshot.library.profiles.filter(
-    (profile) =>
-      profile.projectId === selectedTest?.projectId &&
-      Boolean(
+  const testProfiles = snapshot.library.profiles
+    .filter(
+      (profile) =>
+        profile.projectId === selectedTest?.projectId &&
+        (profile.id === selectedTest?.profileId ||
+          Boolean(
+            selectedTest?.environmentIds.every((environmentId) =>
+              profile.environmentIds.includes(environmentId),
+            ),
+          )),
+    )
+    .map((profile) => ({
+      ...profile,
+      supported: Boolean(
         selectedTest?.environmentIds.every((environmentId) =>
           profile.environmentIds.includes(environmentId),
         ),
       ),
-  );
+    }));
   const editInRecorder = () =>
     goToRecorder(
       selectedTestId && selectedTest

@@ -42,7 +42,7 @@ export const DetailCard = ({
   onDetail: (detail: TestDetail) => void;
   onLog: (message: string) => void;
   metadataEditable?: boolean;
-  profiles?: Array<{ id: string; name: string }>;
+  profiles?: Array<{ id: string; name: string; supported?: boolean }>;
   profileId?: string;
   onProfile?: (profileId?: string) => void;
   environmentOptions?: Array<{ id: string; name: string }>;
@@ -75,7 +75,13 @@ export const DetailCard = ({
             value={profileId ?? ''}
             options={[
               { id: '', label: 'No profile' },
-              ...profiles.map((profile) => ({ id: profile.id, label: profile.name })),
+              ...profiles.map((profile) => ({
+                id: profile.id,
+                label:
+                  profile.supported === false
+                    ? `${profile.name} (${t('unsupported')})`
+                    : profile.name,
+              })),
             ]}
             onChange={(next) => onProfile(next || undefined)}
           />

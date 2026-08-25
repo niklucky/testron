@@ -2825,18 +2825,27 @@ const createWindow = async (): Promise<void> => {
             profileId,
           }),
           rm(path.join(dataDirectory, 'auth'), { recursive: true, force: true }),
-        ]).then(() => {
-          desktopAuthenticationStates.delete(
-            desktopAuthenticationStateKey(profileId, environment.id),
-          );
-          const revision = store.getEnvironment(environment.id)
-            ? store.rotateAuthenticationRevision(environment.id)
-            : environment.authRevision;
-          session.warn(
-            `Cleared local authentication state for ${environment.name}; new revision is ${revision}.`,
-          );
-          sendSnapshot(session.snapshot());
-        });
+        ])
+          .then(() => {
+            desktopAuthenticationStates.delete(
+              desktopAuthenticationStateKey(profileId, environment.id),
+            );
+            const revision = store.getEnvironment(environment.id)
+              ? store.rotateAuthenticationRevision(environment.id)
+              : environment.authRevision;
+            session.warn(
+              `Cleared local authentication state for ${environment.name}; new revision is ${revision}.`,
+            );
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(
+              error instanceof Error
+                ? `Could not clear local authentication state: ${error.message}`
+                : 'Could not clear local authentication state.',
+            );
+            sendSnapshot(session.snapshot());
+          });
         break;
       }
       case 'login-server':

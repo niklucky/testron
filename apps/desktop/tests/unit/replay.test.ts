@@ -100,7 +100,7 @@ describe('LocalReplayRunner', () => {
     expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(true);
   });
 
-  it('keeps a failure screenshot while suppressing a sensitive trace', async () => {
+  it('suppresses failure artifacts for a protected replay', async () => {
     const artifactsDirectory = artifactDirectory();
     const result = await new LocalReplayRunner().run({
       steps: [
@@ -128,13 +128,13 @@ describe('LocalReplayRunner', () => {
     });
 
     expect(result.status).toBe('failed');
-    expect(result.screenshotPath).toBe(path.join(artifactsDirectory, 'failure.png'));
+    expect(result.screenshotPath).toBeUndefined();
     expect(result.tracePath).toBeUndefined();
-    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(true);
+    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(false);
     expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(false);
   });
 
-  it('captures a screenshot when the run times out', async () => {
+  it('closes the browser at the run deadline', async () => {
     const artifactsDirectory = artifactDirectory();
     const result = await new LocalReplayRunner().run({
       steps: [
@@ -161,8 +161,8 @@ describe('LocalReplayRunner', () => {
     });
 
     expect(result.status).toBe('timedOut');
-    expect(result.screenshotPath).toBe(path.join(artifactsDirectory, 'failure.png'));
-    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(true);
+    expect(result.screenshotPath).toBeUndefined();
+    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(false);
   });
 
   it('adds profile headers and cookies to browser requests', async () => {

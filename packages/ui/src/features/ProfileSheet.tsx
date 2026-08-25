@@ -2,6 +2,7 @@ import { useTranslation } from '@warpunit/slang-react';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { browserStorageStateSchema } from '@testron/protocol';
 import { Button } from '../design';
 
 export interface ProfileVariableInput {
@@ -78,10 +79,7 @@ export const ProfileSheet = ({
   const storageStateValid = (() => {
     if (authenticationType !== 'storage-state') return true;
     try {
-      const parsed = JSON.parse(variables[0]?.value ?? '') as unknown;
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
-      const state = parsed as { cookies?: unknown; origins?: unknown };
-      return Array.isArray(state.cookies) && Array.isArray(state.origins);
+      return browserStorageStateSchema.safeParse(JSON.parse(variables[0]?.value ?? '')).success;
     } catch {
       return false;
     }
@@ -132,26 +130,20 @@ export const ProfileSheet = ({
             <option disabled>{t('oauth_coming_later')}</option>
             <option value="cookies">{t('cookies')}</option>
             <option value="headers">{t('browser_headers')}</option>
-            <option value="storage-state">Saved browser storage state</option>
-            <option value="browser-session">Browser login</option>
+            <option value="storage-state">{t('saved_browser_storage_state')}</option>
+            <option value="browser-session">{t('browser_login')}</option>
           </select>
         </label>
 
         {authenticationType === 'browser-session' ? (
-          <p className="mt-4 text-ink-3">
-            Select the login flow and bind write-only project secrets in project settings.
-          </p>
+          <p className="mt-4 text-ink-3">{t('browser_login_profile_hint')}</p>
         ) : authenticationType === 'storage-state' ? (
           <div className="mt-4">
-            {editing && (
-              <p className="mb-3 text-ink-3">
-                Paste the complete JSON again to replace the saved storage state.
-              </p>
-            )}
+            {editing && <p className="mb-3 text-ink-3">{t('replace_storage_state_hint')}</p>}
             <label className="block">
-              <span className="text-ink-3">Storage state JSON</span>
+              <span className="text-ink-3">{t('storage_state_json')}</span>
               <textarea
-                aria-label="Storage state JSON"
+                aria-label={t('storage_state_json')}
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
@@ -168,9 +160,7 @@ export const ProfileSheet = ({
               />
             </label>
             {!storageStateValid && variables[0]?.value && (
-              <p className="mt-2 text-critical">
-                Enter valid storage-state JSON containing cookies and origins arrays.
-              </p>
+              <p className="mt-2 text-critical">{t('invalid_storage_state_json')}</p>
             )}
           </div>
         ) : (
