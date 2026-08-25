@@ -1,8 +1,10 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { ACCOUNT_PASSWORD_MIN_LENGTH } from '@testron/protocol';
 import type { LibrarySnapshot } from '../../../lib/library';
 import { Button, Icon, IconButton, PulseDot, useTheme } from '../../ui/design';
+import { authenticationErrorMessage, type Authenticate } from './authentication';
 
 type ServerState = NonNullable<LibrarySnapshot['server']>;
 type AuthMode = 'login' | 'register';
@@ -24,14 +26,22 @@ export const AuthenticationLoading = () => {
 const requestedMode = (): AuthMode =>
   new URLSearchParams(window.location.search).get('mode') === 'register' ? 'register' : 'login';
 
-export const AuthLanding = ({ server }: { server: ServerState }) => {
+export const AuthLanding = ({
+  server,
+  authenticate,
+}: {
+  server: ServerState;
+  authenticate: Authenticate;
+}) => {
   const { t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [mode, setMode] = useState<AuthMode>(requestedMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const authenticating = server.authentication === 'authenticating';
+  const [submitting, setSubmitting] = useState(false);
+  const [authenticationError, setAuthenticationError] = useState<string>();
+  const authenticating = submitting || server.authentication === 'authenticating';
 
   useEffect(() => {
     window.testron?.command({ type: 'set-shell-route', route: 'dashboard' });
@@ -40,6 +50,7 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
   const chooseMode = (next: AuthMode) => {
     setMode(next);
     setPassword('');
+    setAuthenticationError(undefined);
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -48,23 +59,27 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
       !server.configured ||
       authenticating ||
       !email.trim() ||
-      password.length < 12 ||
+      password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
       (mode === 'register' && !name.trim())
     )
       return;
-    window.testron?.command(
+    setSubmitting(true);
+    setAuthenticationError(undefined);
+    void authenticate(
       mode === 'login'
-        ? { type: 'login-server', email: email.trim(), password }
-        : { type: 'register-server', name: name.trim(), email: email.trim(), password },
-    );
+        ? { mode, email: email.trim(), password }
+        : { mode, name: name.trim(), email: email.trim(), password },
+    )
+      .catch((error: unknown) => setAuthenticationError(authenticationErrorMessage(error)))
+      .finally(() => setSubmitting(false));
   };
 
-  const error = server.message;
+  const error = authenticationError ?? server.message;
   const disabled =
     !server.configured ||
     authenticating ||
     !email.trim() ||
-    password.length < 12 ||
+    password.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
     (mode === 'register' && !name.trim());
 
   return (
@@ -210,7 +225,7 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                 <span className="font-medium text-ink-2">{t('password')}</span>
                 <input
                   required
-                  minLength={12}
+                  minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
                   maxLength={200}
                   type="password"
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -218,7 +233,7 @@ export const AuthLanding = ({ server }: { server: ServerState }) => {
                   value={password}
                   disabled={authenticating}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder={t('at_least_12_characters')}
+                  placeholder={t('at_least_8_characters')}
                   className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
                 />
               </label>

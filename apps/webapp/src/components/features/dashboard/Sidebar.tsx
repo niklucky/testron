@@ -148,6 +148,7 @@ export const Sidebar = ({
           active={view === 'members'}
           onClick={() => onView('members')}
         />
+        <NavItem icon="settings" label={t('settings')} onClick={onSettings} />
         <Button variant="ghost" size="lg" block icon="record" onClick={() => onNewTest()}>
           {t('new_test')}
         </Button>
@@ -211,9 +212,6 @@ export const Sidebar = ({
       />
 
       <div className="shrink-0 border-t border-line p-2">
-        <Button variant="ghost" size="lg" block icon="settings" onClick={onSettings}>
-          {t('settings')}
-        </Button>
         <div className="relative" ref={accountMenuRef}>
           {accountMenuOpen && (
             <div

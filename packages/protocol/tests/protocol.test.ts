@@ -20,6 +20,7 @@ import {
   updateProfileRequestSchema,
 } from '../src/operations';
 import { testRevisionSchema, testSnapshotSchema, webProfileSchema } from '../src/resources';
+import { authLoginInputSchema, authRegisterInputSchema } from '../src/trpc';
 
 const fixture = (name: string): unknown =>
   JSON.parse(
@@ -499,5 +500,28 @@ describe('account and invitation mutations', () => {
         newPassword: 'same password value',
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts eight-character account passwords and rejects shorter values', () => {
+    expect(
+      authLoginInputSchema.safeParse({ email: 'owner@example.test', password: '12345678' }).success,
+    ).toBe(true);
+    expect(
+      authLoginInputSchema.safeParse({ email: 'owner@example.test', password: '1234567' }).success,
+    ).toBe(false);
+    expect(
+      authRegisterInputSchema.safeParse({
+        name: 'Owner',
+        email: 'owner@example.test',
+        password: '12345678',
+      }).success,
+    ).toBe(true);
+    expect(
+      changeAccountPasswordRequestSchema.safeParse({
+        meta,
+        currentPassword: 'old-pass',
+        newPassword: 'new-pass',
+      }).success,
+    ).toBe(true);
   });
 });

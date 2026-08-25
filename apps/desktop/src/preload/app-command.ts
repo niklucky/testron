@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { stepSchema, stepsSchema } from '@testron/domain/steps/schema';
 import {
+  ACCOUNT_PASSWORD_MIN_LENGTH,
   authLoginInputSchema,
   authRegisterInputSchema,
   browserStorageStateSchema,
@@ -155,8 +156,8 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('change-account-password'),
-    currentPassword: z.string().min(12).max(200),
-    newPassword: z.string().min(12).max(200),
+    currentPassword: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
+    newPassword: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
   }),
   z.object({ type: z.literal('lookup-invitee'), email: z.email() }),
   z.object({

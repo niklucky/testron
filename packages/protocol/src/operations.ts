@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  ACCOUNT_PASSWORD_MIN_LENGTH,
   entityIdSchema,
   httpUrlSchema,
   mutationMetadataSchema,
@@ -35,7 +36,7 @@ import {
 } from './resources';
 
 const accountNameSchema = z.string().trim().min(1).max(100);
-const accountPasswordSchema = z.string().min(12).max(200);
+const accountPasswordSchema = z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200);
 const invitationEmailSchema = z.email().transform((email) => email.toLowerCase());
 
 export const updateAccountProfileRequestSchema = z

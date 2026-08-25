@@ -5,11 +5,12 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "start": "pnpm --filter @testron/desktop start",
-    "start:app": "pnpm --filter @testron/desktop start:app",
     "start:fixture": "pnpm --filter @testron/test-fixtures start",
     "start:server": "pnpm --filter @testron/server start",
     "dev:server": "pnpm --filter @testron/server dev",
+    "dev:desktop": "pnpm --filter @testron/desktop start:app",
     "dev:webapp": "pnpm --filter @testron/webapp dev",
+    "dev": "concurrently -n server,webapp \"pnpm dev:server\" \"pnpm dev:webapp\"",
     "build:webapp": "pnpm --filter @testron/webapp build",
     "dev:web": "pnpm --filter @testron/web dev",
     "build:web": "pnpm --filter @testron/web build",
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "26.2.0",
+    "concurrently": "^10.0.5",
     "eslint": "10.8.1",
     "prettier": "3.9.6",
     "typescript": "6.0.3",

@@ -2,6 +2,7 @@ import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
+import { ACCOUNT_PASSWORD_MIN_LENGTH } from '@testron/protocol';
 import type { LibrarySnapshot } from '../../../lib/library';
 import { Button, Icon } from '../../ui/design';
 import { passwordChangeError } from './validation';
@@ -148,7 +149,7 @@ export const ProfileModal = ({
                 <input
                   type="password"
                   required
-                  minLength={12}
+                  minLength={ACCOUNT_PASSWORD_MIN_LENGTH}
                   maxLength={200}
                   autoComplete={label === 'Current password' ? 'current-password' : 'new-password'}
                   value={value as string}
@@ -165,9 +166,9 @@ export const ProfileModal = ({
               variant="primary"
               disabled={
                 pending ||
-                currentPassword.length < 12 ||
-                newPassword.length < 12 ||
-                confirmation.length < 12
+                currentPassword.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
+                newPassword.length < ACCOUNT_PASSWORD_MIN_LENGTH ||
+                confirmation.length < ACCOUNT_PASSWORD_MIN_LENGTH
               }
             >
               {visibleAction?.type === 'password' && pending ? t('updating') : t('update_password')}

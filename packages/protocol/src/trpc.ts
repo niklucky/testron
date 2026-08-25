@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { entityIdSchema, revisionPointerSchema, timestampSchema } from './common';
+import {
+  ACCOUNT_PASSWORD_MIN_LENGTH,
+  entityIdSchema,
+  revisionPointerSchema,
+  timestampSchema,
+} from './common';
 import {
   cancelInvitationRequestSchema,
   changeAccountPasswordRequestSchema,
@@ -87,7 +92,7 @@ export const setMemberBlockedProcedure = {
 
 const accountCredentialsFields = {
   email: z.email().transform((email) => email.toLowerCase()),
-  password: z.string().min(12).max(200),
+  password: z.string().min(ACCOUNT_PASSWORD_MIN_LENGTH).max(200),
 } as const;
 
 export const authLoginInputSchema = z.object(accountCredentialsFields).strict();
