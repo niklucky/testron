@@ -6,6 +6,18 @@ export type StepMutationCommand =
   | { type: 'update-step'; index: number; step: Step }
   | { type: 'replace-steps'; steps: Step[] };
 
+export const createSerialMutationQueue = <Input>(
+  run: (input: Input) => Promise<void>,
+): ((input: Input) => Promise<void>) => {
+  let tail = Promise.resolve();
+
+  return (input) => {
+    const operation = tail.then(() => run(input));
+    tail = operation.catch(() => undefined);
+    return operation;
+  };
+};
+
 export const applyStepMutation = (
   steps: readonly Step[],
   command: StepMutationCommand,

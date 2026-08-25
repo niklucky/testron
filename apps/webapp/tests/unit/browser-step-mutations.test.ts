@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { RevisionStep } from '@testron/protocol';
 import type { Step } from '@testron/domain/steps/schema';
-import { applyStepMutation, reconcileRevisionSteps } from '../../src/lib/browser-step-mutations';
+import {
+  applyStepMutation,
+  createSerialMutationQueue,
+  reconcileRevisionSteps,
+} from '../../src/lib/browser-step-mutations';
 
 const metadata = { recordedAt: '2026-08-25T18:00:00.000Z' };
 const target = {
@@ -42,5 +46,37 @@ describe('browser step mutations', () => {
     expect(reconcileRevisionSteps(previous, [inserted, action, assertion], () => 'new-id')).toEqual(
       [{ id: 'new-id', payload: inserted }, previous[0], previous[1]],
     );
+  });
+
+  it('serializes mutations and lets the queue continue after a reported failure', async () => {
+    const events: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const enqueue = createSerialMutationQueue(async (name: string) => {
+      events.push(`start:${name}`);
+      if (name === 'first') await firstGate;
+      if (name === 'second') throw new Error('conflict');
+      events.push(`finish:${name}`);
+    });
+
+    const first = enqueue('first');
+    const second = enqueue('second');
+    const third = enqueue('third');
+    await Promise.resolve();
+    expect(events).toEqual(['start:first']);
+
+    releaseFirst();
+    await first;
+    await expect(second).rejects.toThrow('conflict');
+    await third;
+    expect(events).toEqual([
+      'start:first',
+      'finish:first',
+      'start:second',
+      'start:third',
+      'finish:third',
+    ]);
   });
 });
