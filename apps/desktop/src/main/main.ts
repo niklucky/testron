@@ -325,6 +325,7 @@ const createWindow = async (): Promise<void> => {
     height: 900,
     minWidth: 880,
     minHeight: 640,
+    show: false,
     title: 'Testron',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
@@ -335,6 +336,11 @@ const createWindow = async (): Promise<void> => {
       preload: path.join(__dirname, 'app.js'),
       webviewTag: true,
     },
+  });
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.maximize();
+    mainWindow.show();
   });
 
   const webappUrl = safeUrl(

@@ -489,7 +489,7 @@ export const TestView = () => {
             icon="arrowLeft"
             size="sm"
             label={t('back_to_the_dashboard')}
-            onClick={goToDashboard}
+            onClick={() => goToDashboard()}
           />
           <Button variant="ghost" size="sm" iconEnd="caret">
             {detail.project}
@@ -569,7 +569,7 @@ export const TestView = () => {
                 </Button>
               )}
               {snapshot.library.server.authentication === 'signedOut' && (
-                <Button size="sm" onClick={goToDashboard}>
+                <Button size="sm" onClick={() => goToDashboard()}>
                   {t('sign_in')}
                 </Button>
               )}

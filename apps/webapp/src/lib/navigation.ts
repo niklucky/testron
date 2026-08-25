@@ -1,11 +1,10 @@
 const projectId = () => window.location.pathname.split('/')[2];
 
-export const goToDashboard = () => {
-  const currentProjectId = projectId();
+export const goToDashboard = (targetProjectId = projectId()) => {
   void import('../router').then(({ router }) =>
     router.navigate({
       to: '/projects/$projectId',
-      params: { projectId: currentProjectId },
+      params: { projectId: targetProjectId },
     }),
   );
 };
