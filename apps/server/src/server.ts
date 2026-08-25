@@ -8,8 +8,10 @@ import { createDatabase, type ServerDatabase } from './database/database.js';
 import { CanonicalRepository } from './database/repository.js';
 import {
   disabledInvitationMailer,
-  ResendInvitationMailer,
+  disabledPasswordResetMailer,
+  ResendMailer,
   type InvitationMailer,
+  type PasswordResetMailer,
 } from './email.js';
 import { createHttpServer } from './http.js';
 import { createAppRouter, type AppRouter } from './trpc/router.js';
@@ -30,6 +32,7 @@ export const startTestronServer = async (options: {
   publicBaseUrl?: string;
   migrate?: boolean;
   invitationMailer?: InvitationMailer;
+  passwordResetMailer?: PasswordResetMailer;
   resend?: { apiKey: string; from: string };
   webappDirectory?: string;
   authenticationEncryptionKeys?: string;
@@ -37,10 +40,15 @@ export const startTestronServer = async (options: {
   const database = createDatabase(options.databaseUrl);
   if (options.migrate !== false)
     await database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
-  const authentication = new AuthenticationService(database.db);
-  const invitationMailer =
-    options.invitationMailer ??
-    (options.resend ? new ResendInvitationMailer(options.resend) : disabledInvitationMailer);
+  const resendMailer = options.resend ? new ResendMailer(options.resend) : undefined;
+  const invitationMailer = options.invitationMailer ?? resendMailer ?? disabledInvitationMailer;
+  const passwordResetMailer =
+    options.passwordResetMailer ?? resendMailer ?? disabledPasswordResetMailer;
+  const authentication = new AuthenticationService(
+    database.db,
+    passwordResetMailer,
+    options.publicBaseUrl,
+  );
   const authenticationEncryption = AuthenticationEncryption.fromEnvironment(
     options.authenticationEncryptionKeys,
   );

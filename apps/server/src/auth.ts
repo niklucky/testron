@@ -4,6 +4,8 @@ import { and, eq, gt } from 'drizzle-orm';
 
 import {
   authLoginInputSchema,
+  authRequestPasswordResetInputSchema,
+  authResetPasswordInputSchema,
   authRegisterInputSchema,
   authSessionOutputSchema,
   changeAccountPasswordRequestSchema,
@@ -11,7 +13,8 @@ import {
   type AuthSessionOutput,
 } from '@testron/protocol';
 import type { Database } from './database/database.js';
-import { sessions, users } from './database/schema.js';
+import { passwordResetTokens, sessions, users } from './database/schema.js';
+import { disabledPasswordResetMailer, type PasswordResetMailer } from './email.js';
 
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 const passwordHash = (password: string, salt: string): string =>
@@ -29,7 +32,7 @@ export interface AuthenticatedUser {
 
 export class AuthenticationError extends Error {
   constructor(
-    readonly code: 'EMAIL_TAKEN' | 'INVALID_CREDENTIALS',
+    readonly code: 'EMAIL_TAKEN' | 'INVALID_CREDENTIALS' | 'INVALID_RESET_TOKEN',
     message: string,
   ) {
     super(message);
@@ -37,7 +40,11 @@ export class AuthenticationError extends Error {
 }
 
 export class AuthenticationService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly passwordResetMailer: PasswordResetMailer = disabledPasswordResetMailer,
+    private readonly publicBaseUrl = 'http://localhost',
+  ) {}
 
   async provisionUser(emailValue: string, passwordValue: string): Promise<AuthenticatedUser> {
     const { email, password } = authLoginInputSchema.parse({
@@ -86,6 +93,63 @@ export class AuthenticationService {
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
       throw this.invalidCredentials();
     return this.createSession(user.id);
+  }
+
+  async requestPasswordReset(value: unknown): Promise<{ accepted: true }> {
+    const { email } = authRequestPasswordResetInputSchema.parse(value);
+    const [user] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    if (!user) return { accepted: true };
+
+    const token = randomBytes(32).toString('base64url');
+    const tokenHash = hash(token);
+    const expiresAt = new Date(Date.now() + 60 * 60_000).toISOString();
+    await this.db.transaction(async (transaction) => {
+      await transaction.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+      await transaction
+        .insert(passwordResetTokens)
+        .values({ userId: user.id, tokenHash, expiresAt });
+    });
+    const resetUrl = new URL('/reset-password', this.publicBaseUrl);
+    resetUrl.searchParams.set('token', token);
+    await this.passwordResetMailer.sendPasswordReset({
+      email,
+      resetUrl: resetUrl.href,
+      tokenId: tokenHash,
+    });
+    return { accepted: true };
+  }
+
+  async resetPassword(value: unknown): Promise<{ changed: true }> {
+    const input = authResetPasswordInputSchema.parse(value);
+    await this.db.transaction(async (transaction) => {
+      const [resetToken] = await transaction
+        .delete(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.tokenHash, hash(input.token)),
+            gt(passwordResetTokens.expiresAt, new Date().toISOString()),
+          ),
+        )
+        .returning({ userId: passwordResetTokens.userId });
+      if (!resetToken)
+        throw new AuthenticationError(
+          'INVALID_RESET_TOKEN',
+          'This password reset link is invalid or has expired.',
+        );
+      await transaction
+        .update(users)
+        .set(passwordRecord(input.newPassword))
+        .where(eq(users.id, resetToken.userId));
+      await transaction.delete(sessions).where(eq(sessions.userId, resetToken.userId));
+      await transaction
+        .delete(passwordResetTokens)
+        .where(eq(passwordResetTokens.userId, resetToken.userId));
+    });
+    return { changed: true };
   }
 
   async authenticate(authorization: string | undefined): Promise<AuthenticatedUser | undefined> {

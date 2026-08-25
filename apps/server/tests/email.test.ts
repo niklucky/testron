@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectInvitation } from '@testron/protocol';
-import { ResendInvitationMailer } from '../src/email.js';
+import { ResendInvitationMailer, ResendMailer } from '../src/email.js';
 
 const invitation: ProjectInvitation = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -64,5 +64,38 @@ describe('Resend invitation mailer', () => {
       'Invitation email delivery failed: The sender domain is not verified.',
     );
     await expect(mailer.sendInvitation(invitation)).rejects.not.toThrow('re_super_secret');
+  });
+});
+
+describe('Resend password reset mailer', () => {
+  it('sends an expiring reset link without placing the token in headers or tags', async () => {
+    let captured: { input: Parameters<typeof fetch>[0]; init?: RequestInit } | undefined;
+    const mailer = new ResendMailer({
+      apiKey: 're_test_key',
+      from: 'Testron <accounts@example.test>',
+      fetch: async (input, init) => {
+        captured = { input, ...(init ? { init } : {}) };
+        return new Response(JSON.stringify({ id: 'email-id' }));
+      },
+    });
+
+    await mailer.sendPasswordReset({
+      email: 'member@example.test',
+      resetUrl: 'https://testron.example.test/reset-password?token=secret-token',
+      tokenId: 'hashed-token-id',
+    });
+
+    expect(captured?.input).toBe('https://api.resend.com/emails');
+    expect(captured?.init?.headers).toMatchObject({
+      'idempotency-key': 'testron-password-reset/hashed-token-id',
+    });
+    const body = JSON.parse(String(captured?.init?.body)) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      to: ['member@example.test'],
+      subject: 'Reset your Testron password',
+      tags: [{ name: 'category', value: 'password-reset' }],
+    });
+    expect(String(body.text)).toContain('token=secret-token');
+    expect(JSON.stringify(captured?.init?.headers)).not.toContain('secret-token');
   });
 });

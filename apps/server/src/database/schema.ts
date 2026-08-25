@@ -43,6 +43,24 @@ export const sessions = pgTable(
   (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash)],
 );
 
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: instant('expires_at').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('password_reset_tokens_token_hash_unique').on(table.tokenHash),
+    index('password_reset_tokens_user_idx').on(table.userId),
+    index('password_reset_tokens_expiry_idx').on(table.expiresAt),
+  ],
+);
+
 export const projects = pgTable(
   'projects',
   {

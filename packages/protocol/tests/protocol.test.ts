@@ -20,7 +20,12 @@ import {
   updateProfileRequestSchema,
 } from '../src/operations';
 import { testRevisionSchema, testSnapshotSchema, webProfileSchema } from '../src/resources';
-import { authLoginInputSchema, authRegisterInputSchema } from '../src/trpc';
+import {
+  authLoginInputSchema,
+  authRegisterInputSchema,
+  authRequestPasswordResetInputSchema,
+  authResetPasswordInputSchema,
+} from '../src/trpc';
 
 const fixture = (name: string): unknown =>
   JSON.parse(
@@ -516,6 +521,21 @@ describe('account and invitation mutations', () => {
         password: '12345678',
       }).success,
     ).toBe(true);
+    expect(authRequestPasswordResetInputSchema.parse({ email: 'Owner@Example.test' }).email).toBe(
+      'owner@example.test',
+    );
+    expect(
+      authResetPasswordInputSchema.safeParse({
+        token: 'x'.repeat(43),
+        newPassword: '12345678',
+      }).success,
+    ).toBe(true);
+    expect(
+      authResetPasswordInputSchema.safeParse({
+        token: 'x'.repeat(43),
+        newPassword: '1234567',
+      }).success,
+    ).toBe(false);
     expect(
       changeAccountPasswordRequestSchema.safeParse({
         meta,

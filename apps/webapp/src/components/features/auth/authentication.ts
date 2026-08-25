@@ -1,6 +1,8 @@
 export type AuthenticationRequest =
   | { mode: 'login'; email: string; password: string }
-  | { mode: 'register'; name: string; email: string; password: string };
+  | { mode: 'register'; name: string; email: string; password: string }
+  | { mode: 'forgot'; email: string }
+  | { mode: 'reset'; token: string; newPassword: string };
 
 export type Authenticate = (request: AuthenticationRequest) => Promise<void>;
 

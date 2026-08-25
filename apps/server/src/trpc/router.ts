@@ -2,7 +2,11 @@ import { TRPCError, initTRPC } from '@trpc/server';
 
 import {
   authLoginInputSchema,
+  authPasswordResetOutputSchema,
+  authPasswordResetRequestedOutputSchema,
   authRegisterInputSchema,
+  authRequestPasswordResetInputSchema,
+  authResetPasswordInputSchema,
   authSessionOutputSchema,
   cancelInvitationProcedure,
   changeAccountPasswordProcedure,
@@ -118,6 +122,16 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
           ctx.setSession?.(session);
           return session;
         }),
+      requestPasswordReset: publicProcedure
+        .input(authRequestPasswordResetInputSchema)
+        .output(authPasswordResetRequestedOutputSchema)
+        .mutation(({ input }) =>
+          callAuthentication(() => authentication.requestPasswordReset(input)),
+        ),
+      resetPassword: publicProcedure
+        .input(authResetPasswordInputSchema)
+        .output(authPasswordResetOutputSchema)
+        .mutation(({ input }) => callAuthentication(() => authentication.resetPassword(input))),
     }),
     account: t.router({
       updateProfile: authenticatedProcedure
