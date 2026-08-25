@@ -781,7 +781,7 @@ export const TestView = () => {
             onDetach={() => undefined}
             onSource={() => undefined}
             onReattach={() => undefined}
-            onCopy={() => window.testron?.command({ type: 'copy-source' })}
+            onCopy={() => void navigator.clipboard?.writeText(source)}
             onClose={() => setSourceOpen(false)}
             onLog={setLog}
             layout={wideSourceLayout ? 'docked' : 'modal'}
