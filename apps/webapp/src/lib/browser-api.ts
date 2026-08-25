@@ -189,11 +189,14 @@ const command = (input: AppCommand): void => {
     case 'sync-now':
       void refresh();
       break;
-    case 'select-project':
-      selectedProjectId = value(input, 'projectId');
+    case 'select-project': {
+      const projectId = value<string>(input, 'projectId');
+      selectedProjectId = projectId;
       selectedEnvironmentId = undefined;
       publish();
+      goToDashboard(projectId);
       break;
+    }
     case 'select-environment':
       selectedEnvironmentId = value(input, 'environmentId');
       publish();

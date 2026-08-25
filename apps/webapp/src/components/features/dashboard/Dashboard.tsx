@@ -335,7 +335,7 @@ export const Dashboard = ({
   const openTest = (test: TestRecord) => {
     setLog(`Opening test · ${test.name}`);
     window.testron?.command({ type: 'select-test', testId: test.id });
-    goToTest(test.id);
+    goToTest(test.id, library?.selectedProjectId);
   };
 
   const recordManualVerdict = (verdict: ManualVerdict) => {
