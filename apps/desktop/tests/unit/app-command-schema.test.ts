@@ -209,6 +209,30 @@ describe('desktop application command schema', () => {
         ],
       }).success,
     ).toBe(false);
+    expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Browser administrator',
+        authenticationType: 'browser-session',
+        variables: [],
+      }),
+    ).toMatchObject({ authenticationType: 'browser-session' });
+    expect(
+      appCommandSchema.parse({
+        type: 'create-profile',
+        environmentId: id,
+        name: 'Saved browser session',
+        authenticationType: 'storage-state',
+        variables: [
+          {
+            name: 'storageState',
+            value: JSON.stringify({ cookies: [], origins: [] }),
+            sensitive: true,
+          },
+        ],
+      }),
+    ).toMatchObject({ authenticationType: 'storage-state' });
   });
 
   it('validates account and membership commands', () => {

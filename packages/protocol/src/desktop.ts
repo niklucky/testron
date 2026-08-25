@@ -44,6 +44,8 @@ export interface DesktopReplayState {
 export interface DesktopRuntimeState {
   replay: DesktopReplayState;
   browserInstallation: DesktopBrowserInstallation;
+  /** Changes whenever the desktop reloads server-backed workspace data. */
+  workspaceRevision: number;
 }
 
 export interface DesktopRunRequest {
@@ -52,5 +54,17 @@ export interface DesktopRunRequest {
   testId: string;
   environmentVariables: Record<string, string>;
   timeoutMs: number;
-  reuseAuthState: boolean;
+  authStateMode: 'ignore' | 'reuse' | 'refresh';
+  headed?: boolean;
+}
+
+export interface DesktopAuthenticationRefreshRequest {
+  profileId: string;
+  environmentId: string;
+  secretValues: Record<string, string>;
+}
+
+export interface DesktopAuthenticationClearRequest {
+  profileId: string;
+  environmentId: string;
 }

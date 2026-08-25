@@ -125,6 +125,30 @@ describe('TestronRepository', () => {
     repository.close();
   });
 
+  it('restores the authentication profile selected for a test', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'testron-test-profile-'));
+    temporaryDirectories.push(directory);
+    const databasePath = path.join(directory, 'testron.sqlite');
+    const repository = new TestronRepository(databasePath);
+    const project = repository.createProject('API');
+    const environment = repository.createEnvironment(
+      project.id,
+      'Local',
+      'http://127.0.0.1:4174/',
+      'data-testid',
+    );
+    const profile = repository.createProfile(environment.id, 'Admin JWT', 'headers', [
+      { name: 'Authorization', value: 'Bearer token', sensitive: true },
+    ]);
+    const savedTest = repository.createTest(project.id, [environment.id], 'admin request');
+    repository.setTestProfile(savedTest.id, profile.id);
+    repository.close();
+
+    const reopened = new TestronRepository(databasePath);
+    expect(reopened.getTest(savedTest.id)?.profileId).toBe(profile.id);
+    reopened.close();
+  });
+
   it('preserves every environment when checking out a remote test', () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'testron-checkout-'));
     temporaryDirectories.push(directory);

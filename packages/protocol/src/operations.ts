@@ -12,6 +12,9 @@ import {
 import { errorResponseSchema, revisionConflictResponseSchema } from './errors';
 import {
   environmentSchema,
+  browserAuthenticationFlowSchema,
+  projectSecretMetadataSchema,
+  profileEnvironmentAuthenticationSchema,
   environmentNameSchema,
   projectSchema,
   projectNameSchema,
@@ -22,6 +25,7 @@ import {
   testRunSchema,
   testRunStatusSchema,
   testRevisionContentSchema,
+  browserStorageStateSchema,
   testRevisionSchema,
   testSnapshotSchema,
   testSuiteNameSchema,
@@ -143,6 +147,17 @@ const headerVariableNamesAreUnique = (variables: Array<{ name: string }>): boole
   return new Set(names).size === names.length;
 };
 
+const storageStateVariableIsValid = (
+  variables: Array<{ name: string; value: string }>,
+): boolean => {
+  if (variables.length !== 1 || variables[0]?.name !== 'storageState') return false;
+  try {
+    return browserStorageStateSchema.safeParse(JSON.parse(variables[0].value)).success;
+  } catch {
+    return false;
+  }
+};
+
 const profileCreateFields = {
   ...profileIdentityFields,
   environments: z
@@ -177,13 +192,30 @@ export const createProfileRequestSchema = z
   })
   .strict()
   .superRefine((request, context) => {
-    if (request.authenticationType !== 'headers') return;
     request.environments.forEach((environment, index) => {
-      if (!headerVariableNamesAreUnique(environment.variables))
+      if (
+        request.authenticationType === 'headers' &&
+        !headerVariableNamesAreUnique(environment.variables)
+      )
         context.addIssue({
           code: 'custom',
           path: ['environments', index, 'variables'],
           message: 'Header names must be unique regardless of case.',
+        });
+      if (request.authenticationType !== 'browser-session' && environment.variables.length === 0)
+        context.addIssue({
+          code: 'custom',
+          path: ['environments', index, 'variables'],
+          message: 'This authentication type requires at least one profile variable.',
+        });
+      if (
+        request.authenticationType === 'storage-state' &&
+        !storageStateVariableIsValid(environment.variables)
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['environments', index, 'variables'],
+          message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
         });
     });
   });
@@ -208,7 +240,101 @@ export const updateProfileRequestSchema = z
         path: ['variables'],
         message: 'Header names must be unique regardless of case.',
       });
+    if (request.authenticationType !== 'browser-session' && request.variables.length === 0)
+      context.addIssue({
+        code: 'custom',
+        path: ['variables'],
+        message: 'This authentication type requires at least one profile variable.',
+      });
+    if (
+      request.authenticationType === 'storage-state' &&
+      !storageStateVariableIsValid(request.variables)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['variables'],
+        message: 'Saved browser storage state must be valid Playwright storage-state JSON.',
+      });
   });
+
+const refreshPolicySchema = browserAuthenticationFlowSchema.shape.refreshPolicy.refine(
+  (policy) => policy.refreshBeforeExpirySeconds < policy.maxAgeSeconds,
+  {
+    path: ['refreshBeforeExpirySeconds'],
+    message: 'Refresh lead time must be shorter than the maximum age.',
+  },
+);
+
+export const createBrowserAuthenticationFlowRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    name: browserAuthenticationFlowSchema.shape.name,
+    setupTestId: entityIdSchema,
+    refreshPolicy: refreshPolicySchema,
+  })
+  .strict();
+
+export const updateBrowserAuthenticationFlowRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    authFlowId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+    name: browserAuthenticationFlowSchema.shape.name,
+    setupTestId: entityIdSchema,
+    refreshPolicy: refreshPolicySchema,
+  })
+  .strict();
+
+export const deleteBrowserAuthenticationFlowRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    authFlowId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+  })
+  .strict();
+
+export const configureProfileEnvironmentAuthenticationRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    profileId: entityIdSchema,
+    environmentId: entityIdSchema,
+    authFlowId: entityIdSchema,
+    secretBindings: profileEnvironmentAuthenticationSchema.shape.secretBindings,
+  })
+  .strict();
+
+const projectSecretValueSchema = z.string().min(1).max(100_000);
+export const createProjectSecretRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    name: projectSecretMetadataSchema.shape.name,
+    value: projectSecretValueSchema,
+  })
+  .strict();
+
+export const replaceProjectSecretRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    secretId: entityIdSchema,
+    value: projectSecretValueSchema,
+  })
+  .strict();
+
+export const deleteProjectSecretRequestSchema = z
+  .object({ meta: mutationMetadataSchema, secretId: entityIdSchema })
+  .strict();
+
+export const manageAuthenticationStateRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    environmentId: entityIdSchema,
+    profileId: entityIdSchema,
+    action: z.enum(['invalidate', 'clear']),
+  })
+  .strict();
 
 export const createTestSuiteRequestSchema = z
   .object({
@@ -402,6 +528,24 @@ export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 export type UpdateEnvironmentRequest = z.infer<typeof updateEnvironmentRequestSchema>;
 export type CreateProfileRequest = z.infer<typeof createProfileRequestSchema>;
 export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+export type CreateBrowserAuthenticationFlowRequest = z.infer<
+  typeof createBrowserAuthenticationFlowRequestSchema
+>;
+export type UpdateBrowserAuthenticationFlowRequest = z.infer<
+  typeof updateBrowserAuthenticationFlowRequestSchema
+>;
+export type DeleteBrowserAuthenticationFlowRequest = z.infer<
+  typeof deleteBrowserAuthenticationFlowRequestSchema
+>;
+export type ConfigureProfileEnvironmentAuthenticationRequest = z.infer<
+  typeof configureProfileEnvironmentAuthenticationRequestSchema
+>;
+export type CreateProjectSecretRequest = z.infer<typeof createProjectSecretRequestSchema>;
+export type ReplaceProjectSecretRequest = z.infer<typeof replaceProjectSecretRequestSchema>;
+export type DeleteProjectSecretRequest = z.infer<typeof deleteProjectSecretRequestSchema>;
+export type ManageAuthenticationStateRequest = z.infer<
+  typeof manageAuthenticationStateRequestSchema
+>;
 export type CreateTestSuiteRequest = z.infer<typeof createTestSuiteRequestSchema>;
 export type ListTestSuitesRequest = z.infer<typeof listTestSuitesRequestSchema>;
 export type UpdateTestSuiteRequest = z.infer<typeof updateTestSuiteRequestSchema>;

@@ -14,6 +14,10 @@ import {
   type TestRun,
   type ProjectOverviewSummary,
   type ProjectActivity,
+  type BrowserAuthenticationFlow,
+  type ProfileEnvironmentAuthentication,
+  type ProjectSecretMetadata,
+  type AuthenticationStateMetadata,
 } from '@testron/protocol';
 import { desktopTestDraftSchema, type DesktopTestDraft } from '../sync/client-state';
 
@@ -40,7 +44,7 @@ export interface ProfileRecord {
   projectId: string;
   environmentIds: string[];
   name: string;
-  authenticationType: 'credentials' | 'cookies' | 'headers';
+  authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
   revision?: number;
 }
 
@@ -57,6 +61,7 @@ export interface TestRecord {
   projectId: string;
   environmentIds: string[];
   testSuiteId?: string | null;
+  profileId?: string | null;
   title: string;
   prerequisites: string[];
   createdAt: string;
@@ -77,6 +82,11 @@ export interface LibrarySnapshot {
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];
+  authenticationFlows?: BrowserAuthenticationFlow[];
+  profileEnvironmentAuthentications?: ProfileEnvironmentAuthentication[];
+  projectSecrets?: ProjectSecretMetadata[];
+  authenticationStates?: AuthenticationStateMetadata[];
+  authenticationFlowSecretNames?: Record<string, string[]>;
   profileVariables: Array<Omit<ProfileVariableRecord, 'value'>>;
   tests: TestRecord[];
   testSuites: TestSuiteSummary[];
@@ -278,7 +288,7 @@ export class TestronRepository {
         environmentIds: row.environment_ids ? String(row.environment_ids).split(',') : [],
         name: String(row.name),
         authenticationType: String(row.authentication_type) as
-          'credentials' | 'cookies' | 'headers',
+          'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session',
       }));
   }
 
@@ -308,6 +318,7 @@ export class TestronRepository {
         projectId: String(row.project_id),
         environmentIds: JSON.parse(String(row.environment_ids)) as string[],
         testSuiteId: row.test_suite_id == null ? null : String(row.test_suite_id),
+        profileId: this.getDraft(String(row.id))?.content.profileId ?? null,
         title: String(row.title),
         prerequisites: this.getDraft(String(row.id))?.content.prerequisites ?? [],
         createdAt: String(row.created_at),
@@ -369,7 +380,7 @@ export class TestronRepository {
   createProfile(
     environmentId: string,
     name: string,
-    authenticationType: 'credentials' | 'cookies' | 'headers',
+    authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session',
     variables: ReadonlyArray<{ name: string; value: string; sensitive: boolean }>,
   ): ProfileRecord {
     const environment = this.getEnvironment(environmentId);
@@ -437,6 +448,7 @@ export class TestronRepository {
       projectId,
       environmentIds,
       testSuiteId: testSuiteId ?? null,
+      profileId: null,
       title: title.trim(),
       prerequisites: [],
       createdAt: now,
@@ -494,6 +506,19 @@ export class TestronRepository {
         localUpdatedAt: now,
         syncStatus: draft.testId ? 'pending' : 'local',
       });
+  }
+
+  setTestProfile(testId: string, profileId: string | null): void {
+    const draft = this.getDraft(testId);
+    if (!draft) throw new Error('The test draft was not found.');
+    const now = new Date().toISOString();
+    this.database.prepare('UPDATE tests SET updated_at = ? WHERE id = ?').run(now, testId);
+    this.writeDraft(testId, {
+      ...draft,
+      content: { ...draft.content, profileId },
+      localUpdatedAt: now,
+      syncStatus: draft.testId ? 'pending' : 'local',
+    });
   }
 
   replacePrerequisites(testId: string, prerequisites: readonly string[]): void {
@@ -721,6 +746,7 @@ export class TestronRepository {
         id: snapshot.test.id,
         projectId: project.id,
         environmentIds,
+        profileId: revision.content.profileId ?? null,
         title: revision.content.title,
         prerequisites: revision.content.prerequisites,
         createdAt: snapshot.test.createdAt,

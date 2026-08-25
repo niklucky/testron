@@ -100,6 +100,71 @@ describe('LocalReplayRunner', () => {
     expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(true);
   });
 
+  it('keeps a failure screenshot while suppressing a sensitive trace', async () => {
+    const artifactsDirectory = artifactDirectory();
+    const result = await new LocalReplayRunner().run({
+      steps: [
+        {
+          version: 1,
+          kind: 'navigate',
+          url: 'data:text/html,<label>Name<input data-testid="name"></label>',
+          metadata,
+        },
+        {
+          version: 1,
+          kind: 'fill',
+          target,
+          value: '',
+          variable: { name: 'missingValue' },
+          metadata,
+        },
+      ],
+      environmentVariables: {},
+      timeoutMs: 5_000,
+      artifactsDirectory,
+      initialStorageState: { cookies: [], origins: [] },
+      protectSensitiveArtifacts: true,
+      onProgress: () => undefined,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.screenshotPath).toBe(path.join(artifactsDirectory, 'failure.png'));
+    expect(result.tracePath).toBeUndefined();
+    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(true);
+    expect(existsSync(path.join(artifactsDirectory, 'trace.zip'))).toBe(false);
+  });
+
+  it('captures a screenshot when the run times out', async () => {
+    const artifactsDirectory = artifactDirectory();
+    const result = await new LocalReplayRunner().run({
+      steps: [
+        {
+          version: 1,
+          kind: 'navigate',
+          url: 'data:text/html,<p>Loaded</p>',
+          metadata,
+        },
+        {
+          version: 1,
+          kind: 'click',
+          target: {
+            primary: { strategy: 'testId', attribute: 'data-testid', value: 'never-appears' },
+            alternatives: [],
+          },
+          metadata,
+        },
+      ],
+      environmentVariables: {},
+      timeoutMs: 250,
+      artifactsDirectory,
+      onProgress: () => undefined,
+    });
+
+    expect(result.status).toBe('timedOut');
+    expect(result.screenshotPath).toBe(path.join(artifactsDirectory, 'failure.png'));
+    expect(existsSync(path.join(artifactsDirectory, 'failure.png'))).toBe(true);
+  });
+
   it('adds profile headers and cookies to browser requests', async () => {
     const crossOriginHeaders: Array<string | undefined> = [];
     const crossOriginServer = createServer((request, response) => {
@@ -162,6 +227,72 @@ describe('LocalReplayRunner', () => {
               fixtureServer.close((error) => (error ? reject(error) : resolve())),
             ),
         ),
+      );
+    }
+  });
+
+  it('captures reusable cookies, local storage, and IndexedDB only when explicitly requested', async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'set-cookie': 'access_token=cookie-token; Path=/; HttpOnly',
+      });
+      response.end(`<p data-testid="ready">pending</p><script>
+        localStorage.setItem('accessToken', 'local-token');
+        const request = indexedDB.open('testron-auth', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('session').put('Ada', 'user');
+        request.onsuccess = () => document.querySelector('[data-testid=ready]').textContent = 'ready';
+      </script>`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Fixture server did not start.');
+    const url = `http://127.0.0.1:${address.port}/`;
+    const steps: Step[] = [
+      { version: 1, kind: 'navigate', url, metadata },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target: {
+          primary: { strategy: 'testId', attribute: 'data-testid', value: 'ready' },
+          alternatives: [],
+        },
+        assertion: { type: 'text', match: 'equals', expected: 'ready' },
+        metadata,
+      },
+    ];
+    try {
+      const captured = await new LocalReplayRunner().run({
+        steps,
+        environmentVariables: {},
+        timeoutMs: 5_000,
+        artifactsDirectory: artifactDirectory(),
+        captureStorageState: true,
+        onProgress: (snapshot) => expect(snapshot).not.toHaveProperty('capturedStorageState'),
+      });
+      expect(captured.capturedStorageState?.cookies).toEqual([
+        expect.objectContaining({ name: 'access_token', value: 'cookie-token' }),
+      ]);
+      expect(captured.capturedStorageState?.origins[0]?.localStorage).toContainEqual({
+        name: 'accessToken',
+        value: 'local-token',
+      });
+      expect(captured.capturedStorageState?.origins[0]?.indexedDB).toHaveLength(1);
+      expect(existsSync(path.join(captured.tracePath ?? '', 'trace.zip'))).toBe(false);
+
+      const ordinary = await new LocalReplayRunner().run({
+        steps,
+        environmentVariables: {},
+        timeoutMs: 5_000,
+        artifactsDirectory: artifactDirectory(),
+        initialStorageState: captured.capturedStorageState,
+        onProgress: () => undefined,
+      });
+      expect(ordinary.status).toBe('passed');
+      expect(ordinary).not.toHaveProperty('capturedStorageState');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
       );
     }
   });

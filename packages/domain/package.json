@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./auth/storage-state": "./src/auth/storage-state.ts",
     "./codegen/playwright": "./src/codegen/playwright.ts",
     "./locators/schema": "./src/locators/schema.ts",
     "./recording/normalizer": "./src/recording/normalizer.ts",

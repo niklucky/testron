@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopRunRequest, DesktopRuntimeState } from '@testron/protocol';
+import type {
+  DesktopAuthenticationRefreshRequest,
+  DesktopAuthenticationClearRequest,
+  DesktopRunRequest,
+  DesktopRuntimeState,
+} from '@testron/protocol';
 
 import { REMOTE_APP_CHANNELS } from '../main/security';
 
@@ -18,7 +23,10 @@ export interface TestronDesktopHost {
   login(email: string, password: string): void;
   register(name: string, email: string, password: string): void;
   requestRuntimeState(): void;
+  openReplayArtifact(artifact: 'screenshot' | 'trace'): void;
   runTest(request: DesktopRunRequest): void;
+  refreshAuthentication(request: DesktopAuthenticationRefreshRequest): void;
+  clearAuthentication(request: DesktopAuthenticationClearRequest): void;
   cancelRun(): void;
   installBrowser(): void;
   cancelBrowserInstall(): void;
@@ -42,8 +50,20 @@ const host: TestronDesktopHost = {
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'register', name, email, password }),
   requestRuntimeState: () =>
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'request-runtime-state' }),
+  openReplayArtifact: (artifact) =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'open-replay-artifact', artifact }),
   runTest: (request) =>
     ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'run-test', ...request }),
+  refreshAuthentication: (request) =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, {
+      type: 'refresh-desktop-authentication',
+      ...request,
+    }),
+  clearAuthentication: (request) =>
+    ipcRenderer.send(REMOTE_APP_CHANNELS.command, {
+      type: 'clear-desktop-authentication',
+      ...request,
+    }),
   cancelRun: () => ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'cancel-run' }),
   installBrowser: () => ipcRenderer.send(REMOTE_APP_CHANNELS.command, { type: 'install-browser' }),
   cancelBrowserInstall: () =>

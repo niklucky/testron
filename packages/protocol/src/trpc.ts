@@ -5,6 +5,14 @@ import {
   cancelInvitationRequestSchema,
   changeAccountPasswordRequestSchema,
   createEnvironmentRequestSchema,
+  createBrowserAuthenticationFlowRequestSchema,
+  updateBrowserAuthenticationFlowRequestSchema,
+  deleteBrowserAuthenticationFlowRequestSchema,
+  configureProfileEnvironmentAuthenticationRequestSchema,
+  createProjectSecretRequestSchema,
+  replaceProjectSecretRequestSchema,
+  deleteProjectSecretRequestSchema,
+  manageAuthenticationStateRequestSchema,
   createInvitationRequestSchema,
   createProfileRequestSchema,
   createProjectRequestSchema,
@@ -31,6 +39,9 @@ import {
 } from './operations';
 import {
   environmentSchema,
+  browserAuthenticationFlowSchema,
+  projectSecretMetadataSchema,
+  profileEnvironmentAuthenticationSchema,
   profileSchema,
   projectInvitationSchema,
   projectMemberSchema,
@@ -116,6 +127,38 @@ export const createProfileProcedure = {
 export const updateProfileProcedure = {
   input: updateProfileRequestSchema,
   output: profileSchema,
+} as const;
+export const createBrowserAuthenticationFlowProcedure = {
+  input: createBrowserAuthenticationFlowRequestSchema,
+  output: browserAuthenticationFlowSchema,
+} as const;
+export const updateBrowserAuthenticationFlowProcedure = {
+  input: updateBrowserAuthenticationFlowRequestSchema,
+  output: browserAuthenticationFlowSchema,
+} as const;
+export const deleteBrowserAuthenticationFlowProcedure = {
+  input: deleteBrowserAuthenticationFlowRequestSchema,
+  output: browserAuthenticationFlowSchema,
+} as const;
+export const configureProfileEnvironmentAuthenticationProcedure = {
+  input: configureProfileEnvironmentAuthenticationRequestSchema,
+  output: profileEnvironmentAuthenticationSchema,
+} as const;
+export const createProjectSecretProcedure = {
+  input: createProjectSecretRequestSchema,
+  output: projectSecretMetadataSchema,
+} as const;
+export const replaceProjectSecretProcedure = {
+  input: replaceProjectSecretRequestSchema,
+  output: projectSecretMetadataSchema,
+} as const;
+export const deleteProjectSecretProcedure = {
+  input: deleteProjectSecretRequestSchema,
+  output: projectSecretMetadataSchema,
+} as const;
+export const manageAuthenticationStateProcedure = {
+  input: manageAuthenticationStateRequestSchema,
+  output: z.object({ status: z.enum(['stale', 'not-created']) }).strict(),
 } as const;
 export const createTestSuiteProcedure = {
   input: createTestSuiteRequestSchema,

@@ -68,6 +68,16 @@ export const ProjectSettings = ({
   const [newEnvironmentUrl, setNewEnvironmentUrl] = useState('');
   const creationOriginId = useRef<string | undefined>(undefined);
   const [editingProfileId, setEditingProfileId] = useState<string | 'new'>();
+  const [newFlowName, setNewFlowName] = useState('Browser login');
+  const [setupTestId, setSetupTestId] = useState('');
+  const [refreshMode, setRefreshMode] = useState<'when-stale' | 'before-every-run'>('when-stale');
+  const [maxAgeHours, setMaxAgeHours] = useState(12);
+  const [refreshLeadMinutes, setRefreshLeadMinutes] = useState(15);
+  const [newSecretName, setNewSecretName] = useState('');
+  const [newSecretValue, setNewSecretValue] = useState('');
+  const [selectedFlows, setSelectedFlows] = useState<Record<string, string>>({});
+  const [selectedBindings, setSelectedBindings] = useState<Record<string, string>>({});
+  const [desktopSecretValues, setDesktopSecretValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setEnvironmentName(selectedEnvironment?.name ?? '');
@@ -104,6 +114,22 @@ export const ProjectSettings = ({
     (profile) => profile.projectId === project.id,
   );
   const editingProfile = environmentProfiles.find((profile) => profile.id === editingProfileId);
+  const browserProfiles = environmentProfiles.filter(
+    (profile) =>
+      profile.authenticationType === 'browser-session' &&
+      Boolean(selectedEnvironment && profile.environmentIds.includes(selectedEnvironment.id)),
+  );
+  const authenticationFlows = (library.authenticationFlows ?? []).filter(
+    (flow) => flow.projectId === project.id,
+  );
+  const projectSecrets = (library.projectSecrets ?? []).filter(
+    (secret) => secret.projectId === project.id,
+  );
+  const setupTests = library.tests.filter(
+    (test) =>
+      test.projectId === project.id &&
+      Boolean(selectedEnvironment && test.environmentIds.includes(selectedEnvironment.id)),
+  );
 
   const saveGeneral = (event: FormEvent) => {
     event.preventDefault();
@@ -378,7 +404,11 @@ export const ProjectSettings = ({
                                     ? t('cookies')
                                     : profile.authenticationType === 'headers'
                                       ? t('browser_headers')
-                                      : t('login_password')
+                                      : profile.authenticationType === 'storage-state'
+                                        ? 'Saved browser storage state'
+                                        : profile.authenticationType === 'browser-session'
+                                          ? 'Browser login'
+                                          : t('login_password')
                                   : 'Configure'}
                               </span>
                               <IconButton
@@ -400,6 +430,336 @@ export const ProjectSettings = ({
                         </button>
                       )}
                     </section>
+
+                    {browserProfiles.length > 0 && selectedEnvironment && (
+                      <section className="border-t border-line pt-5">
+                        <h4 className="text-md font-semibold">Browser authentication</h4>
+                        <p className="mt-1 text-ink-3">
+                          Login tests create separate encrypted desktop and server sessions.
+                        </p>
+
+                        <div className="mt-4 rounded-lg border border-line p-4">
+                          <h5 className="font-medium">Authentication flows</h5>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            <input
+                              aria-label="Authentication flow name"
+                              value={newFlowName}
+                              onChange={(event) => setNewFlowName(event.target.value)}
+                              className={fieldClass}
+                            />
+                            <select
+                              aria-label="Setup test"
+                              value={setupTestId}
+                              onChange={(event) => setSetupTestId(event.target.value)}
+                              className={fieldClass}
+                            >
+                              <option value="">Select login test</option>
+                              {setupTests.map((test) => (
+                                <option key={test.id} value={test.id}>
+                                  {test.title}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label="Refresh policy"
+                              value={refreshMode}
+                              onChange={(event) =>
+                                setRefreshMode(
+                                  event.target.value as 'when-stale' | 'before-every-run',
+                                )
+                              }
+                              className={fieldClass}
+                            >
+                              <option value="when-stale">Automatically when stale</option>
+                              <option value="before-every-run">Before every run</option>
+                            </select>
+                            <label className="text-ink-3">
+                              Maximum age (hours)
+                              <input
+                                type="number"
+                                min={1}
+                                max={8760}
+                                value={maxAgeHours}
+                                onChange={(event) => setMaxAgeHours(Number(event.target.value))}
+                                className={fieldClass}
+                              />
+                            </label>
+                            <label className="text-ink-3">
+                              Refresh before expiry (minutes)
+                              <input
+                                type="number"
+                                min={0}
+                                max={10080}
+                                value={refreshLeadMinutes}
+                                onChange={(event) =>
+                                  setRefreshLeadMinutes(Number(event.target.value))
+                                }
+                                className={fieldClass}
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              disabled={
+                                !newFlowName.trim() ||
+                                !setupTestId ||
+                                maxAgeHours <= 0 ||
+                                refreshLeadMinutes < 0 ||
+                                refreshLeadMinutes >= maxAgeHours * 60
+                              }
+                              onClick={() => {
+                                window.testron?.command({
+                                  type: 'create-authentication-flow',
+                                  projectId: project.id,
+                                  name: newFlowName.trim(),
+                                  setupTestId,
+                                  refreshMode,
+                                  maxAgeSeconds: maxAgeHours * 60 * 60,
+                                  refreshBeforeExpirySeconds: refreshLeadMinutes * 60,
+                                });
+                              }}
+                            >
+                              Create flow
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-lg border border-line p-4">
+                          <h5 className="font-medium">Write-only project secrets</h5>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                            <input
+                              aria-label="Secret name"
+                              placeholder="E2E_PASSWORD"
+                              value={newSecretName}
+                              onChange={(event) => setNewSecretName(event.target.value)}
+                              className={fieldClass}
+                            />
+                            <input
+                              aria-label="Secret value"
+                              type="password"
+                              value={newSecretValue}
+                              onChange={(event) => setNewSecretValue(event.target.value)}
+                              className={fieldClass}
+                            />
+                            <Button
+                              type="button"
+                              disabled={!newSecretName.trim() || !newSecretValue}
+                              onClick={() => {
+                                window.testron?.command({
+                                  type: 'create-project-secret',
+                                  projectId: project.id,
+                                  name: newSecretName.trim(),
+                                  value: newSecretValue,
+                                });
+                                setNewSecretValue('');
+                                setNewSecretName('');
+                              }}
+                            >
+                              Save secret
+                            </Button>
+                          </div>
+                        </div>
+
+                        {browserProfiles.map((profile) => {
+                          const assignment = (library.profileEnvironmentAuthentications ?? []).find(
+                            (candidate) =>
+                              candidate.profileId === profile.id &&
+                              candidate.environmentId === selectedEnvironment.id,
+                          );
+                          const flowId =
+                            selectedFlows[profile.id] ??
+                            assignment?.authFlowId ??
+                            authenticationFlows[0]?.id ??
+                            '';
+                          const secretNames = library.authenticationFlowSecretNames?.[flowId] ?? [];
+                          const bindings = Object.fromEntries(
+                            secretNames.map((name) => [
+                              name,
+                              {
+                                secretId:
+                                  selectedBindings[`${profile.id}:${name}`] ??
+                                  assignment?.secretBindings[name]?.secretId ??
+                                  '',
+                              },
+                            ]),
+                          );
+                          const state = (library.authenticationStates ?? []).find(
+                            (candidate) =>
+                              candidate.owner === 'server' &&
+                              candidate.profileId === profile.id &&
+                              candidate.environmentId === selectedEnvironment.id,
+                          );
+                          const desktopState = (library.authenticationStates ?? []).find(
+                            (candidate) =>
+                              candidate.owner === 'desktop' &&
+                              candidate.profileId === profile.id &&
+                              candidate.environmentId === selectedEnvironment.id,
+                          );
+                          return (
+                            <div
+                              key={profile.id}
+                              className="mt-3 rounded-lg border border-line p-4"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <h5 className="font-medium">{profile.name}</h5>
+                                <span className="text-right text-ink-3">
+                                  Desktop: {desktopState?.status ?? 'not-created'} · Server:{' '}
+                                  {state?.status ?? 'not-created'}
+                                </span>
+                              </div>
+                              <select
+                                aria-label={`Authentication flow for ${profile.name}`}
+                                value={flowId}
+                                onChange={(event) =>
+                                  setSelectedFlows((current) => ({
+                                    ...current,
+                                    [profile.id]: event.target.value,
+                                  }))
+                                }
+                                className={fieldClass}
+                              >
+                                <option value="">Select authentication flow</option>
+                                {authenticationFlows.map((flow) => (
+                                  <option key={flow.id} value={flow.id}>
+                                    {flow.name}
+                                  </option>
+                                ))}
+                              </select>
+                              {secretNames.map((name) => (
+                                <label key={name} className="mt-3 block">
+                                  <span className="text-ink-3">{name}</span>
+                                  <select
+                                    aria-label={`Secret binding ${name}`}
+                                    value={bindings[name]?.secretId ?? ''}
+                                    onChange={(event) =>
+                                      setSelectedBindings((current) => ({
+                                        ...current,
+                                        [`${profile.id}:${name}`]: event.target.value,
+                                      }))
+                                    }
+                                    className={fieldClass}
+                                  >
+                                    <option value="">Select project secret</option>
+                                    {projectSecrets.map((secret) => (
+                                      <option key={secret.id} value={secret.id}>
+                                        {secret.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {window.testronDesktop && (
+                                    <input
+                                      aria-label={`Desktop value ${name}`}
+                                      type="password"
+                                      placeholder="Enter only when refreshing desktop"
+                                      value={desktopSecretValues[`${profile.id}:${name}`] ?? ''}
+                                      onChange={(event) =>
+                                        setDesktopSecretValues((current) => ({
+                                          ...current,
+                                          [`${profile.id}:${name}`]: event.target.value,
+                                        }))
+                                      }
+                                      className={fieldClass}
+                                    />
+                                  )}
+                                </label>
+                              ))}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  variant="primary"
+                                  disabled={
+                                    !flowId ||
+                                    Object.values(bindings).some((binding) => !binding.secretId)
+                                  }
+                                  onClick={() =>
+                                    window.testron?.command({
+                                      type: 'configure-profile-authentication',
+                                      profileId: profile.id,
+                                      environmentId: selectedEnvironment.id,
+                                      authFlowId: flowId,
+                                      secretBindings: bindings,
+                                    })
+                                  }
+                                >
+                                  Save authentication
+                                </Button>
+                                {window.testronDesktop && (
+                                  <Button
+                                    type="button"
+                                    disabled={secretNames.some(
+                                      (name) => !desktopSecretValues[`${profile.id}:${name}`],
+                                    )}
+                                    onClick={() => {
+                                      window.testron?.command({
+                                        type: 'refresh-desktop-authentication',
+                                        profileId: profile.id,
+                                        environmentId: selectedEnvironment.id,
+                                        secretValues: Object.fromEntries(
+                                          secretNames.map((name) => [
+                                            name,
+                                            desktopSecretValues[`${profile.id}:${name}`],
+                                          ]),
+                                        ),
+                                      });
+                                      setDesktopSecretValues((current) =>
+                                        Object.fromEntries(
+                                          Object.entries(current).filter(
+                                            ([key]) => !key.startsWith(`${profile.id}:`),
+                                          ),
+                                        ),
+                                      );
+                                    }}
+                                  >
+                                    Refresh desktop session
+                                  </Button>
+                                )}
+                                {window.testronDesktop && (
+                                  <Button
+                                    type="button"
+                                    onClick={() =>
+                                      window.testron?.command({
+                                        type: 'clear-desktop-authentication',
+                                        profileId: profile.id,
+                                        environmentId: selectedEnvironment.id,
+                                      })
+                                    }
+                                  >
+                                    Clear desktop session
+                                  </Button>
+                                )}
+                                <Button
+                                  type="button"
+                                  onClick={() =>
+                                    window.testron?.command({
+                                      type: 'manage-server-authentication-state',
+                                      projectId: project.id,
+                                      environmentId: selectedEnvironment.id,
+                                      profileId: profile.id,
+                                      action: 'invalidate',
+                                    })
+                                  }
+                                >
+                                  Refresh server session
+                                </Button>
+                                <Button
+                                  type="button"
+                                  onClick={() =>
+                                    window.testron?.command({
+                                      type: 'manage-server-authentication-state',
+                                      projectId: project.id,
+                                      environmentId: selectedEnvironment.id,
+                                      profileId: profile.id,
+                                      action: 'clear',
+                                    })
+                                  }
+                                >
+                                  Clear server session
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </section>
+                    )}
 
                     <div className="flex justify-end border-t border-line-soft pt-5">
                       <Button

@@ -129,18 +129,18 @@ test('remote product opens the local recorder and fully reclaims the window', as
       .waitFor({ timeout: 10_000 });
     await expect.poll(() => childBounds(electronApp)).toEqual([]);
 
-    await appWindow.getByRole('button', { name: 'recorded test' }).click();
-    await expect(appWindow.getByRole('dialog', { name: 'Edit test title' })).toBeVisible();
-    await expect.poll(() => childBounds(electronApp)).toEqual([]);
-    await appWindow.getByRole('button', { name: 'Cancel' }).click();
-
-    await appWindow.getByLabel('Create authentication profile').click();
-    await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
-    await expect.poll(() => childBounds(electronApp)).toEqual([]);
-    await appWindow.getByRole('button', { name: 'Cancel' }).click();
-
-    await appWindow.getByLabel('Back to the dashboard').click();
+    await appWindow.evaluate(() => window.testron.command({ type: 'show-product' }));
     await expect.poll(async () => (await childBounds(electronApp))[0]?.width).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(
+          ({ webContents }) =>
+            webContents
+              .getAllWebContents()
+              .filter((contents) => contents.getURL() === 'http://127.0.0.1:4174/').length,
+        ),
+      )
+      .toBe(1);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -338,9 +338,18 @@ test('profile variables auto-fill exact field names and record only references',
 
       await appWindow.getByRole('button', { name: 'Recording profile' }).click({ timeout: 5_000 });
       await expect(appWindow.getByRole('listbox', { name: 'Recording profile' })).toBeVisible();
+      await expect(appWindow.getByRole('option', { name: 'No profile' })).toBeVisible();
       await expect(appWindow.getByRole('option', { name: 'Administrator' })).toBeVisible();
       await expect.poll(() => childBounds(electronApp)).toEqual([]);
+      await appWindow.getByRole('option', { name: 'No profile' }).click({ timeout: 5_000 });
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+        .toBeUndefined();
+      await appWindow.getByRole('button', { name: 'Recording profile' }).click({ timeout: 5_000 });
       await appWindow.getByRole('option', { name: 'Administrator' }).click({ timeout: 5_000 });
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+        .toBe((await appSnapshot(appWindow)).library.profiles[0]?.id);
 
       await appWindow.getByLabel('Configure Administrator').click({ timeout: 5_000 });
       await expect(appWindow.getByRole('dialog', { name: 'Authentication profile' })).toBeVisible();
@@ -378,7 +387,7 @@ test('profile variables auto-fill exact field names and record only references',
   }
 });
 
-test('header and cookie profiles are applied to recording requests', async () => {
+test('header, cookie, and saved storage-state profiles are applied while recording', async () => {
   test.setTimeout(60_000);
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   const crossOriginHeaders: Array<string | undefined> = [];
@@ -497,6 +506,110 @@ test('header and cookie profiles are applied to recording requests', async () =>
         }),
       )
       .toBe('|sid=cookie-secret');
+
+    appWindow.evaluate(
+      ({ id }) =>
+        window.testron.command({
+          type: 'create-profile',
+          environmentId: id,
+          name: 'Saved session',
+          authenticationType: 'storage-state',
+          variables: [
+            {
+              name: 'storageState',
+              sensitive: true,
+              value: JSON.stringify({
+                cookies: [
+                  {
+                    name: 'saved_sid',
+                    value: 'saved-cookie',
+                    domain: '127.0.0.1',
+                    path: '/',
+                    expires: -1,
+                    httpOnly: false,
+                    secure: false,
+                    sameSite: 'Lax',
+                  },
+                ],
+                origins: [
+                  {
+                    origin: 'http://127.0.0.1:4174',
+                    localStorage: [{ name: 'accessToken', value: 'saved-local-token' }],
+                  },
+                ],
+              }),
+            },
+          ],
+        }),
+      { id: environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.profiles.length).toBe(3);
+    await expect
+      .poll(() =>
+        electronApp.evaluate(async ({ webContents }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((contents) => contents.getURL().includes('/request-profile'));
+          if (!website) return undefined;
+          const [cookies, localValue] = await Promise.all([
+            website.session.cookies.get({
+              url: 'http://127.0.0.1:4174/',
+              name: 'saved_sid',
+            }),
+            website.executeJavaScript(`localStorage.getItem('accessToken')`),
+          ]);
+          return { cookie: cookies[0]?.value, localValue };
+        }),
+      )
+      .toEqual({ cookie: 'saved-cookie', localValue: 'saved-local-token' });
+
+    const snapshot = await appSnapshot(appWindow);
+    const headerProfileId = snapshot.library.profiles.find(
+      (profile) => profile.name === 'Administrator',
+    )!.id;
+    const storageProfileId = snapshot.library.profiles.find(
+      (profile) => profile.name === 'Saved session',
+    )!.id;
+    appWindow.evaluate(
+      ({ projectId: selectedProjectId, environmentId: selectedEnvironmentId }) =>
+        window.testron.command({
+          type: 'create-test',
+          projectId: selectedProjectId,
+          environmentIds: [selectedEnvironmentId],
+          title: 'authenticated request',
+        }),
+      { projectId, environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.tests.length).toBe(1);
+    const testId = (await appSnapshot(appWindow)).library.selectedTestId!;
+    appWindow.evaluate(
+      (profileId) => window.testron.command({ type: 'select-profile', profileId }),
+      headerProfileId,
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+      .toBe(headerProfileId);
+    appWindow.evaluate(
+      ({ projectId: selectedProjectId, environmentId: selectedEnvironmentId }) =>
+        window.testron.command({
+          type: 'create-test',
+          projectId: selectedProjectId,
+          environmentIds: [selectedEnvironmentId],
+          title: 'another authenticated request',
+        }),
+      { projectId, environmentId },
+    );
+    await expect.poll(async () => (await appSnapshot(appWindow)).library.tests.length).toBe(2);
+    appWindow.evaluate(
+      ({ selectedTestId, profileId }) => {
+        window.testron.command({ type: 'select-profile', profileId });
+        window.testron.command({ type: 'select-test', testId: selectedTestId });
+      },
+      { selectedTestId: testId, profileId: storageProfileId },
+    );
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).library.selectedProfileId)
+      .toBe(headerProfileId);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -633,7 +746,7 @@ test.skip('failed assertions show their error and repeated runs append cards', a
           type: 'run-test',
           environmentVariables: {},
           timeoutMs: 1_000,
-          reuseAuthState: false,
+          authStateMode: 'ignore',
         }),
       );
     await run();

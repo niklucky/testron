@@ -16,6 +16,7 @@
     "test": "docker compose -f ../../compose.test.yml up --detach --wait && vitest run"
   },
   "dependencies": {
+    "@testron/domain": "workspace:*",
     "@testron/protocol": "workspace:*",
     "@trpc/server": "^11.18.0",
     "drizzle-orm": "^0.45.2",

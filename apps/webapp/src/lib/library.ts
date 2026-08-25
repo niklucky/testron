@@ -1,6 +1,8 @@
 import type { Step } from '@testron/domain/steps/schema';
 import type {
   DesktopRunRequest,
+  DesktopAuthenticationRefreshRequest,
+  DesktopAuthenticationClearRequest,
   DesktopRuntimeState,
   ProjectActivity,
   ProjectInvitation,
@@ -9,6 +11,10 @@ import type {
   TestRun,
   TestSuiteSummary,
   WebWorkspaceSnapshot,
+  BrowserAuthenticationFlow,
+  ProfileEnvironmentAuthentication,
+  ProjectSecretMetadata,
+  AuthenticationStateMetadata,
 } from '@testron/protocol';
 
 export interface ProjectRecord {
@@ -34,7 +40,7 @@ export interface ProfileRecord {
   projectId: string;
   environmentIds: string[];
   name: string;
-  authenticationType: 'credentials' | 'cookies' | 'headers';
+  authenticationType: 'credentials' | 'cookies' | 'headers' | 'storage-state' | 'browser-session';
   revision?: number;
 }
 
@@ -43,6 +49,7 @@ export interface TestRecord {
   projectId: string;
   environmentIds: string[];
   testSuiteId?: string | null;
+  profileId?: string | null;
   title: string;
   prerequisites: string[];
   createdAt: string;
@@ -63,6 +70,11 @@ export interface LibrarySnapshot {
   projects: ProjectRecord[];
   environments: EnvironmentRecord[];
   profiles: ProfileRecord[];
+  authenticationFlows?: BrowserAuthenticationFlow[];
+  profileEnvironmentAuthentications?: ProfileEnvironmentAuthentication[];
+  projectSecrets?: ProjectSecretMetadata[];
+  authenticationStates?: AuthenticationStateMetadata[];
+  authenticationFlowSecretNames?: Record<string, string[]>;
   profileVariables: Array<{
     profileId: string;
     environmentId: string;
@@ -163,7 +175,10 @@ declare global {
       login(email: string, password: string): void;
       register(name: string, email: string, password: string): void;
       requestRuntimeState(): void;
+      openReplayArtifact(artifact: 'screenshot' | 'trace'): void;
       runTest(request: DesktopRunRequest): void;
+      refreshAuthentication(request: DesktopAuthenticationRefreshRequest): void;
+      clearAuthentication(request: DesktopAuthenticationClearRequest): void;
       cancelRun(): void;
       installBrowser(): void;
       cancelBrowserInstall(): void;

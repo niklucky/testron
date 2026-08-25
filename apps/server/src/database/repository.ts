@@ -1,9 +1,13 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import {
   environmentSchema,
+  browserAuthenticationFlowSchema,
+  profileEnvironmentAuthenticationSchema,
+  projectSecretMetadataSchema,
+  authenticationStateMetadataSchema,
   projectInvitationSchema,
   projectMemberSchema,
   profileSchema,
@@ -41,30 +45,49 @@ import {
   type UpdateProjectRequest,
   type UpdateProfileRequest,
   type UpdateTestSuiteRequest,
+  type CreateBrowserAuthenticationFlowRequest,
+  type UpdateBrowserAuthenticationFlowRequest,
+  type DeleteBrowserAuthenticationFlowRequest,
+  type ConfigureProfileEnvironmentAuthenticationRequest,
+  type CreateProjectSecretRequest,
+  type ReplaceProjectSecretRequest,
+  type DeleteProjectSecretRequest,
+  type ManageAuthenticationStateRequest,
+  type BrowserAuthenticationFlow,
+  type ProfileEnvironmentAuthentication,
+  type ProjectSecretMetadata,
   type RespondInvitationRequest,
   type CancelInvitationRequest,
   type SetMemberBlockedRequest,
   type TestRevision,
+  type TestRevisionContent,
   type TestRun,
   type TestSnapshot,
   type WorkspaceSnapshot,
 } from '@testron/protocol';
 import type { AuthenticatedUser } from '../auth.js';
+import type { AuthenticationEncryption } from '../authentication-state/encryption.js';
 import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
   environments,
+  authenticationStates,
+  browserAuthenticationFlows,
   idempotencyRecords,
   projectActivity,
   projectInvitations,
   projectMembers,
   profileVariables,
+  profileEnvironments,
+  profileEnvironmentAuthentications,
   profiles,
+  projectSecrets,
   projects,
   testRevisions,
   testRuns,
   testSuites,
   tests,
+  secretAuditEvents,
   users,
 } from './schema.js';
 
@@ -105,6 +128,7 @@ export class CanonicalRepository {
   constructor(
     private readonly db: Database,
     private readonly invitationMailer: InvitationMailer = disabledInvitationMailer,
+    private readonly authenticationEncryption?: AuthenticationEncryption,
   ) {}
 
   createProject(user: AuthenticatedUser, request: CreateProjectRequest): Promise<Project> {
@@ -185,6 +209,10 @@ export class CanonicalRepository {
         )
         .returning();
       if (!row) throw new RepositoryError('CONFLICT', 'The environment settings changed.');
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(eq(authenticationStates.environmentId, row.id));
       return this.environment(row);
     });
   }
@@ -207,15 +235,19 @@ export class CanonicalRepository {
         })
         .returning();
       if (!row) throw new Error('Could not create the profile.');
-      await tx.insert(profileVariables).values(
-        request.environments.flatMap((environment) =>
-          environment.variables.map((variable) => ({
-            profileId: row.id,
-            environmentId: environment.environmentId,
-            ...variable,
-          })),
-        ),
+      await tx
+        .insert(profileEnvironments)
+        .values(
+          request.environments.map(({ environmentId }) => ({ profileId: row.id, environmentId })),
+        );
+      const variables = request.environments.flatMap((environment) =>
+        environment.variables.map((variable) => ({
+          profileId: row.id,
+          environmentId: environment.environmentId,
+          ...variable,
+        })),
       );
+      if (variables.length > 0) await tx.insert(profileVariables).values(variables);
       return this.profile(tx, row);
     });
   }
@@ -271,14 +303,338 @@ export class CanonicalRepository {
             eq(profileVariables.environmentId, request.environmentId),
           ),
         );
-      await tx.insert(profileVariables).values(
-        request.variables.map((variable) => ({
+      await tx
+        .insert(profileEnvironments)
+        .values({ profileId: request.profileId, environmentId: request.environmentId })
+        .onConflictDoNothing();
+      const variables = request.variables.map((variable) => ({
+        profileId: request.profileId,
+        environmentId: request.environmentId,
+        ...variable,
+      }));
+      if (variables.length > 0) await tx.insert(profileVariables).values(variables);
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(eq(authenticationStates.profileId, row.id));
+      return this.profile(tx, row);
+    });
+  }
+
+  createBrowserAuthenticationFlow(
+    user: AuthenticatedUser,
+    request: CreateBrowserAuthenticationFlowRequest,
+  ): Promise<BrowserAuthenticationFlow> {
+    return this.idempotent(user, 'authenticationFlow.create', request, async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await this.validateSetupTest(tx, request.projectId, request.setupTestId);
+      const [row] = await tx
+        .insert(browserAuthenticationFlows)
+        .values({
+          projectId: request.projectId,
+          name: request.name,
+          setupTestId: request.setupTestId,
+          refreshMode: request.refreshPolicy.mode,
+          maxAgeSeconds: request.refreshPolicy.maxAgeSeconds,
+          refreshBeforeExpirySeconds: request.refreshPolicy.refreshBeforeExpirySeconds,
+          revision: 1,
+        })
+        .returning();
+      if (!row) throw new Error('Could not create the authentication flow.');
+      return this.authenticationFlow(row);
+    });
+  }
+
+  updateBrowserAuthenticationFlow(
+    user: AuthenticatedUser,
+    request: UpdateBrowserAuthenticationFlowRequest,
+  ): Promise<BrowserAuthenticationFlow> {
+    return this.idempotent(user, 'authenticationFlow.update', request, async (tx) => {
+      const current = await this.authorizeAuthenticationFlow(tx, user, request.authFlowId);
+      await this.validateSetupTest(tx, current.projectId, request.setupTestId);
+      const [row] = await tx
+        .update(browserAuthenticationFlows)
+        .set({
+          name: request.name,
+          setupTestId: request.setupTestId,
+          refreshMode: request.refreshPolicy.mode,
+          maxAgeSeconds: request.refreshPolicy.maxAgeSeconds,
+          refreshBeforeExpirySeconds: request.refreshPolicy.refreshBeforeExpirySeconds,
+          revision: request.baseRevision + 1,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(browserAuthenticationFlows.id, request.authFlowId),
+            eq(browserAuthenticationFlows.revision, request.baseRevision),
+            isNull(browserAuthenticationFlows.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The authentication flow changed.');
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(eq(authenticationStates.authFlowId, row.id));
+      return this.authenticationFlow(row);
+    });
+  }
+
+  deleteBrowserAuthenticationFlow(
+    user: AuthenticatedUser,
+    request: DeleteBrowserAuthenticationFlowRequest,
+  ): Promise<BrowserAuthenticationFlow> {
+    return this.idempotent(user, 'authenticationFlow.delete', request, async (tx) => {
+      await this.authorizeAuthenticationFlow(tx, user, request.authFlowId);
+      const [assignment] = await tx
+        .select({ profileId: profileEnvironmentAuthentications.profileId })
+        .from(profileEnvironmentAuthentications)
+        .where(eq(profileEnvironmentAuthentications.authFlowId, request.authFlowId))
+        .limit(1);
+      if (assignment)
+        throw new RepositoryError('CONFLICT', 'The authentication flow is assigned to a profile.');
+      const now = new Date().toISOString();
+      const [row] = await tx
+        .update(browserAuthenticationFlows)
+        .set({
+          revision: request.baseRevision + 1,
+          updatedAt: now,
+          deletedAt: now,
+          deletedBy: user.id,
+        })
+        .where(
+          and(
+            eq(browserAuthenticationFlows.id, request.authFlowId),
+            eq(browserAuthenticationFlows.revision, request.baseRevision),
+            isNull(browserAuthenticationFlows.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The authentication flow changed.');
+      return this.authenticationFlow(row);
+    });
+  }
+
+  configureProfileEnvironmentAuthentication(
+    user: AuthenticatedUser,
+    request: ConfigureProfileEnvironmentAuthenticationRequest,
+  ): Promise<ProfileEnvironmentAuthentication> {
+    return this.idempotent(user, 'profile.configureAuthentication', request, async (tx) => {
+      const profile = await this.authorizeProfile(tx, user, request.profileId);
+      if (profile.authenticationType !== 'browser-session')
+        throw new RepositoryError('CONFLICT', 'The profile does not use browser login.');
+      await this.requireEnvironment(tx, request.environmentId, profile.projectId);
+      const flow = await this.authorizeAuthenticationFlow(tx, user, request.authFlowId);
+      if (flow.projectId !== profile.projectId)
+        throw new RepositoryError(
+          'NOT_FOUND',
+          'The authentication flow was not found in this project.',
+        );
+      const setup = await this.validateSetupTest(
+        tx,
+        profile.projectId,
+        flow.setupTestId,
+        request.environmentId,
+      );
+      const requiredBindings = [
+        ...new Set(
+          setup.currentRevision.content.steps
+            .map(({ payload }) =>
+              payload.kind === 'fill' ? payload.secret?.environmentVariable : undefined,
+            )
+            .filter((name): name is string => name !== undefined),
+        ),
+      ].sort();
+      const suppliedBindings = Object.keys(request.secretBindings).sort();
+      if (requiredBindings.join('\u0000') !== suppliedBindings.join('\u0000'))
+        throw new RepositoryError(
+          'CONFLICT',
+          'Secret bindings must match the setup test variables.',
+        );
+      const secretIds = Object.values(request.secretBindings).map(({ secretId }) => secretId);
+      if (secretIds.length > 0) {
+        const secrets = await tx
+          .select({ id: projectSecrets.id })
+          .from(projectSecrets)
+          .where(
+            and(
+              inArray(projectSecrets.id, secretIds),
+              eq(projectSecrets.projectId, profile.projectId),
+              isNull(projectSecrets.deletedAt),
+              isNotNull(projectSecrets.encryptedValue),
+            ),
+          );
+        if (new Set(secrets.map(({ id }) => id)).size !== new Set(secretIds).size)
+          throw new RepositoryError(
+            'NOT_FOUND',
+            'A configured secret was not found in this project.',
+          );
+      }
+      const [existing] = await tx
+        .select({ revision: profileEnvironmentAuthentications.revision })
+        .from(profileEnvironmentAuthentications)
+        .where(
+          and(
+            eq(profileEnvironmentAuthentications.profileId, request.profileId),
+            eq(profileEnvironmentAuthentications.environmentId, request.environmentId),
+          ),
+        )
+        .limit(1);
+      const [row] = await tx
+        .insert(profileEnvironmentAuthentications)
+        .values({
           profileId: request.profileId,
           environmentId: request.environmentId,
-          ...variable,
-        })),
+          authFlowId: request.authFlowId,
+          secretBindings: request.secretBindings,
+          revision: (existing?.revision ?? 0) + 1,
+          updatedAt: new Date().toISOString(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            profileEnvironmentAuthentications.profileId,
+            profileEnvironmentAuthentications.environmentId,
+          ],
+          set: {
+            authFlowId: request.authFlowId,
+            secretBindings: request.secretBindings,
+            revision: (existing?.revision ?? 0) + 1,
+            updatedAt: new Date().toISOString(),
+          },
+        })
+        .returning();
+      if (!row) throw new Error('Could not configure profile authentication.');
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(authenticationStates.profileId, request.profileId),
+            eq(authenticationStates.environmentId, request.environmentId),
+          ),
+        );
+      return this.profileEnvironmentAuthentication(row);
+    });
+  }
+
+  createProjectSecret(
+    user: AuthenticatedUser,
+    request: CreateProjectSecretRequest,
+  ): Promise<ProjectSecretMetadata> {
+    return this.idempotent(user, 'projectSecret.create', request, async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const encryption = this.requireAuthenticationEncryption();
+      const secretId = randomUUID();
+      const encrypted = encryption.encrypt(request.value, `${request.projectId}:${secretId}`);
+      const [row] = await tx
+        .insert(projectSecrets)
+        .values({
+          id: secretId,
+          projectId: request.projectId,
+          name: request.name,
+          encryptedValue: encrypted.value,
+          keyVersion: encrypted.keyVersion,
+          revision: 1,
+        })
+        .returning();
+      if (!row) throw new Error('Could not create the project secret.');
+      await tx.insert(secretAuditEvents).values({
+        projectId: row.projectId,
+        secretId: row.id,
+        actorId: user.id,
+        action: 'created',
+      });
+      return this.projectSecret(row);
+    });
+  }
+
+  replaceProjectSecret(
+    user: AuthenticatedUser,
+    request: ReplaceProjectSecretRequest,
+  ): Promise<ProjectSecretMetadata> {
+    return this.idempotent(user, 'projectSecret.replace', request, async (tx) => {
+      const current = await this.authorizeProjectSecret(tx, user, request.secretId);
+      const encrypted = this.requireAuthenticationEncryption().encrypt(
+        request.value,
+        `${current.projectId}:${current.id}`,
       );
-      return this.profile(tx, row);
+      const [row] = await tx
+        .update(projectSecrets)
+        .set({
+          encryptedValue: encrypted.value,
+          keyVersion: encrypted.keyVersion,
+          revision: current.revision + 1,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(and(eq(projectSecrets.id, request.secretId), isNull(projectSecrets.deletedAt)))
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The project secret changed.');
+      await tx.insert(secretAuditEvents).values({
+        projectId: row.projectId,
+        secretId: row.id,
+        actorId: user.id,
+        action: 'replaced',
+      });
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(eq(authenticationStates.projectId, row.projectId));
+      return this.projectSecret(row);
+    });
+  }
+
+  deleteProjectSecret(
+    user: AuthenticatedUser,
+    request: DeleteProjectSecretRequest,
+  ): Promise<ProjectSecretMetadata> {
+    return this.idempotent(user, 'projectSecret.delete', request, async (tx) => {
+      const current = await this.authorizeProjectSecret(tx, user, request.secretId);
+      const now = new Date().toISOString();
+      const [row] = await tx
+        .update(projectSecrets)
+        .set({ encryptedValue: null, keyVersion: null, deletedAt: now, updatedAt: now })
+        .where(and(eq(projectSecrets.id, request.secretId), isNull(projectSecrets.deletedAt)))
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The project secret changed.');
+      await tx.insert(secretAuditEvents).values({
+        projectId: current.projectId,
+        secretId: current.id,
+        actorId: user.id,
+        action: 'deleted',
+      });
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: now })
+        .where(eq(authenticationStates.projectId, current.projectId));
+      return this.projectSecret(row);
+    });
+  }
+
+  manageAuthenticationState(
+    user: AuthenticatedUser,
+    request: ManageAuthenticationStateRequest,
+  ): Promise<{ status: 'stale' | 'not-created' }> {
+    return this.idempotent(user, 'authenticationState.manage', request, async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const profile = await this.authorizeProfile(tx, user, request.profileId);
+      if (profile.projectId !== request.projectId)
+        throw new RepositoryError('NOT_FOUND', 'The profile was not found in this project.');
+      await this.requireEnvironment(tx, request.environmentId, request.projectId);
+      const condition = and(
+        eq(authenticationStates.owner, 'server'),
+        eq(authenticationStates.projectId, request.projectId),
+        eq(authenticationStates.environmentId, request.environmentId),
+        eq(authenticationStates.profileId, request.profileId),
+      );
+      if (request.action === 'clear') {
+        await tx.delete(authenticationStates).where(condition);
+        return { status: 'not-created' };
+      }
+      await tx
+        .update(authenticationStates)
+        .set({ status: 'stale', updatedAt: new Date().toISOString() })
+        .where(condition);
+      return { status: 'stale' };
     });
   }
 
@@ -374,6 +730,13 @@ export class CanonicalRepository {
     return this.idempotent(user, 'test.create', request, async (tx) => {
       await this.authorizeProject(tx, user, request.projectId);
       await this.requireEnvironments(tx, request.content.environmentIds, request.projectId);
+      await this.requireTestProfile(
+        tx,
+        user,
+        request.content.profileId,
+        request.projectId,
+        request.content.environmentIds,
+      );
       if (request.testSuiteId)
         await this.requireTestSuite(tx, request.testSuiteId, request.projectId);
       const [test] = await tx
@@ -415,6 +778,21 @@ export class CanonicalRepository {
   deleteTest(user: AuthenticatedUser, request: DeleteTestRequest): Promise<TestSnapshot> {
     return this.idempotent(user, 'test.delete', request, async (tx) => {
       const test = await this.authorizeTest(tx, user, request.testId);
+      const [flow] = await tx
+        .select({ id: browserAuthenticationFlows.id })
+        .from(browserAuthenticationFlows)
+        .where(
+          and(
+            eq(browserAuthenticationFlows.setupTestId, request.testId),
+            isNull(browserAuthenticationFlows.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (flow)
+        throw new RepositoryError(
+          'CONFLICT',
+          'The test is used by an authentication flow and cannot be deleted.',
+        );
       const now = new Date().toISOString();
       const [row] = await tx
         .update(tests)
@@ -443,6 +821,21 @@ export class CanonicalRepository {
   moveTest(user: AuthenticatedUser, request: MoveTestRequest): Promise<TestSnapshot> {
     return this.idempotent(user, 'test.move', request, async (tx) => {
       const test = await this.authorizeTest(tx, user, request.testId);
+      const [flow] = await tx
+        .select({ id: browserAuthenticationFlows.id })
+        .from(browserAuthenticationFlows)
+        .where(
+          and(
+            eq(browserAuthenticationFlows.setupTestId, request.testId),
+            isNull(browserAuthenticationFlows.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (flow)
+        throw new RepositoryError(
+          'CONFLICT',
+          'The test is used by an authentication flow and cannot be moved.',
+        );
       await this.authorizeProject(tx, user, request.projectId);
       await this.requireTestSuite(tx, request.testSuiteId, request.projectId);
       await this.requireEnvironments(tx, request.environmentIds, request.projectId);
@@ -453,6 +846,13 @@ export class CanonicalRepository {
         throw new RepositoryError('CONFLICT', 'The test changed.');
 
       const current = await this.snapshot(tx, request.testId);
+      await this.requireTestProfile(
+        tx,
+        user,
+        current.currentRevision.content.profileId,
+        request.projectId,
+        request.environmentIds,
+      );
       const nextNumber = request.baseRevision.number + 1;
       const [revision] = await tx
         .insert(testRevisions)
@@ -512,12 +912,12 @@ export class CanonicalRepository {
         if (profile.projectId !== test.projectId)
           throw new RepositoryError('NOT_FOUND', 'The profile was not found in this project.');
         const [configuration] = await tx
-          .select({ profileId: profileVariables.profileId })
-          .from(profileVariables)
+          .select({ profileId: profileEnvironments.profileId })
+          .from(profileEnvironments)
           .where(
             and(
-              eq(profileVariables.profileId, request.profileId),
-              eq(profileVariables.environmentId, request.environmentId),
+              eq(profileEnvironments.profileId, request.profileId),
+              eq(profileEnvironments.environmentId, request.environmentId),
             ),
           )
           .limit(1);
@@ -526,6 +926,23 @@ export class CanonicalRepository {
             'CONFLICT',
             'The profile is not configured for this environment.',
           );
+        if (profile.authenticationType === 'browser-session') {
+          const [authentication] = await tx
+            .select({ profileId: profileEnvironmentAuthentications.profileId })
+            .from(profileEnvironmentAuthentications)
+            .where(
+              and(
+                eq(profileEnvironmentAuthentications.profileId, request.profileId),
+                eq(profileEnvironmentAuthentications.environmentId, request.environmentId),
+              ),
+            )
+            .limit(1);
+          if (!authentication)
+            throw new RepositoryError(
+              'CONFLICT',
+              'Browser authentication is not configured for this environment.',
+            );
+        }
       }
       const [row] = await tx
         .insert(testRuns)
@@ -813,6 +1230,47 @@ export class CanonicalRepository {
               .where(and(inArray(profiles.projectId, projectIds), isNull(profiles.deletedAt)))
               .orderBy(asc(profiles.createdAt));
       const profileValues = await Promise.all(profileRows.map((row) => this.profile(tx, row)));
+      const authenticationFlowRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(browserAuthenticationFlows)
+              .where(
+                and(
+                  inArray(browserAuthenticationFlows.projectId, projectIds),
+                  isNull(browserAuthenticationFlows.deletedAt),
+                ),
+              )
+              .orderBy(asc(browserAuthenticationFlows.createdAt));
+      const profileEnvironmentAuthenticationRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select({ authentication: profileEnvironmentAuthentications })
+              .from(profileEnvironmentAuthentications)
+              .innerJoin(profiles, eq(profiles.id, profileEnvironmentAuthentications.profileId))
+              .where(inArray(profiles.projectId, projectIds));
+      const projectSecretRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(projectSecrets)
+              .where(
+                and(
+                  inArray(projectSecrets.projectId, projectIds),
+                  isNull(projectSecrets.deletedAt),
+                ),
+              )
+              .orderBy(asc(projectSecrets.createdAt));
+      const authenticationStateRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(authenticationStates)
+              .where(inArray(authenticationStates.projectId, projectIds));
       const testSuiteValues = await this.testSuiteSummaries(tx, projectIds);
       const deletedTestSuiteValues = await this.testSuiteSummaries(tx, projectIds, 'deleted');
       const testRows =
@@ -1034,6 +1492,36 @@ export class CanonicalRepository {
         projects: projectValues,
         environments: environmentValues,
         profiles: profileValues,
+        authenticationFlows: authenticationFlowRows.map((row) => this.authenticationFlow(row)),
+        profileEnvironmentAuthentications: profileEnvironmentAuthenticationRows.map(
+          ({ authentication }) => this.profileEnvironmentAuthentication(authentication),
+        ),
+        projectSecrets: projectSecretRows.map((row) => this.projectSecret(row)),
+        authenticationStates: authenticationStateRows.map((row) =>
+          authenticationStateMetadataSchema.parse(
+            (() => {
+              const flow = authenticationFlowRows.find(
+                (candidate) => candidate.id === row.authFlowId,
+              );
+              const staleByExpiry =
+                row.status === 'ready' &&
+                row.expiresAt !== null &&
+                Date.parse(row.expiresAt) <=
+                  Date.now() + (flow?.refreshBeforeExpirySeconds ?? 0) * 1_000;
+              return {
+                owner: row.owner,
+                projectId: row.projectId,
+                environmentId: row.environmentId,
+                profileId: row.profileId,
+                authFlowId: row.authFlowId,
+                status: staleByExpiry ? 'stale' : row.status,
+                createdAt: row.createdAt ? instant(row.createdAt) : null,
+                expiresAt: row.expiresAt ? instant(row.expiresAt) : null,
+                lastError: row.lastError,
+              };
+            })(),
+          ),
+        ),
         testSuites: testSuiteValues,
         tests: testValues,
         deletedTestSuites: deletedTestSuiteValues,
@@ -1097,6 +1585,58 @@ export class CanonicalRepository {
         .limit(1);
       if (!test) throw new RepositoryError('NOT_FOUND', 'The test was not found.');
       await this.requireEnvironments(tx, request.content.environmentIds, test.projectId);
+      await this.requireTestProfile(
+        tx,
+        user,
+        request.content.profileId,
+        test.projectId,
+        request.content.environmentIds,
+      );
+      const referencedFlows = await tx
+        .select({ id: browserAuthenticationFlows.id })
+        .from(browserAuthenticationFlows)
+        .where(
+          and(
+            eq(browserAuthenticationFlows.setupTestId, request.testId),
+            isNull(browserAuthenticationFlows.deletedAt),
+          ),
+        );
+      if (referencedFlows.length > 0) {
+        this.validateSetupTestContent(request.content);
+        const assignments = await tx
+          .select()
+          .from(profileEnvironmentAuthentications)
+          .where(
+            inArray(
+              profileEnvironmentAuthentications.authFlowId,
+              referencedFlows.map(({ id }) => id),
+            ),
+          );
+        const requiredSecrets = [
+          ...new Set(
+            request.content.steps
+              .map(({ payload }) =>
+                payload.kind === 'fill' ? payload.secret?.environmentVariable : undefined,
+              )
+              .filter((name): name is string => name !== undefined),
+          ),
+        ].sort();
+        for (const assignment of assignments) {
+          if (!request.content.environmentIds.includes(assignment.environmentId))
+            throw new RepositoryError(
+              'CONFLICT',
+              'The setup test must keep every assigned authentication environment.',
+            );
+          if (
+            Object.keys(assignment.secretBindings).sort().join('\u0000') !==
+            requiredSecrets.join('\u0000')
+          )
+            throw new RepositoryError(
+              'CONFLICT',
+              'The setup test secret variables must match its configured bindings.',
+            );
+        }
+      }
       if (
         test.currentRevisionId !== request.baseRevision.id ||
         test.currentRevisionNumber !== request.baseRevision.number
@@ -1129,6 +1669,16 @@ export class CanonicalRepository {
           currentRevisionNumber: nextNumber,
         })
         .where(eq(tests.id, request.testId));
+      if (referencedFlows.length > 0)
+        await tx
+          .update(authenticationStates)
+          .set({ status: 'stale', updatedAt: new Date().toISOString() })
+          .where(
+            inArray(
+              authenticationStates.authFlowId,
+              referencedFlows.map(({ id }) => id),
+            ),
+          );
       await this.recordActivity(tx, user, {
         projectId: test.projectId,
         action: 'test.updated',
@@ -1349,6 +1899,87 @@ export class CanonicalRepository {
     return profile;
   }
 
+  private async authorizeAuthenticationFlow(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    authFlowId: string,
+  ): Promise<typeof browserAuthenticationFlows.$inferSelect> {
+    const [flow] = await tx
+      .select()
+      .from(browserAuthenticationFlows)
+      .where(
+        and(
+          eq(browserAuthenticationFlows.id, authFlowId),
+          isNull(browserAuthenticationFlows.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!flow) throw new RepositoryError('NOT_FOUND', 'The authentication flow was not found.');
+    await this.authorizeProject(tx, user, flow.projectId);
+    return flow;
+  }
+
+  private async authorizeProjectSecret(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    secretId: string,
+  ): Promise<typeof projectSecrets.$inferSelect> {
+    const [secret] = await tx
+      .select()
+      .from(projectSecrets)
+      .where(and(eq(projectSecrets.id, secretId), isNull(projectSecrets.deletedAt)))
+      .limit(1);
+    if (!secret) throw new RepositoryError('NOT_FOUND', 'The project secret was not found.');
+    await this.authorizeProject(tx, user, secret.projectId);
+    return secret;
+  }
+
+  private requireAuthenticationEncryption(): AuthenticationEncryption {
+    if (!this.authenticationEncryption)
+      throw new RepositoryError(
+        'CONFLICT',
+        'Server-managed authentication encryption is not configured.',
+      );
+    return this.authenticationEncryption;
+  }
+
+  private async validateSetupTest(
+    tx: Transaction,
+    projectId: string,
+    setupTestId: string,
+    environmentId?: string,
+  ): Promise<TestSnapshot> {
+    const [test] = await tx
+      .select({ id: tests.id, projectId: tests.projectId })
+      .from(tests)
+      .where(and(eq(tests.id, setupTestId), isNull(tests.deletedAt)))
+      .limit(1);
+    if (!test || test.projectId !== projectId)
+      throw new RepositoryError('NOT_FOUND', 'The setup test was not found in this project.');
+    const snapshot = await this.snapshot(tx, setupTestId);
+    if (environmentId && !snapshot.currentRevision.content.environmentIds.includes(environmentId))
+      throw new RepositoryError('CONFLICT', 'The setup test does not support this environment.');
+    this.validateSetupTestContent(snapshot.currentRevision.content);
+    return snapshot;
+  }
+
+  private validateSetupTestContent(content: TestRevisionContent): void {
+    if (content.prerequisites.length > 0)
+      throw new RepositoryError(
+        'CONFLICT',
+        'An authentication setup test cannot have prerequisites.',
+      );
+    if (
+      !content.steps.some(
+        ({ payload }) => payload.kind === 'assertElement' || payload.kind === 'assertUrlPath',
+      )
+    )
+      throw new RepositoryError(
+        'CONFLICT',
+        'An authentication setup test must prove login succeeded.',
+      );
+  }
+
   private async requireEnvironment(
     tx: Transaction,
     environmentId: string,
@@ -1381,6 +2012,33 @@ export class CanonicalRepository {
       );
     if (uniqueIds.length === 0 || rows.length !== uniqueIds.length)
       throw new RepositoryError('NOT_FOUND', 'An environment was not found in this project.');
+  }
+
+  private async requireTestProfile(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    profileId: string | null | undefined,
+    projectId: string,
+    environmentIds: string[],
+  ): Promise<void> {
+    if (!profileId) return;
+    const profile = await this.authorizeProfile(tx, user, profileId);
+    if (profile.projectId !== projectId)
+      throw new RepositoryError('NOT_FOUND', 'The profile was not found in this project.');
+    const configured = await tx
+      .select({ environmentId: profileEnvironments.environmentId })
+      .from(profileEnvironments)
+      .where(
+        and(
+          eq(profileEnvironments.profileId, profileId),
+          inArray(profileEnvironments.environmentId, environmentIds),
+        ),
+      );
+    if (configured.length !== new Set(environmentIds).size)
+      throw new RepositoryError(
+        'CONFLICT',
+        'The profile is not configured for every test environment.',
+      );
   }
 
   private async requireTestSuite(
@@ -1550,23 +2208,72 @@ export class CanonicalRepository {
       .from(profileVariables)
       .where(eq(profileVariables.profileId, row.id))
       .orderBy(asc(profileVariables.environmentId), asc(profileVariables.name));
+    const configuredEnvironments = await tx
+      .select({ environmentId: profileEnvironments.environmentId })
+      .from(profileEnvironments)
+      .where(eq(profileEnvironments.profileId, row.id))
+      .orderBy(asc(profileEnvironments.environmentId));
+    const environmentIds = configuredEnvironments.map(({ environmentId }) => environmentId);
     return profileSchema.parse({
       id: row.id,
       projectId: row.projectId,
       name: row.name,
       authenticationType: row.authenticationType,
-      environments: [...new Set(variables.map(({ environmentId }) => environmentId))].map(
-        (environmentId) => ({
-          environmentId,
-          variables: variables
-            .filter((variable) => variable.environmentId === environmentId)
-            .map(({ name, value, sensitive }) => ({ name, value, sensitive })),
-        }),
-      ),
+      environments: environmentIds.map((environmentId) => ({
+        environmentId,
+        variables: variables
+          .filter((variable) => variable.environmentId === environmentId)
+          .map(({ name, value, sensitive }) => ({ name, value, sensitive })),
+      })),
       revision: row.revision,
       createdAt: instant(row.createdAt),
       updatedAt: instant(row.updatedAt),
       deletion: activeDeletion,
+    });
+  }
+
+  private authenticationFlow(
+    row: typeof browserAuthenticationFlows.$inferSelect,
+  ): BrowserAuthenticationFlow {
+    return browserAuthenticationFlowSchema.parse({
+      id: row.id,
+      projectId: row.projectId,
+      name: row.name,
+      type: 'browser-login',
+      setupTestId: row.setupTestId,
+      revision: row.revision,
+      refreshPolicy: {
+        mode: row.refreshMode,
+        maxAgeSeconds: row.maxAgeSeconds,
+        refreshBeforeExpirySeconds: row.refreshBeforeExpirySeconds,
+      },
+      createdAt: instant(row.createdAt),
+      updatedAt: instant(row.updatedAt),
+    });
+  }
+
+  private profileEnvironmentAuthentication(
+    row: typeof profileEnvironmentAuthentications.$inferSelect,
+  ): ProfileEnvironmentAuthentication {
+    return profileEnvironmentAuthenticationSchema.parse({
+      profileId: row.profileId,
+      environmentId: row.environmentId,
+      authFlowId: row.authFlowId,
+      secretBindings: row.secretBindings,
+      revision: row.revision,
+      updatedAt: instant(row.updatedAt),
+    });
+  }
+
+  private projectSecret(row: typeof projectSecrets.$inferSelect): ProjectSecretMetadata {
+    return projectSecretMetadataSchema.parse({
+      id: row.id,
+      projectId: row.projectId,
+      name: row.name,
+      configured: row.encryptedValue !== null,
+      revision: row.revision,
+      createdAt: instant(row.createdAt),
+      updatedAt: instant(row.updatedAt),
     });
   }
 

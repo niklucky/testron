@@ -112,7 +112,7 @@ export const SessionBar = ({
             aria-label={t('recording_profile')}
             value={profileId ?? ''}
             label={profiles.find((entry) => entry.id === profileId)?.name ?? t('no_profile')}
-            options={profiles}
+            options={[{ id: '', name: t('no_profile') }, ...profiles]}
             prefix={t('profile')}
             onSelect={onProfile}
           />
@@ -181,7 +181,7 @@ const SessionMenu = ({
   onSelect: (id: string) => void;
 }) => {
   const hosted = typeof window.testron !== 'undefined';
-  const useDomMenu = !hosted || (menu === 'profile' && options.length === 1);
+  const useDomMenu = !hosted || (menu === 'profile' && options.length <= 2);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
