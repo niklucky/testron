@@ -1177,6 +1177,7 @@ test('records only an explicitly armed hover before asserting dynamic popover co
         clientY: rect.top + 2,
       }));
       popover.click();
+      document.querySelector('[data-testid="help"]').click();
     })()`);
 
     expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'assertElement')).toBe(

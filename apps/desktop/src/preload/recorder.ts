@@ -484,7 +484,7 @@ const renderInspector = (): void => {
 
   const picker = document.createElement('div');
   picker.style.cssText =
-    'position:fixed;left:0;top:0;visibility:hidden;display:flex;width:max-content;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);flex-direction:column;gap:4px;align-items:stretch;overflow:hidden;padding:4px;border:1px solid rgb(255 255 255 / 18%);border-radius:5px;background:#14181b;box-shadow:0 4px 16px rgb(0 0 0 / 35%);pointer-events:auto';
+    'position:fixed;left:0;top:0;box-sizing:border-box;visibility:hidden;display:flex;width:max-content;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);flex-direction:column;gap:4px;align-items:stretch;overflow:hidden;padding:4px;border:1px solid rgb(255 255 255 / 18%);border-radius:5px;background:#14181b;box-shadow:0 4px 16px rgb(0 0 0 / 35%);pointer-events:auto';
   picker.setAttribute('aria-label', 'Choose locator');
 
   const header = document.createElement('div');
@@ -728,6 +728,11 @@ window.addEventListener(
       return;
     }
     if (captureMode === 'verify') {
+      if (pendingAssertionElement) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const element =
         assertion === 'countExactly' || assertion === 'countAtLeast'
           ? (collectionElementFor(origin) ?? origin)
