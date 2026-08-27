@@ -644,6 +644,7 @@ test('records a table row collection count with its current match total', async 
         clientX: rect.left + 2,
         clientY: rect.top + 2,
       }));
+      cell.click();
     })()`);
     await expect
       .poll(() =>
@@ -662,7 +663,7 @@ test('records a table row collection count with its current match total', async 
         websiteEval(`document.querySelector('[aria-label="Choose locator"]')?.textContent`),
       )
       .toContain('20 matches');
-    await websiteEval(`document.querySelector('tbody td').click()`);
+    await websiteEval(`document.querySelector('[aria-label="Confirm assertion"]').click()`);
 
     await expect
       .poll(async () =>
@@ -1067,6 +1068,53 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
   }
 });
 
+test('hover picker can target a test-id-bearing ancestor under the pointer', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    await appWindow.getByRole('button', { name: /^Hover/ }).click();
+    const websiteEval = (source: string) =>
+      electronApp.evaluate(async ({ webContents }, script) => {
+        const website = webContents
+          .getAllWebContents()
+          .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
+        if (!website) throw new Error('Fixture WebContentsView was not found.');
+        return website.executeJavaScript(script);
+      }, source);
+
+    await websiteEval(`(() => {
+      document.body.innerHTML = '<div data-testId="id1"><div data-probe="inner">Some text</div></div>';
+      const inner = document.querySelector('[data-probe="inner"]');
+      const rect = inner.getBoundingClientRect();
+      inner.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+    })()`);
+
+    await expect
+      .poll(() =>
+        websiteEval(`document.querySelector('[aria-label="Choose locator"]')?.textContent`),
+      )
+      .toContain('parent · data-testid=id1');
+    await websiteEval(`(() => {
+      const choices = [...document.querySelectorAll('[aria-label="Choose locator"] button')];
+      const parent = choices.find((button) => button.textContent.includes('parent · data-testid=id1'));
+      parent.click();
+    })()`);
+
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'hover'))
+      .toMatchObject({
+        target: { primary: { strategy: 'testId', attribute: 'data-testid', value: 'id1' } },
+      });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test('records only an explicitly armed hover before asserting dynamic popover content', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
@@ -1130,6 +1178,33 @@ test('records only an explicitly armed hover before asserting dynamic popover co
       }));
       popover.click();
     })()`);
+
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'assertElement')).toBe(
+      false,
+    );
+
+    await expect
+      .poll(() =>
+        websiteEval(`(() => {
+          const panel = document.querySelector('[aria-label="Choose locator"]');
+          const choices = document.querySelector('[aria-label="Locator choices"]');
+          const selector = choices?.querySelector('button');
+          window.dispatchEvent(new PointerEvent('pointerout', { relatedTarget: null }));
+          return {
+            panelVisible: Boolean(panel),
+            direction: choices ? getComputedStyle(choices).flexDirection : undefined,
+            whiteSpace: selector ? getComputedStyle(selector).whiteSpace : undefined,
+            selectorText: selector?.textContent,
+          };
+        })()`),
+      )
+      .toMatchObject({
+        panelVisible: true,
+        direction: 'column',
+        whiteSpace: 'normal',
+        selectorText: 'data-testid=popover',
+      });
+    await websiteEval(`document.querySelector('[aria-label="Confirm assertion"]').click()`);
 
     await expect
       .poll(async () =>

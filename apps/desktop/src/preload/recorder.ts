@@ -3,6 +3,7 @@ import { ipcRenderer } from 'electron';
 import { rankLocators, type Locator } from '@testron/domain/locators/schema';
 import type { RecorderCandidate } from '@testron/domain/recording/schema';
 import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
+import { inspectorPosition } from './inspector-position';
 import type { VerifyAssertion } from './verify-assertion';
 
 let testIdAttribute = 'data-testid';
@@ -29,10 +30,13 @@ ipcRenderer.on(RECORDER_CONFIG_CHANNEL, (_event, payload: unknown) => {
       payload.captureMode === 'hover' ||
       payload.captureMode === 'verify')
   ) {
-    captureMode = payload.captureMode;
-    cancelHoverCapture();
-    inspectedElement = undefined;
-    schedulePointerHitTest();
+    if (captureMode !== payload.captureMode) {
+      captureMode = payload.captureMode;
+      pendingAssertionElement = undefined;
+      cancelHoverCapture();
+      inspectedElement = undefined;
+      schedulePointerHitTest();
+    }
   }
   if (
     typeof payload === 'object' &&
@@ -100,9 +104,11 @@ const INTERACTIVE_SELECTOR = [
   '[role="textbox"]',
 ].join(', ');
 const preferredLocators = new WeakMap<Element, Locator>();
+const selectedTargets = new WeakMap<Element, Element>();
 const selectedVariables = new WeakMap<Element, string>();
 const automaticallyFilled = new WeakSet<Element>();
 let inspectedElement: Element | undefined;
+let pendingAssertionElement: Element | undefined;
 let inspector: HTMLDivElement | undefined;
 let lastPointer: { x: number; y: number } | undefined;
 let inspectorFrame: number | undefined;
@@ -128,7 +134,8 @@ const scheduleHoverCapture = (element: Element): void => {
       repicking ||
       hoverCandidate !== element ||
       !element.isConnected ||
-      inspectedElement !== element
+      !inspectedElement ||
+      (selectedTargets.get(inspectedElement) ?? inspectedElement) !== element
     )
       return;
     send({ kind: 'hover', target: observationFor(element), url: window.location.href });
@@ -138,6 +145,11 @@ const scheduleHoverCapture = (element: Element): void => {
 
 const isInspectorElement = (element: Element): boolean =>
   Boolean(element.closest(`[${INSPECTOR_ATTRIBUTE}]`));
+
+const blockPageInteraction = (event: Event): void => {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+};
 
 const associatedLabel = (element: Element): string | undefined => {
   if (
@@ -322,6 +334,26 @@ const observationForCount = (element: Element) => {
 const send = (candidate: RecorderCandidate): void => ipcRenderer.send(RECORDER_CHANNEL, candidate);
 const sendControl = (control: unknown): void => ipcRenderer.send(RECORDER_CHANNEL, control);
 
+const captureAssertion = (element: Element): void => {
+  const value =
+    element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+      ? element.value
+      : '';
+  const target =
+    assertion === 'countExactly' || assertion === 'countAtLeast'
+      ? observationForCount(element)
+      : observationFor(element);
+  send({
+    kind: 'assertion',
+    target,
+    assertion,
+    observedText: clean(element.textContent) ?? '',
+    observedValue: value,
+    observedCount: countMatches(target.locators[0]),
+    url: window.location.href,
+  });
+};
+
 const assertionOptions: Array<{ value: VerifyAssertion; label: string }> = [
   { value: 'visible', label: 'Visible' },
   { value: 'hidden', label: 'Hidden' },
@@ -336,7 +368,9 @@ const assertionOptions: Array<{ value: VerifyAssertion; label: string }> = [
   { value: 'countAtLeast', label: 'Count at least' },
 ];
 
-const inspectorChoices = (element: Element): Array<{ label: string; locator: Locator }> => {
+type InspectorChoice = { element: Element; label: string; locator: Locator };
+
+const directInspectorChoices = (element: Element): InspectorChoice[] => {
   const choices: Array<{ label: string; locator: Locator }> = [];
   const testId = clean(element.getAttribute(testIdAttribute));
   if (testId)
@@ -348,6 +382,23 @@ const inspectorChoices = (element: Element): Array<{ label: string; locator: Loc
   if (id) choices.push({ label: `id=${id}`, locator: { strategy: 'id', value: id } });
   const name = clean(element.getAttribute('name'));
   if (name) choices.push({ label: `name=${name}`, locator: { strategy: 'name', value: name } });
+  return choices.map((choice) => ({ ...choice, element }));
+};
+
+/** Include useful attributes from nearby ancestors without flooding the picker with CSS fallbacks. */
+const inspectorChoices = (element: Element): InspectorChoice[] => {
+  const choices: InspectorChoice[] = [];
+  let candidate: Element | null = element;
+  for (let depth = 0; candidate && depth <= 4; depth += 1, candidate = candidate.parentElement) {
+    if (candidate === document.body || candidate === document.documentElement) break;
+    const prefix = depth === 0 ? '' : depth === 1 ? 'parent · ' : `ancestor ${depth} · `;
+    choices.push(
+      ...directInspectorChoices(candidate).map((choice) => ({
+        ...choice,
+        label: `${prefix}${choice.label}`,
+      })),
+    );
+  }
   return choices;
 };
 
@@ -400,16 +451,18 @@ const hideInspector = (): void => {
   if (inspectorFrame !== undefined) cancelAnimationFrame(inspectorFrame);
   inspectorFrame = undefined;
   inspectedElement = undefined;
+  pendingAssertionElement = undefined;
   inspector?.remove();
   inspector = undefined;
 };
 
 const renderInspector = (): void => {
-  const element = inspectedElement;
-  if ((!recordingActive && !repicking) || !element?.isConnected) {
+  const origin = inspectedElement;
+  if ((!recordingActive && !repicking) || !origin?.isConnected) {
     hideInspector();
     return;
   }
+  const element = selectedTargets.get(origin) ?? origin;
 
   inspector?.remove();
   const root = document.createElement('div');
@@ -422,27 +475,39 @@ const renderInspector = (): void => {
   outline.style.cssText = `position:fixed;left:${Math.round(rect.left)}px;top:${Math.round(rect.top)}px;width:${Math.round(rect.width)}px;height:${Math.round(rect.height)}px;border:2px solid #3987e5;border-radius:3px;box-sizing:border-box;background:rgb(57 135 229 / 8%);pointer-events:none`;
   root.append(outline);
 
+  // Assertion mode first pins a target with a page click. Hover only shows the outline.
+  if (captureMode === 'verify' && !pendingAssertionElement) {
+    document.documentElement.append(root);
+    inspector = root;
+    return;
+  }
+
   const picker = document.createElement('div');
-  picker.style.cssText = `position:fixed;left:${Math.max(4, Math.min(window.innerWidth - 260, Math.round(rect.left)))}px;top:${Math.max(4, Math.round(rect.top) - 30)}px;display:flex;max-width:calc(100vw - 8px);gap:4px;align-items:center;padding:4px;border:1px solid rgb(255 255 255 / 18%);border-radius:5px;background:#14181b;box-shadow:0 4px 16px rgb(0 0 0 / 35%);pointer-events:auto`;
+  picker.style.cssText =
+    'position:fixed;left:0;top:0;visibility:hidden;display:flex;width:max-content;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);flex-direction:column;gap:4px;align-items:stretch;overflow:hidden;padding:4px;border:1px solid rgb(255 255 255 / 18%);border-radius:5px;background:#14181b;box-shadow:0 4px 16px rgb(0 0 0 / 35%);pointer-events:auto';
   picker.setAttribute('aria-label', 'Choose locator');
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;gap:4px;align-items:center;min-width:0';
+  picker.append(header);
 
   const tag = document.createElement('span');
   tag.textContent = element.tagName.toLowerCase();
   tag.style.cssText = 'padding:1px 4px;color:#9aa4a0';
-  picker.append(tag);
+  header.append(tag);
 
   if (repicking) {
     const mode = document.createElement('span');
     mode.textContent = 'Repick element';
     mode.style.cssText =
       'padding:2px 6px;border-radius:4px;background:#69511b;color:#ffe19a;font-family:system-ui,sans-serif;font-weight:600';
-    picker.append(mode);
+    header.append(mode);
   } else if (captureMode === 'hover') {
     const mode = document.createElement('span');
     mode.textContent = 'Record hover';
     mode.style.cssText =
       'padding:2px 6px;border-radius:4px;background:rgb(57 135 229 / 22%);color:#8fc5ff;font-family:system-ui,sans-serif;font-weight:600';
-    picker.append(mode);
+    header.append(mode);
   } else if (captureMode === 'verify') {
     const select = document.createElement('select');
     select.setAttribute('aria-label', 'Assertion near selected element');
@@ -465,13 +530,15 @@ const renderInspector = (): void => {
     select.addEventListener('change', () => {
       assertion = select.value as VerifyAssertion;
       sendControl({ kind: 'set-assertion', assertion });
-      inspectedElement =
+      const nextElement =
         assertion === 'countExactly' || assertion === 'countAtLeast'
           ? (collectionElementFor(element) ?? element)
           : element;
+      inspectedElement = nextElement;
+      pendingAssertionElement = nextElement;
       renderInspector();
     });
-    picker.append(select);
+    header.append(select);
   }
 
   if (assertion === 'countExactly' || assertion === 'countAtLeast') {
@@ -480,32 +547,36 @@ const renderInspector = (): void => {
     const count = document.createElement('span');
     count.textContent = `${matches} match${matches === 1 ? '' : 'es'}`;
     count.style.cssText = 'padding:1px 4px;color:#8fc5ff';
-    picker.append(count);
+    header.append(count);
   }
 
   const chosen = preferredLocators.get(element);
-  for (const choice of inspectorChoices(element)) {
+  const choices = document.createElement('div');
+  choices.setAttribute('aria-label', 'Locator choices');
+  choices.style.cssText =
+    'display:flex;max-height:calc(100vh - 88px);flex-direction:column;gap:3px;overflow:auto';
+  for (const choice of inspectorChoices(origin)) {
     const button = document.createElement('button');
-    const selected = JSON.stringify(chosen) === JSON.stringify(choice.locator);
+    const selected =
+      choice.element === element && JSON.stringify(chosen) === JSON.stringify(choice.locator);
     button.type = 'button';
     button.textContent = `${selected ? '✓ ' : ''}${choice.label}`;
-    button.style.cssText = `min-width:0;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 6px;border:1px solid ${selected ? '#3987e5' : '#394147'};border-radius:4px;background:${selected ? 'rgb(57 135 229 / 22%)' : '#1a1f23'};color:#e3e8e6;cursor:pointer;font:inherit`;
-    const blockPageInteraction = (event: Event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
+    button.style.cssText = `width:100%;min-width:0;padding:3px 6px;border:1px solid ${selected ? '#3987e5' : '#394147'};border-radius:4px;background:${selected ? 'rgb(57 135 229 / 22%)' : '#1a1f23'};color:#e3e8e6;cursor:pointer;font:inherit;overflow-wrap:anywhere;text-align:left;white-space:normal`;
     button.addEventListener('pointerdown', blockPageInteraction, true);
     button.addEventListener(
       'click',
       (event) => {
         blockPageInteraction(event);
-        preferredLocators.set(element, choice.locator);
+        selectedTargets.set(origin, choice.element);
+        preferredLocators.set(choice.element, choice.locator);
         renderInspector();
+        scheduleHoverCapture(choice.element);
       },
       true,
     );
-    picker.append(button);
+    choices.append(button);
   }
+  if (choices.childElementCount > 0) picker.append(choices);
 
   if (
     (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
@@ -514,7 +585,7 @@ const renderInspector = (): void => {
     const divider = document.createElement('span');
     divider.textContent = '·';
     divider.style.cssText = 'padding:0 2px;color:#68727a';
-    picker.append(divider);
+    header.append(divider);
     for (const variable of profileVariables) {
       const button = document.createElement('button');
       const selected = selectedVariables.get(element) === variable.name;
@@ -522,27 +593,51 @@ const renderInspector = (): void => {
       button.textContent = `${selected ? '✓ ' : ''}{{${variable.name}}}`;
       button.title = `Fill with profile variable ${variable.name}`;
       button.style.cssText = `padding:2px 6px;border:1px solid ${selected ? '#3987e5' : '#394147'};border-radius:4px;background:${selected ? 'rgb(57 135 229 / 22%)' : '#1a1f23'};color:#e3e8e6;cursor:pointer;font:inherit`;
-      const block = (event: Event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      };
-      button.addEventListener('pointerdown', block, true);
+      button.addEventListener('pointerdown', blockPageInteraction, true);
       button.addEventListener(
         'click',
         (event) => {
-          block(event);
+          blockPageInteraction(event);
           fillFromVariable(element, variable, true);
           renderInspector();
           element.focus();
         },
         true,
       );
-      picker.append(button);
+      header.append(button);
     }
+  }
+
+  if (captureMode === 'verify') {
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.setAttribute('aria-label', 'Confirm assertion');
+    confirm.textContent = '✓ Confirm assertion';
+    confirm.style.cssText =
+      'width:100%;padding:4px 8px;border:1px solid #388b62;border-radius:4px;background:rgb(56 139 98 / 22%);color:#9ee6bd;cursor:pointer;font:600 12px system-ui,sans-serif';
+    confirm.addEventListener('pointerdown', blockPageInteraction, true);
+    confirm.addEventListener(
+      'click',
+      (event) => {
+        blockPageInteraction(event);
+        captureAssertion(element);
+        hideInspector();
+      },
+      true,
+    );
+    picker.append(confirm);
   }
 
   root.append(picker);
   document.documentElement.append(root);
+  const pickerRect = picker.getBoundingClientRect();
+  const position = inspectorPosition(rect, pickerRect, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  picker.style.left = `${position.left}px`;
+  picker.style.top = `${position.top}px`;
+  picker.style.visibility = 'visible';
   inspector = root;
 };
 
@@ -555,6 +650,7 @@ const isPageShell = (element: Element): boolean => {
 
 const inspect = (origin: Element, reposition = false): void => {
   if ((!recordingActive && !repicking) || isInspectorElement(origin)) return;
+  if (captureMode === 'verify' && pendingAssertionElement) return;
   // Promote icon/span children to the control they belong to, but keep every
   // other element exact. Attribute-bearing ancestors such as React's #root
   // must never swallow the card, chart, SVG node, or text actually under the
@@ -573,12 +669,16 @@ const inspect = (origin: Element, reposition = false): void => {
   }
   inspectedElement = element;
   renderInspector();
-  scheduleHoverCapture(element);
+  scheduleHoverCapture(selectedTargets.get(element) ?? element);
 };
 
 const inspectAtLastPointer = (): void => {
   inspectorFrame = undefined;
   if (!lastPointer || (!recordingActive && !repicking)) return;
+  if (pendingAssertionElement) {
+    renderInspector();
+    return;
+  }
   const origin = document.elementFromPoint(lastPointer.x, lastPointer.y);
   if (origin && !isInspectorElement(origin)) inspect(origin, true);
   else renderInspector();
@@ -603,11 +703,13 @@ window.addEventListener('resize', schedulePointerHitTest);
 window.addEventListener(
   'pointerout',
   (event) => {
-    if (event.relatedTarget === null) hideInspector();
+    if (event.relatedTarget === null && !pendingAssertionElement) hideInspector();
   },
   true,
 );
-window.addEventListener('blur', hideInspector);
+window.addEventListener('blur', () => {
+  if (!pendingAssertionElement) hideInspector();
+});
 
 window.addEventListener(
   'click',
@@ -617,42 +719,32 @@ window.addEventListener(
     if (!(origin instanceof Element)) return;
     if (isInspectorElement(origin)) return;
     if (repicking) {
-      const element = origin.closest(INTERACTIVE_SELECTOR) ?? origin;
+      const hit = origin.closest(INTERACTIVE_SELECTOR) ?? origin;
+      const element = selectedTargets.get(hit) ?? hit;
       if (isPageShell(element)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       sendControl({ kind: 'repick-target', target: observationFor(element) });
       return;
     }
-    const element =
-      captureMode === 'verify'
-        ? origin.closest('body *')
-        : origin.closest(
-            'button, a, input[type="button"], input[type="submit"], [role="button"], [role="link"]',
-          );
-    if (!element) return;
     if (captureMode === 'verify') {
+      const element =
+        assertion === 'countExactly' || assertion === 'countAtLeast'
+          ? (collectionElementFor(origin) ?? origin)
+          : (origin.closest(INTERACTIVE_SELECTOR) ?? origin);
+      if (isPageShell(element)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      const value =
-        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
-          ? element.value
-          : '';
-      const target =
-        assertion === 'countExactly' || assertion === 'countAtLeast'
-          ? observationForCount(element)
-          : observationFor(element);
-      send({
-        kind: 'assertion',
-        target,
-        assertion,
-        observedText: clean(element.textContent) ?? '',
-        observedValue: value,
-        observedCount: countMatches(target.locators[0]),
-        url: window.location.href,
-      });
+      pendingAssertionElement = element;
+      inspectedElement = element;
+      renderInspector();
       return;
     }
+    const hit = origin.closest(
+      'button, a, input[type="button"], input[type="submit"], [role="button"], [role="link"]',
+    );
+    if (!hit) return;
+    const element = selectedTargets.get(hit) ?? hit;
     if (captureMode === 'hover') {
       event.preventDefault();
       event.stopImmediatePropagation();

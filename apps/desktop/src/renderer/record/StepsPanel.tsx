@@ -110,6 +110,8 @@ export const StepsPanel = ({
                     <button
                       type="button"
                       aria-expanded={open}
+                      aria-label={`${t('edit_locator')}: ${step.locator}`}
+                      title={t('edit_locator')}
                       onClick={(event) => {
                         event.stopPropagation();
                         onExpand(step.id);
@@ -120,6 +122,7 @@ export const StepsPanel = ({
                       {step.alternatives.length > 0 && (
                         <span className="shrink-0 text-ink-3">+{step.alternatives.length}</span>
                       )}
+                      <Icon name="pencil" size={11} className="ml-auto shrink-0" />
                     </button>
                   )}
 
