@@ -10,7 +10,7 @@
     "dev:server": "pnpm --filter @testron/server dev",
     "dev:desktop": "pnpm --filter @testron/desktop start:app",
     "dev:webapp": "pnpm --filter @testron/webapp dev",
-    "dev": "concurrently -n server,webapp \"pnpm dev:server\" \"pnpm dev:webapp\"",
+    "dev": "concurrently -n server,webapp,desktop \"pnpm dev:server\" \"pnpm dev:webapp\" \"pnpm dev:desktop\"",
     "build:webapp": "pnpm --filter @testron/webapp build",
     "dev:web": "pnpm --filter @testron/web dev",
     "build:web": "pnpm --filter @testron/web build",
