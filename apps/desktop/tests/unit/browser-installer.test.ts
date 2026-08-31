@@ -78,4 +78,39 @@ describe('browser installer', () => {
     expect(verified).toBe(true);
     expect((await installer.check()).status).toBe('ready');
   });
+
+  it('uses certificates trusted by Windows for the Playwright download', async () => {
+    const installPath = temporaryDirectory();
+    const executablePath = path.join(installPath, 'chromium');
+    let installerEnvironment: NodeJS.ProcessEnv | undefined;
+    const installer = new BrowserInstaller(installPath, '/playwright/cli.js', {
+      platform: 'win32',
+      browserExecutablePath: () => executablePath,
+      availableBytes: async () => 2 * 1024 * 1024 * 1024,
+      verifyBrowser: async () => undefined,
+      spawnInstaller: (environment) => {
+        installerEnvironment = environment;
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const process = new EventEmitter() as ChildProcessByStdio<null, Readable, Readable>;
+        process.stdout = stdout;
+        process.stderr = stderr;
+        process.stdin = null;
+        process.kill = () => true;
+        queueMicrotask(() => {
+          writeFileSync(executablePath, 'chromium');
+          chmodSync(executablePath, 0o755);
+          process.emit('close', 0);
+        });
+        return process;
+      },
+    });
+
+    expect((await installer.install(() => undefined)).status).toBe('ready');
+    expect(installerEnvironment).toMatchObject({
+      ELECTRON_RUN_AS_NODE: '1',
+      NODE_USE_SYSTEM_CA: '1',
+      PLAYWRIGHT_BROWSERS_PATH: installPath,
+    });
+  });
 });

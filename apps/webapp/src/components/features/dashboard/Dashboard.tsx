@@ -38,9 +38,9 @@ import type {
 /**
  * Testron's main window.
  *
- * Two halves of the same job: the left rail carries the project's structure
- * above the day's work, and the canvas is either the project dashboard or the
- * evidence for one failure. Everything reachable by mouse is also reachable by
+ * The left rail carries navigation and project structure, while the canvas is
+ * either the responsive project dashboard or the evidence for one failure.
+ * Everything reachable by mouse is also reachable by
  * key — the shortcuts are documented in the context rail rather than hidden in
  * a settings screen.
  *
@@ -505,27 +505,7 @@ export const Dashboard = ({
           expandedSuiteIds={expandedSuiteIds}
           onToggleSuite={toggleSuite}
           openFailures={openFailures.length}
-          queue={queue}
-          scope={scope}
-          onScope={(next) => {
-            setScope(next);
-            setCursor(0);
-          }}
-          query={query}
-          onQuery={(next) => {
-            setQuery(next);
-            setCursor(0);
-          }}
-          filterOpen={filterOpen}
-          onFilterOpen={setFilterOpen}
-          filterRef={filterRef}
           selectedFailure={selected}
-          compact={compact}
-          quarantined={quarantined}
-          onSelectFailure={(index) => {
-            setCursor(index);
-            setView('triage');
-          }}
           onOpenTest={openTest}
           onNewTest={(suite) => setNewTestSuite(suite ?? null)}
           onReorder={reorder}
@@ -559,6 +539,27 @@ export const Dashboard = ({
             recentActivity={library?.recentActivity?.filter(
               (item) => item.projectId === library.selectedProjectId,
             )}
+            triageQueue={queue}
+            triageScope={scope}
+            onTriageScope={(next) => {
+              setScope(next);
+              setCursor(0);
+            }}
+            triageQuery={query}
+            onTriageQuery={(next) => {
+              setQuery(next);
+              setCursor(0);
+            }}
+            triageFilterOpen={filterOpen}
+            onTriageFilterOpen={setFilterOpen}
+            triageFilterRef={filterRef}
+            selectedFailureId={selected?.id}
+            compactTriage={compact}
+            quarantined={quarantined}
+            onSelectFailure={(index) => {
+              setCursor(index);
+              setView('triage');
+            }}
             expandedSuiteIds={overviewExpandedSuiteIds}
             state={overview}
             onState={setOverview}

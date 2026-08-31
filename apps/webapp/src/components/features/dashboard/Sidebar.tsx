@@ -1,5 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { LibrarySnapshot } from '../../../lib/library';
 import {
@@ -15,14 +15,11 @@ import {
 } from '../../ui/design';
 import { ms } from './format';
 import { SuiteTree } from './SuiteTree';
-import { TriageQueue } from './TriageQueue';
-import type { Failure, Scope, SuiteRecord, TestRecord, View } from './types';
+import type { Failure, SuiteRecord, TestRecord, View } from './types';
 
 /**
- * The rail carries two halves of the same job: the project's *structure* on
- * top (suites you can expand, extend and reorder) and the day's *work*
- * underneath (the triage queue). Structure gets the larger share because it is
- * what people navigate by; the queue is what they work through.
+ * The rail carries project navigation and its suite tree. Operational panels
+ * live in the overview canvas, where they can respond to the available width.
  */
 export const Sidebar = ({
   view,
@@ -31,18 +28,7 @@ export const Sidebar = ({
   expandedSuiteIds,
   onToggleSuite,
   openFailures,
-  queue,
-  scope,
-  onScope,
-  query,
-  onQuery,
-  filterOpen,
-  onFilterOpen,
-  filterRef,
   selectedFailure,
-  compact,
-  quarantined,
-  onSelectFailure,
   onOpenTest,
   onNewTest,
   onReorder,
@@ -61,18 +47,7 @@ export const Sidebar = ({
   expandedSuiteIds: string[];
   onToggleSuite: (suiteId: string) => void;
   openFailures: number;
-  queue: Failure[];
-  scope: Scope;
-  onScope: (scope: Scope) => void;
-  query: string;
-  onQuery: (query: string) => void;
-  filterOpen: boolean;
-  onFilterOpen: (open: boolean) => void;
-  filterRef: RefObject<HTMLInputElement | null>;
   selectedFailure?: Failure;
-  compact: boolean;
-  quarantined: string[];
-  onSelectFailure: (index: number) => void;
   onOpenTest: (test: TestRecord) => void;
   onNewTest: (suite?: SuiteRecord) => void;
   onReorder: (suiteId: string, from: number, to: number) => void;
@@ -194,22 +169,6 @@ export const Sidebar = ({
           onLog={onLog}
         />
       </section>
-
-      <TriageQueue
-        queue={queue}
-        scope={scope}
-        onScope={onScope}
-        query={query}
-        onQuery={onQuery}
-        filterOpen={filterOpen}
-        onFilterOpen={onFilterOpen}
-        filterRef={filterRef}
-        selectedId={selectedFailure?.id}
-        active={view === 'triage'}
-        compact={compact}
-        quarantined={quarantined}
-        onSelect={onSelectFailure}
-      />
 
       <div className="shrink-0 border-t border-line p-2">
         <div className="relative" ref={accountMenuRef}>

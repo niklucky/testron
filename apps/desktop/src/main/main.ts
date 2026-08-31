@@ -13,6 +13,7 @@ import {
   ipcMain,
   Menu,
   safeStorage,
+  screen,
   session as electronSession,
   shell,
   type WebContents,
@@ -80,6 +81,7 @@ import { DesktopUpdater, type AvailableUpdate } from './update/updater';
 import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
 import { SecureTokenStore } from './sync/token-store';
+import { fitWindowBounds, loadWindowState, saveWindowState } from './window-state';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
@@ -98,6 +100,7 @@ const APP_ICON_PATH = path.join(
 
 const OFF_WINDOW = { x: 0, y: 0, width: 0, height: 0 } as const;
 const SERVER_SESSION_COOKIE = 'testron_session';
+const WINDOW_MINIMUM_SIZE = { width: 880, height: 640 } as const;
 
 const authenticationRequired = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null || !('data' in error)) return false;
@@ -321,11 +324,25 @@ const createWindow = async (): Promise<void> => {
   if (!store) throw new Error('Persistence is not initialized.');
   const installer = browserInstaller;
   if (!installer) throw new Error('Browser installation service is not initialized.');
+  const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');
+  const windowStatePath = path.join(dataDirectory, 'window-state.json');
+  const storedWindowState = loadWindowState(windowStatePath);
+  const storedDisplay = storedWindowState
+    ? screen.getAllDisplays().find((display) => display.id === storedWindowState.displayId)
+    : undefined;
+  const targetDisplay = storedWindowState
+    ? (storedDisplay ?? screen.getDisplayMatching(storedWindowState.bounds))
+    : undefined;
+  const restoredBounds =
+    storedWindowState && targetDisplay
+      ? fitWindowBounds(storedWindowState, targetDisplay.workArea, WINDOW_MINIMUM_SIZE)
+      : undefined;
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
-    minWidth: 880,
-    minHeight: 640,
+    ...restoredBounds,
+    minWidth: WINDOW_MINIMUM_SIZE.width,
+    minHeight: WINDOW_MINIMUM_SIZE.height,
     show: false,
     title: 'Testron',
     titleBarStyle: 'hiddenInset',
@@ -340,8 +357,24 @@ const createWindow = async (): Promise<void> => {
   });
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.maximize();
+    if (!storedWindowState || storedWindowState.isMaximized) mainWindow.maximize();
     mainWindow.show();
+  });
+  mainWindow.on('close', () => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    const bounds = window.getNormalBounds();
+    const display = screen.getDisplayMatching(bounds);
+    try {
+      saveWindowState(windowStatePath, {
+        bounds,
+        displayId: display.id,
+        displayWorkArea: display.workArea,
+        isMaximized: window.isMaximized(),
+      });
+    } catch (error) {
+      console.warn('Could not save the main window state.', error);
+    }
   });
 
   const webappUrl = safeUrl(

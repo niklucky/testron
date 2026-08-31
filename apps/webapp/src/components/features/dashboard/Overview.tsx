@@ -1,5 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
-import { useMemo } from 'react';
+import { useMemo, type RefObject } from 'react';
 import type { ProjectActivity } from '@testron/protocol';
 
 import {
@@ -25,7 +25,8 @@ import { presentProjectActivity } from './activity';
 import { age, ms } from './format';
 import type { LiveOverview } from './overview-data';
 import { activityTone, healthSplits, runLegend, runSeries, verdictTone } from './tone';
-import type { Sort, SortKey, SuiteRecord, Totals } from './types';
+import { TriageQueue } from './TriageQueue';
+import type { Failure, Scope, Sort, SortKey, SuiteRecord, Totals } from './types';
 
 export type OverviewState = {
   range: number;
@@ -64,6 +65,18 @@ export const Overview = ({
   dataStatus = 'local',
   errorMessage,
   recentActivity = [],
+  triageQueue,
+  triageScope,
+  onTriageScope,
+  triageQuery,
+  onTriageQuery,
+  triageFilterOpen,
+  onTriageFilterOpen,
+  triageFilterRef,
+  selectedFailureId,
+  compactTriage,
+  quarantined,
+  onSelectFailure,
   expandedSuiteIds,
   state,
   onState,
@@ -78,6 +91,18 @@ export const Overview = ({
   dataStatus?: 'local' | 'loading' | 'live' | 'error';
   errorMessage?: string;
   recentActivity?: ProjectActivity[];
+  triageQueue: Failure[];
+  triageScope: Scope;
+  onTriageScope: (scope: Scope) => void;
+  triageQuery: string;
+  onTriageQuery: (query: string) => void;
+  triageFilterOpen: boolean;
+  onTriageFilterOpen: (open: boolean) => void;
+  triageFilterRef: RefObject<HTMLInputElement | null>;
+  selectedFailureId?: string;
+  compactTriage: boolean;
+  quarantined: string[];
+  onSelectFailure: (index: number) => void;
   expandedSuiteIds: string[];
   state: OverviewState;
   onState: (state: OverviewState) => void;
@@ -301,8 +326,8 @@ export const Overview = ({
           </Panel>
         )}
 
-        <section className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden max-[1240px]:grid-cols-1 max-[1240px]:grid-rows-[repeat(2,minmax(0,1fr))]">
-          <Panel className="flex min-h-0 flex-col overflow-hidden">
+        <section className="mt-3 grid min-h-0 flex-1 auto-rows-[minmax(320px,1fr)] grid-cols-1 gap-3 overflow-y-auto min-[1441px]:grid-cols-2 min-[1921px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] min-[1921px]:grid-rows-[minmax(0,1fr)] min-[1921px]:overflow-hidden">
+          <Panel className="flex min-h-0 flex-col overflow-hidden min-[1441px]:col-span-2 min-[1921px]:col-span-1">
             <PanelHeader
               title={t('test_suites')}
               subtitle={t('of_suites', { value1: rows.length, value2: availableSuiteCount })}
@@ -497,6 +522,24 @@ export const Overview = ({
                 </EmptyState>
               )}
             </div>
+          </Panel>
+
+          <Panel className="flex min-h-0 flex-col overflow-hidden">
+            <TriageQueue
+              queue={triageQueue}
+              scope={triageScope}
+              onScope={onTriageScope}
+              query={triageQuery}
+              onQuery={onTriageQuery}
+              filterOpen={triageFilterOpen}
+              onFilterOpen={onTriageFilterOpen}
+              filterRef={triageFilterRef}
+              selectedId={selectedFailureId}
+              active
+              compact={compactTriage}
+              quarantined={quarantined}
+              onSelect={onSelectFailure}
+            />
           </Panel>
 
           <Panel className="flex min-h-0 flex-col overflow-hidden">

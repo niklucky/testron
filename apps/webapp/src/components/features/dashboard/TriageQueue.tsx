@@ -50,7 +50,7 @@ export const TriageQueue = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-t border-line">
+    <section className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 px-3">
         <SectionLabel>{t('triage')}</SectionLabel>
         <span className="ui-mono text-ink-3">{queue.length}</span>

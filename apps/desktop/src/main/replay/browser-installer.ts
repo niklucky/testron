@@ -47,6 +47,7 @@ export interface BrowserInstallerDependencies {
   availableBytes?: () => Promise<number>;
   processIsAlive?: (pid: number) => boolean;
   now?: () => number;
+  platform?: NodeJS.Platform;
 }
 
 type InstallerProcess = ChildProcessByStdio<null, Readable, Readable>;
@@ -270,6 +271,9 @@ export class BrowserInstaller {
         ...process.env,
         PLAYWRIGHT_BROWSERS_PATH: this.installPath,
         ELECTRON_RUN_AS_NODE: '1',
+        ...((this.dependencies.platform ?? process.platform) === 'win32'
+          ? { NODE_USE_SYSTEM_CA: '1' }
+          : {}),
       };
       this.child = this.spawnInstaller(environment);
       const readOutput = (chunk: Buffer | string) => {
