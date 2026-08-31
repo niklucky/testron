@@ -13,6 +13,8 @@ import './styles/app.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('The webapp root element is missing.');
 
+// Slang's cache wins inside the provider. This mirror seeds the locale after a
+// cache reset and lets the webapp keep the desktop shell and document language aligned.
 const storedLocale = window.localStorage.getItem('testron.locale');
 const initialLocale = resolveBrowserLocale(storedLocale, window.navigator.languages);
 

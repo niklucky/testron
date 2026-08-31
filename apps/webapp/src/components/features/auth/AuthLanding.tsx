@@ -122,7 +122,6 @@ export const AuthLanding = ({
           <label>
             <span className="sr-only">{t('language')}</span>
             <select
-              aria-label={t('language')}
               value={locale}
               onChange={(event) => setLocale(event.target.value)}
               className="h-8 rounded-md border border-line bg-plane px-2 text-ink outline-none focus:border-accent"
