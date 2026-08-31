@@ -31,6 +31,31 @@ location / {
 }
 ```
 
+Slang runtime refresh also needs two read-only proxy locations. Keep the project
+API key in a root-owned nginx snippet such as
+`/etc/nginx/snippets/testron-slang-key.conf`; the snippet should contain only
+`proxy_set_header X-Api-Key "<project-key>";` and must not be committed or served.
+Do not proxy the Slang push endpoint, because that would let public clients
+modify translations with the injected key.
+
+```nginx
+location = /slang/api/translations {
+    limit_except GET { deny all; }
+    proxy_pass https://slang.warpunit.com/api/translations;
+    proxy_ssl_server_name on;
+    proxy_set_header Host slang.warpunit.com;
+    include /etc/nginx/snippets/testron-slang-key.conf;
+}
+
+location = /slang/api/translations/state {
+    limit_except GET { deny all; }
+    proxy_pass https://slang.warpunit.com/api/translations/state;
+    proxy_ssl_server_name on;
+    proxy_set_header Host slang.warpunit.com;
+    include /etc/nginx/snippets/testron-slang-key.conf;
+}
+```
+
 ## GitHub production environment
 
 Create an environment named `production`. Add these encrypted secrets:

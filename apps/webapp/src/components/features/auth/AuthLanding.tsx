@@ -37,7 +37,7 @@ export const AuthLanding = ({
   server: ServerState;
   authenticate: Authenticate;
 }) => {
-  const { t } = useTranslation();
+  const { locale, setLocale, t } = useTranslation();
   const { theme, toggle } = useTheme();
   const [mode, setMode] = useState<AuthMode>(requestedMode);
   const [name, setName] = useState('');
@@ -119,6 +119,17 @@ export const AuthLanding = ({
         <div className="ml-auto flex items-center gap-2 text-ink-3 [-webkit-app-region:no-drag]">
           <Icon name="shield" size={14} />
           {t('alpha_workspace')}
+          <label>
+            <span className="sr-only">{t('language')}</span>
+            <select
+              value={locale}
+              onChange={(event) => setLocale(event.target.value)}
+              className="h-8 rounded-md border border-line bg-plane px-2 text-ink outline-none focus:border-accent"
+            >
+              <option value="en">{t('english')}</option>
+              <option value="ru">{t('russian')}</option>
+            </select>
+          </label>
           <IconButton
             icon={theme === 'dark' ? 'sun' : 'moon'}
             size="sm"

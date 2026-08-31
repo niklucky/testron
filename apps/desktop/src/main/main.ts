@@ -27,6 +27,7 @@ import {
   authenticationStateIsStale,
   deriveAuthenticationStateExpiration,
 } from '@testron/domain/auth/storage-state';
+import { supportedLocales, type SupportedLocale } from '@testron/i18n';
 import {
   ACCOUNT_PASSWORD_MIN_LENGTH,
   cancelInvitationRequestSchema,
@@ -82,6 +83,7 @@ import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
 import { SecureTokenStore } from './sync/token-store';
 import { fitWindowBounds, loadWindowState, saveWindowState } from './window-state';
+import { resolveSystemLocale } from './locale';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
@@ -131,7 +133,7 @@ const recorderControlSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
 const remoteAppCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('set-locale'), locale: z.enum(['en', 'ru']) }),
+  z.object({ type: z.literal('set-locale'), locale: z.enum(supportedLocales) }),
   z.object({
     type: z.literal('open-local'),
     route: z.enum(['record', 'recovery']),
@@ -407,7 +409,7 @@ const createWindow = async (): Promise<void> => {
   }
 
   let productVisible = Boolean(remoteView);
-  let desktopLocale: 'en' | 'ru' = 'en';
+  let desktopLocale: SupportedLocale = resolveSystemLocale(app.getPreferredSystemLanguages());
   let remoteAttached = false;
   let sessionMenu: Menu | undefined;
 

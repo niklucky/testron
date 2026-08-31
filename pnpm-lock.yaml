@@ -14,6 +14,9 @@ importers:
       '@types/node':
         specifier: 26.2.0
         version: 26.2.0
+      '@warpunit/slang-react':
+        specifier: 0.4.0
+        version: 0.4.0(react@19.2.8)
       concurrently:
         specifier: ^10.0.5
         version: 10.0.5
@@ -54,7 +57,7 @@ importers:
         specifier: ^11.18.0
         version: 11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)
       '@warpunit/slang-react':
-        specifier: ^0.4.0
+        specifier: 0.4.0
         version: 0.4.0(react@19.2.8)
       react:
         specifier: 19.2.8

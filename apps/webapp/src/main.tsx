@@ -6,14 +6,17 @@ import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { queryClient } from './lib/trpc';
+import { resolveBrowserLocale } from './lib/locale';
 import { router } from './router';
 import './styles/app.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('The webapp root element is missing.');
 
+// Slang's cache wins inside the provider. This mirror seeds the locale after a
+// cache reset and lets the webapp keep the desktop shell and document language aligned.
 const storedLocale = window.localStorage.getItem('testron.locale');
-const initialLocale = storedLocale === 'ru' ? 'ru' : 'en';
+const initialLocale = resolveBrowserLocale(storedLocale, window.navigator.languages);
 
 const LocaleBridge = () => {
   const { locale } = useTranslation();
@@ -35,7 +38,6 @@ createRoot(root).render(
         fallbackLocale="en"
         resources={{ en, ru }}
         apiUrl="/slang/"
-        checkForUpdate={false}
       >
         <LocaleBridge />
         <RouterProvider router={router} />
