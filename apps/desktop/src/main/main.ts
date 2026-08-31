@@ -82,6 +82,7 @@ import { DesktopSyncCoordinator, type SyncResult } from './sync/coordinator';
 import { DesktopServerClient } from './sync/server-client';
 import { SecureTokenStore } from './sync/token-store';
 import { fitWindowBounds, loadWindowState, saveWindowState } from './window-state';
+import { resolveSystemLocale, type SupportedLocale } from './locale';
 import {
   APP_CHANNELS,
   APP_RENDERER_WEB_PREFERENCES,
@@ -407,7 +408,7 @@ const createWindow = async (): Promise<void> => {
   }
 
   let productVisible = Boolean(remoteView);
-  let desktopLocale: 'en' | 'ru' = 'en';
+  let desktopLocale: SupportedLocale = resolveSystemLocale(app.getPreferredSystemLanguages());
   let remoteAttached = false;
   let sessionMenu: Menu | undefined;
 

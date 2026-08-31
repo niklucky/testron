@@ -14,6 +14,10 @@ export default defineConfig({
         target: process.env.TESTRON_DEV_SERVER_URL ?? 'http://127.0.0.1:4400',
         changeOrigin: true,
       },
+      '/slang': {
+        target: process.env.TESTRON_DEV_SLANG_URL ?? 'https://app.testron.dev',
+        changeOrigin: true,
+      },
     },
   },
 });

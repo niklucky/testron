@@ -6,7 +6,6 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import './app.css';
 
-const slangApiKey = import.meta.env.VITE_SLANG_API_KEY;
 const requestedLocale = new URLSearchParams(window.location.search).get('locale');
 const initialLocale = requestedLocale === 'ru' ? 'ru' : 'en';
 
@@ -29,7 +28,6 @@ createRoot(document.getElementById('root')!).render(
       fallbackLocale="en"
       resources={{ en, ru }}
       apiUrl="/slang/"
-      checkForUpdate={Boolean(slangApiKey)}
     >
       <DesktopLocaleBridge />
       <App />

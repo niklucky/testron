@@ -24,6 +24,8 @@
     "package": "pnpm --filter @testron/desktop package",
     "make": "pnpm --filter @testron/desktop make",
     "make:win": "pnpm --filter @testron/desktop make:win",
+    "slang:pull": "node --env-file-if-exists=.env node_modules/@warpunit/slang-react/bin/slang.mjs pull --all --out packages/i18n/src",
+    "slang:push": "node --env-file-if-exists=.env node_modules/@warpunit/slang-react/bin/slang.mjs push --in packages/i18n/src",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "26.2.0",
+    "@warpunit/slang-react": "0.4.0",
     "concurrently": "^10.0.5",
     "eslint": "10.8.1",
     "prettier": "3.9.6",
