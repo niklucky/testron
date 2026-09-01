@@ -77,6 +77,10 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
               : `  await expect(${locator}).toContainText(${quote(step.assertion.expected)});`;
           case 'value':
             return `  await expect(${locator}).toHaveValue(${quote(step.assertion.expected)});`;
+          case 'attribute':
+            return `  await expect(${locator}).toHaveAttribute(${quote(step.assertion.name)}, ${quote(step.assertion.expected)});`;
+          case 'class':
+            return `  await expect(${locator}).toHaveClass(${quote(step.assertion.expected)});`;
           case 'count':
             return step.assertion.operator === 'equals'
               ? `  await expect(${locator}).toHaveCount(${step.assertion.expected});`

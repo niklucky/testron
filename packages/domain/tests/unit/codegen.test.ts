@@ -97,6 +97,20 @@ describe('Playwright generation', () => {
         assertion: { type: 'value', expected: 'yes' },
         metadata,
       },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        assertion: { type: 'attribute', name: 'data-state', expected: 'open' },
+        metadata,
+      },
+      {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        assertion: { type: 'class', expected: 'button active' },
+        metadata,
+      },
       { version: 1, kind: 'assertElement', target, assertion: { type: 'enabled' }, metadata },
       { version: 1, kind: 'assertElement', target, assertion: { type: 'disabled' }, metadata },
       { version: 1, kind: 'assertElement', target, assertion: { type: 'checked' }, metadata },
@@ -111,6 +125,8 @@ describe('Playwright generation', () => {
     expect(source).toContain(".toContainText('Ready')");
     expect(source).toContain(".toHaveText('Ready now')");
     expect(source).toContain(".toHaveValue('yes')");
+    expect(source).toContain(".toHaveAttribute('data-state', 'open')");
+    expect(source).toContain(".toHaveClass('button active')");
     expect(source).toContain('.toBeEnabled()');
     expect(source).toContain('.toBeDisabled()');
     expect(source).toContain('.toBeChecked()');

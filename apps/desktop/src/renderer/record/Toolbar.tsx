@@ -424,6 +424,8 @@ export const BrowserBar = ({
           <option value="unchecked">{t('unchecked')}</option>
           <option value="countExactly">{t('count_exactly')}</option>
           <option value="countAtLeast">{t('count_at_least')}</option>
+          <option value="attribute">{t('attribute')}</option>
+          <option value="class">{t('class')}</option>
         </select>
       )}
 

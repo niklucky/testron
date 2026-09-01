@@ -97,6 +97,23 @@ export const sentence = (step: RecordedStep, translate?: Translate): string => {
             `Expect “${step.label}” to hold “${step.value ?? ''}”`,
             { value1: step.label, value2: step.value ?? '' },
           );
+        case 'attribute':
+          return translated(
+            translate,
+            'step_expect_target_attribute',
+            `Expect “${step.label}” to have ${step.assertionAttributeName ?? 'attribute'} “${step.value ?? ''}”`,
+            {
+              value1: step.label,
+              value2: `${step.assertionAttributeName ?? 'attribute'}=${step.value ?? ''}`,
+            },
+          );
+        case 'class':
+          return translated(
+            translate,
+            'step_expect_target_class',
+            `Expect “${step.label}” to have class “${step.value ?? ''}”`,
+            { value1: step.label, value2: step.value ?? '' },
+          );
         case 'enabled':
           return translated(
             translate,
@@ -189,6 +206,10 @@ const call = (step: RecordedStep): string => {
           return `await expect(${target}).toContainText(${quote(step.value ?? '')});`;
         case 'value':
           return `await expect(${target}).toHaveValue(${quote(step.value ?? '')});`;
+        case 'attribute':
+          return `await expect(${target}).toHaveAttribute(${quote(step.assertionAttributeName ?? 'data-testid')}, ${quote(step.value ?? '')});`;
+        case 'class':
+          return `await expect(${target}).toHaveClass(${quote(step.value ?? '')});`;
         case 'enabled':
           return `await expect(${target}).toBeEnabled();`;
         case 'disabled':

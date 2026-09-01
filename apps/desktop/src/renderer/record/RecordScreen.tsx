@@ -252,6 +252,35 @@ export const RecordScreen = () => {
     setLog(`Locator saved · ${locator}`);
   };
 
+  const editAssertion = (id: string, patch: { attributeName?: string; expected: string }): void => {
+    const index = steps.findIndex((step) => step.id === id);
+    const current = snapshot.steps[index];
+    if (index < 0 || !current || current.kind !== 'assertElement') return;
+
+    if (current.assertion.type === 'attribute') {
+      const attributeName = patch.attributeName?.trim() || current.assertion.name;
+      window.testron?.command({
+        type: 'update-step',
+        index,
+        step: {
+          ...current,
+          assertion: { type: 'attribute', name: attributeName, expected: patch.expected },
+        },
+      });
+      setLog(`Assertion saved · ${attributeName}`);
+      return;
+    }
+
+    if (current.assertion.type === 'class') {
+      window.testron?.command({
+        type: 'update-step',
+        index,
+        step: { ...current, assertion: { type: 'class', expected: patch.expected } },
+      });
+      setLog('Assertion saved · class');
+    }
+  };
+
   const repick = (id: string) => {
     const index = steps.findIndex((step) => step.id === id);
     if (index < 0 || !('target' in snapshot.steps[index])) return;
@@ -466,6 +495,12 @@ export const RecordScreen = () => {
         case 'edit-locator':
           editLocator(event.id, event.locator);
           break;
+        case 'edit-assertion':
+          editAssertion(event.id, {
+            ...(event.attributeName ? { attributeName: event.attributeName } : {}),
+            expected: event.expected,
+          });
+          break;
         case 'repick':
           repick(event.id);
           break;
@@ -645,6 +680,7 @@ export const RecordScreen = () => {
               onExpand={(id) => setExpandedId((current) => (current === id ? undefined : id))}
               onUseAlternative={useAlternative}
               onEditLocator={editLocator}
+              onEditAssertion={editAssertion}
               onRepick={repick}
               onCancelRepick={cancelRepick}
               onConvertToAssertion={convertToAssertion}

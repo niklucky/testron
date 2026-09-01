@@ -349,6 +349,9 @@ const captureAssertion = (element: Element): void => {
     assertion,
     observedText: clean(element.textContent) ?? '',
     observedValue: value,
+    observedAttributeName: testIdAttribute,
+    observedAttributeValue: clean(element.getAttribute(testIdAttribute)) ?? '',
+    observedClass: clean(element.getAttribute('class')) ?? '',
     observedCount: countMatches(target.locators[0]),
     url: window.location.href,
   });
@@ -366,6 +369,8 @@ const assertionOptions: Array<{ value: VerifyAssertion; label: string }> = [
   { value: 'unchecked', label: 'Unchecked' },
   { value: 'countExactly', label: 'Count exactly' },
   { value: 'countAtLeast', label: 'Count at least' },
+  { value: 'attribute', label: 'Attribute' },
+  { value: 'class', label: 'Class' },
 ];
 
 type InspectorChoice = { element: Element; label: string; locator: Locator };

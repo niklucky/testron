@@ -122,6 +122,7 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
             onExpand={(id) => send({ type: 'expand', id })}
             onUseAlternative={(id, locator) => send({ type: 'use-alternative', id, locator })}
             onEditLocator={(id, locator) => send({ type: 'edit-locator', id, locator })}
+            onEditAssertion={(id, patch) => send({ type: 'edit-assertion', id, ...patch })}
             onRepick={(id) => send({ type: 'repick', id })}
             onCancelRepick={() => send({ type: 'cancel-repick' })}
             onConvertToAssertion={(id) => send({ type: 'convert-to-assertion', id })}

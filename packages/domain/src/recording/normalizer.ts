@@ -79,6 +79,14 @@ export class RecorderNormalizer {
                 operator: 'atLeast' as const,
                 expected: candidate.observedCount ?? 0,
               };
+            case 'attribute':
+              return {
+                type: 'attribute' as const,
+                name: candidate.observedAttributeName ?? 'data-testid',
+                expected: candidate.observedAttributeValue ?? '',
+              };
+            case 'class':
+              return { type: 'class' as const, expected: candidate.observedClass ?? '' };
             default:
               return { type: candidate.assertion };
           }

@@ -184,6 +184,12 @@ const executeStep = async (
         case 'value':
           await expect(locator).toHaveValue(step.assertion.expected);
           break;
+        case 'attribute':
+          await expect(locator).toHaveAttribute(step.assertion.name, step.assertion.expected);
+          break;
+        case 'class':
+          await expect(locator).toHaveClass(step.assertion.expected);
+          break;
         case 'count':
           if (step.assertion.operator === 'equals')
             await expect(locator).toHaveCount(step.assertion.expected);
