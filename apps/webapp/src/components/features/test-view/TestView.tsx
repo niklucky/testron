@@ -272,6 +272,14 @@ export const TestView = () => {
             return { type: 'text' as const, match: 'equals' as const, expected: next.expected };
           case 'value':
             return { type: 'value' as const, expected: next.expected };
+          case 'attribute':
+            return {
+              type: 'attribute' as const,
+              name: next.attributeName?.trim() || 'data-testid',
+              expected: next.expected,
+            };
+          case 'class':
+            return { type: 'class' as const, expected: next.expected };
           case 'visible':
           case 'hidden':
           case 'enabled':
@@ -795,6 +803,8 @@ export const TestView = () => {
                               'unchecked',
                               'countExactly',
                               'countAtLeast',
+                              'attribute',
+                              'class',
                             ];
                       return (
                         <Branch key={assertion.id} last={position === branch.length - 1}>

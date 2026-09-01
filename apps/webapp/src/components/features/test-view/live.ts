@@ -32,6 +32,7 @@ const assertionFrom = (step: RecordedStep, afterStep: number): Assertion => ({
       : step.assertion === 'textEquals' || step.assertion === 'textContains'
         ? step.assertion
         : (step.assertion ?? 'visible'),
+  attributeName: step.assertion === 'attribute' ? step.assertionAttributeName : undefined,
   expected: step.value ?? '',
 });
 

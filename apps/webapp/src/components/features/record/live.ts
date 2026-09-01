@@ -62,6 +62,8 @@ const assertionFor = (
 ): RecordedStep['assertion'] => {
   if (step.assertion.type === 'count')
     return step.assertion.operator === 'equals' ? 'countExactly' : 'countAtLeast';
+  if (step.assertion.type === 'attribute') return 'attribute';
+  if (step.assertion.type === 'class') return 'class';
   if (step.assertion.type !== 'text') return step.assertion.type;
   return step.assertion.match === 'contains' ? 'textContains' : 'textEquals';
 };
@@ -142,9 +144,14 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           value:
             step.assertion.type === 'text' ||
             step.assertion.type === 'value' ||
-            step.assertion.type === 'count'
+            step.assertion.type === 'count' ||
+            step.assertion.type === 'class'
               ? String(step.assertion.expected)
-              : undefined,
+              : step.assertion.type === 'attribute'
+                ? step.assertion.expected
+                : undefined,
+          assertionAttributeName:
+            step.assertion.type === 'attribute' ? step.assertion.name : undefined,
         };
       case 'assertUrlPath':
         return {

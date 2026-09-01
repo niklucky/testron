@@ -455,6 +455,15 @@ export const AssertionCard = ({
                 onChange={(kind) => onAssertion({ ...assertion, kind })}
                 className=""
               />
+              {assertion.kind === 'attribute' && (
+                <InlineText
+                  label={t('attribute')}
+                  mono
+                  value={assertion.attributeName ?? 'data-testid'}
+                  onChange={(attributeName) => onAssertion({ ...assertion, attributeName })}
+                  className="text-ink-2"
+                />
+              )}
               {assertionNeedsValue(assertion.kind) && (
                 <InlineText
                   label={

@@ -17,6 +17,7 @@ export type RecordedStep = {
   alternatives: string[];
   spot?: string;
   value?: string;
+  assertionAttributeName?: string;
   secret?: string;
   url?: string;
   assertion?:
@@ -30,7 +31,9 @@ export type RecordedStep = {
     | 'checked'
     | 'unchecked'
     | 'countExactly'
-    | 'countAtLeast';
+    | 'countAtLeast'
+    | 'attribute'
+    | 'class';
   warning?: string;
   at: number;
 };
