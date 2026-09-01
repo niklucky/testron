@@ -85,6 +85,28 @@ const clean = (value: string | null | undefined): string | undefined => {
   return normalized ? normalized.slice(0, 200) : undefined;
 };
 
+const exact = (value: string | null | undefined): string | undefined => {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  return normalized || undefined;
+};
+
+const assertionAttributeFor = (element: Element): { name: string; value: string } | undefined => {
+  const testId = exact(element.getAttribute(testIdAttribute));
+  if (testId !== undefined) return { name: testIdAttribute, value: testId };
+
+  for (const name of ['aria-label', 'name', 'id', 'role', 'type', 'title']) {
+    const value = exact(element.getAttribute(name));
+    if (value !== undefined) return { name, value };
+  }
+
+  const firstAttribute = Array.from(element.attributes).find(
+    (attribute) => exact(attribute.value) !== undefined,
+  );
+  return firstAttribute
+    ? { name: firstAttribute.name, value: exact(firstAttribute.value) ?? '' }
+    : undefined;
+};
+
 const cssEscape = (value: string): string => CSS.escape(value);
 
 const INSPECTOR_ATTRIBUTE = 'data-testron-inspector';
@@ -343,15 +365,17 @@ const captureAssertion = (element: Element): void => {
     assertion === 'countExactly' || assertion === 'countAtLeast'
       ? observationForCount(element)
       : observationFor(element);
+  const observedAttribute = assertionAttributeFor(element);
+  if (assertion === 'attribute' && !observedAttribute) return;
   send({
     kind: 'assertion',
     target,
     assertion,
     observedText: clean(element.textContent) ?? '',
     observedValue: value,
-    observedAttributeName: testIdAttribute,
-    observedAttributeValue: clean(element.getAttribute(testIdAttribute)) ?? '',
-    observedClass: clean(element.getAttribute('class')) ?? '',
+    observedAttributeName: observedAttribute?.name,
+    observedAttributeValue: observedAttribute?.value,
+    observedClass: exact(element.getAttribute('class')) ?? '',
     observedCount: countMatches(target.locators[0]),
     url: window.location.href,
   });

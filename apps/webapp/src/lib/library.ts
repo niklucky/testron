@@ -132,7 +132,9 @@ export interface AppSnapshot {
     | 'checked'
     | 'unchecked'
     | 'countExactly'
-    | 'countAtLeast';
+    | 'countAtLeast'
+    | 'attribute'
+    | 'class';
   repickIndex?: number;
 }
 export interface ReplaySnapshot {

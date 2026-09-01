@@ -82,7 +82,7 @@ export class RecorderNormalizer {
             case 'attribute':
               return {
                 type: 'attribute' as const,
-                name: candidate.observedAttributeName ?? 'data-testid',
+                name: candidate.observedAttributeName ?? 'id',
                 expected: candidate.observedAttributeValue ?? '',
               };
             case 'class':
