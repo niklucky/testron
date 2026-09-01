@@ -9,13 +9,14 @@
   "scripts": {
     "start": "vite-node src/cli.ts",
     "dev": "vite-node --watch src/cli.ts",
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/cli.js --external:@trpc/server --external:drizzle-orm --external:pg --external:zod",
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/cli.js --external:@playwright/test --external:@trpc/server --external:drizzle-orm --external:pg --external:zod",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "docker compose -f ../../compose.test.yml up --detach --wait && vitest run"
   },
   "dependencies": {
+    "@playwright/test": "1.62.1",
     "@testron/domain": "workspace:*",
     "@testron/protocol": "workspace:*",
     "@trpc/server": "^11.18.0",

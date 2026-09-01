@@ -59,15 +59,22 @@ export const projectRunsFromLibrary = (library: LibrarySnapshot): ProjectRun[] =
         suite: suite?.name ?? 'Unassigned',
         verdict: runVerdict(run.status),
         environment: environments.get(run.environmentId)?.name ?? 'Unknown environment',
-        browser: '—',
+        browser: run.source === 'desktop-local' ? 'Desktop Chromium' : 'Server Chromium',
         branch: '—',
         commit: '—',
-        trigger: 'manual',
-        by: 'Desktop runner',
+        trigger: run.source === 'server-scheduled' ? 'schedule' : 'manual',
+        by:
+          run.source === 'server-scheduled'
+            ? 'Server schedule'
+            : run.source === 'server-manual'
+              ? 'Server queue'
+              : 'Desktop runner',
         minutesAgo: minutesSince(run.startedAt),
         seconds: (run.durationMs ?? 0) / 1_000,
         attempts: 1,
-        steps: 0,
+        steps: run.steps?.length ?? 0,
+        ...(run.artifacts?.screenshot ? { screenshot: true } : {}),
+        ...(run.artifacts?.video ? { video: true } : {}),
         ...(failed ? { signature: errorSignature(run) } : {}),
       };
     });

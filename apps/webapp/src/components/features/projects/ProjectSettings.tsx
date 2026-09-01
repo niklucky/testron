@@ -5,8 +5,9 @@ import { createPortal } from 'react-dom';
 import type { LibrarySnapshot } from '../../../lib/library';
 import { Button, Icon, IconButton } from '../../ui/design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
+import { RunSchedulerSettings } from './RunSchedulerSettings';
 
-type SettingsTab = 'general' | 'environments';
+type SettingsTab = 'general' | 'environments' | 'scheduler';
 
 const fieldClass =
   'mt-1.5 h-9 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent';
@@ -203,6 +204,7 @@ export const ProjectSettings = ({
               [
                 ['general', 'settings', 'General'],
                 ['environments', 'suite', 'Environments'],
+                ['scheduler', 'rerun', 'Test runs scheduler'],
               ] as const
             ).map(([id, icon, label]) => (
               <button
@@ -223,7 +225,11 @@ export const ProjectSettings = ({
         <div className="flex min-h-0 flex-col">
           <header className="flex h-14 shrink-0 items-center border-b border-line px-5">
             <h3 className="text-lg font-semibold">
-              {tab === 'general' ? t('general') : t('environments')}
+              {tab === 'general'
+                ? t('general')
+                : tab === 'environments'
+                  ? t('environments')
+                  : 'Test runs scheduler'}
             </h3>
             <IconButton
               icon="close"
@@ -270,6 +276,8 @@ export const ProjectSettings = ({
                 </div>
               </div>
             </form>
+          ) : tab === 'scheduler' ? (
+            <RunSchedulerSettings library={library} projectId={project.id} />
           ) : (
             <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
               <aside className="min-h-0 overflow-y-auto border-r border-line p-3">

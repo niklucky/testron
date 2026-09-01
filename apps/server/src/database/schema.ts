@@ -424,10 +424,101 @@ export const testRuns = pgTable(
     finishedAt: instant('finished_at'),
     durationMs: integer('duration_ms'),
     error: text('error'),
+    screenshotPath: text('screenshot_path'),
+    videoPath: text('video_path'),
+    steps: jsonb('steps')
+      .$type<
+        Array<{
+          index: number;
+          action: string;
+          status: 'passed' | 'failed';
+          durationMs: number;
+          error: string | null;
+          pageUrl: string | null;
+        }>
+      >()
+      .default([])
+      .notNull(),
   },
   (table) => [
     index('test_runs_project_status_idx').on(table.projectId, table.status),
     index('test_runs_test_started_idx').on(table.testId, table.startedAt),
+  ],
+);
+
+export const runSchedules = pgTable(
+  'run_schedules',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    cron: text('cron').notNull(),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id),
+    enabled: boolean('enabled').default(true).notNull(),
+    nextRunAt: instant('next_run_at'),
+    lastEnqueuedAt: instant('last_enqueued_at'),
+    revision: integer('revision').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    updatedAt: instant('updated_at').defaultNow().notNull(),
+    deletedAt: instant('deleted_at'),
+    deletedBy: uuid('deleted_by').references(() => users.id),
+  },
+  (table) => [
+    index('run_schedules_project_idx').on(table.projectId),
+    index('run_schedules_due_idx').on(table.enabled, table.nextRunAt),
+  ],
+);
+
+export const runScheduleTests = pgTable(
+  'run_schedule_tests',
+  {
+    scheduleId: uuid('schedule_id')
+      .notNull()
+      .references(() => runSchedules.id, { onDelete: 'cascade' }),
+    testId: uuid('test_id')
+      .notNull()
+      .references(() => tests.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scheduleId, table.testId] }),
+    index('run_schedule_tests_test_idx').on(table.testId),
+  ],
+);
+
+export const serverRunJobs = pgTable(
+  'server_run_jobs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scheduleId: uuid('schedule_id').references(() => runSchedules.id, { onDelete: 'set null' }),
+    testId: uuid('test_id')
+      .notNull()
+      .references(() => tests.id, { onDelete: 'cascade' }),
+    testRevisionId: uuid('test_revision_id')
+      .notNull()
+      .references(() => testRevisions.id),
+    testRevisionNumber: integer('test_revision_number').notNull(),
+    environmentId: uuid('environment_id')
+      .notNull()
+      .references(() => environments.id),
+    profileId: uuid('profile_id').references(() => profiles.id),
+    source: text('source').notNull(),
+    status: text('status').notNull(),
+    runId: uuid('run_id').references(() => testRuns.id, { onDelete: 'set null' }),
+    queuedAt: instant('queued_at').defaultNow().notNull(),
+    startedAt: instant('started_at'),
+    finishedAt: instant('finished_at'),
+    error: text('error'),
+  },
+  (table) => [
+    index('server_run_jobs_status_queued_idx').on(table.status, table.queuedAt),
+    index('server_run_jobs_project_queued_idx').on(table.projectId, table.queuedAt),
   ],
 );
 

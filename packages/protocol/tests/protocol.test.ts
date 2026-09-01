@@ -12,6 +12,7 @@ import {
   createProfileRequestSchema,
   createBrowserAuthenticationFlowRequestSchema,
   createProjectSecretRequestSchema,
+  createRunScheduleRequestSchema,
   moveTestRequestSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
@@ -184,6 +185,41 @@ describe('server-owned local run lifecycle', () => {
         runId: ids.revision,
         status: 'running',
         durationMs: 0,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('UTC run schedules', () => {
+  const meta = {
+    protocolVersion: 1 as const,
+    requestId: ids.request,
+    idempotencyKey: 'schedule-operation',
+    client: { kind: 'web' as const, version: '0.0.1' },
+    supportedStepVersions: [1],
+  };
+
+  it('accepts standard five-field cron and rejects invalid UTC fields', () => {
+    expect(
+      createRunScheduleRequestSchema.parse({
+        meta,
+        projectId: ids.project,
+        name: 'Nightly',
+        cron: '0 1 * * *',
+        environmentId: ids.environment,
+        testIds: [ids.test],
+        enabled: true,
+      }),
+    ).toMatchObject({ cron: '0 1 * * *' });
+    expect(
+      createRunScheduleRequestSchema.safeParse({
+        meta,
+        projectId: ids.project,
+        name: 'Invalid',
+        cron: '0 25 * * *',
+        environmentId: ids.environment,
+        testIds: [ids.test],
+        enabled: true,
       }).success,
     ).toBe(false);
   });

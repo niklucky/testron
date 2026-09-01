@@ -20,6 +20,7 @@ let selectedEnvironmentId: string | undefined;
 let selectedTestSuiteId: string | undefined;
 let selectedTestId: string | undefined;
 let inviteeLookup: LibrarySnapshot['inviteeLookup'];
+let runPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapshot => {
   const projectId = selectedProjectId ?? value.projects[0]?.id;
@@ -98,6 +99,8 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
     latestTestRuns: value.latestTestRuns,
     recentRuns: value.recentRuns,
     activeRuns: value.activeRuns,
+    runSchedules: value.runSchedules ?? [],
+    serverRunJobs: value.serverRunJobs ?? [],
     projectOverviews: value.projectOverviews,
     recentActivity: value.recentActivity,
     selectedProjectId: projectId,
@@ -147,6 +150,9 @@ const refresh = async () => {
   await queryClient.invalidateQueries({ queryKey: [['workspace', 'getWeb']] });
   workspace = await queryClient.fetchQuery(workspaceQueryOptions());
   publish();
+  if (runPollTimer) clearTimeout(runPollTimer);
+  if (workspace.serverRunJobs?.some((job) => job.status === 'queued' || job.status === 'running'))
+    runPollTimer = setTimeout(() => void refresh(), 2_000);
 };
 
 const value = <T>(command: AppCommand, key: string) => command[key] as T;
@@ -329,6 +335,50 @@ const command = (input: AppCommand): void => {
           baseRevision: value(input, 'baseRevision'),
           name: value(input, 'name'),
           baseUrl: value(input, 'baseUrl'),
+        }),
+      );
+      break;
+    case 'create-run-schedule':
+      void mutate(
+        trpcClient.runSchedule.create.mutate({
+          meta,
+          projectId: value(input, 'projectId'),
+          name: value(input, 'name'),
+          cron: value(input, 'cron'),
+          environmentId: value(input, 'environmentId'),
+          testIds: value(input, 'testIds'),
+          enabled: value(input, 'enabled'),
+        }),
+      );
+      break;
+    case 'update-run-schedule':
+      void mutate(
+        trpcClient.runSchedule.update.mutate({
+          meta,
+          scheduleId: value(input, 'scheduleId'),
+          baseRevision: value(input, 'baseRevision'),
+          name: value(input, 'name'),
+          cron: value(input, 'cron'),
+          environmentId: value(input, 'environmentId'),
+          testIds: value(input, 'testIds'),
+          enabled: value(input, 'enabled'),
+        }),
+      );
+      break;
+    case 'delete-run-schedule':
+      void mutate(
+        trpcClient.runSchedule.delete.mutate({
+          meta,
+          scheduleId: value(input, 'scheduleId'),
+          baseRevision: value(input, 'baseRevision'),
+        }),
+      );
+      break;
+    case 'enqueue-run-schedule':
+      void mutate(
+        trpcClient.runSchedule.enqueue.mutate({
+          meta,
+          scheduleId: value(input, 'scheduleId'),
         }),
       );
       break;

@@ -19,6 +19,8 @@ import {
   testRevisionSchema,
   testSnapshotSchema,
   workspaceSnapshotSchema,
+  runScheduleSchema,
+  serverRunJobSchema,
   type CreateEnvironmentRequest,
   type CreateInvitationRequest,
   type CreateProjectRequest,
@@ -64,7 +66,14 @@ import {
   type TestRun,
   type TestSnapshot,
   type WorkspaceSnapshot,
+  type RunSchedule,
+  type ServerRunJob,
+  type CreateRunScheduleRequest,
+  type UpdateRunScheduleRequest,
+  type DeleteRunScheduleRequest,
+  type EnqueueRunScheduleRequest,
 } from '@testron/protocol';
+import { nextCronOccurrence, parseCronExpression } from '@testron/domain/scheduling/cron';
 import type { AuthenticatedUser } from '../auth.js';
 import type { AuthenticationEncryption } from '../authentication-state/encryption.js';
 import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
@@ -88,6 +97,9 @@ import {
   testSuites,
   tests,
   secretAuditEvents,
+  runSchedules,
+  runScheduleTests,
+  serverRunJobs,
   users,
 } from './schema.js';
 
@@ -980,6 +992,137 @@ export class CanonicalRepository {
     });
   }
 
+  createRunSchedule(
+    user: AuthenticatedUser,
+    request: CreateRunScheduleRequest,
+  ): Promise<RunSchedule> {
+    return this.idempotent(user, 'runSchedule.create', request, async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await this.validateScheduleSelection(
+        tx,
+        request.projectId,
+        request.environmentId,
+        request.testIds,
+      );
+      parseCronExpression(request.cron);
+      const now = new Date();
+      const [row] = await tx
+        .insert(runSchedules)
+        .values({
+          projectId: request.projectId,
+          name: request.name,
+          cron: request.cron,
+          environmentId: request.environmentId,
+          enabled: request.enabled,
+          nextRunAt: request.enabled ? nextCronOccurrence(request.cron, now).toISOString() : null,
+          revision: 1,
+        })
+        .returning();
+      if (!row) throw new Error('Could not create the run schedule.');
+      await tx
+        .insert(runScheduleTests)
+        .values([...new Set(request.testIds)].map((testId) => ({ scheduleId: row.id, testId })));
+      return this.runSchedule(tx, row);
+    });
+  }
+
+  updateRunSchedule(
+    user: AuthenticatedUser,
+    request: UpdateRunScheduleRequest,
+  ): Promise<RunSchedule> {
+    return this.idempotent(user, 'runSchedule.update', request, async (tx) => {
+      const current = await this.authorizeRunSchedule(tx, user, request.scheduleId);
+      await this.validateScheduleSelection(
+        tx,
+        current.projectId,
+        request.environmentId,
+        request.testIds,
+      );
+      parseCronExpression(request.cron);
+      const now = new Date();
+      const [row] = await tx
+        .update(runSchedules)
+        .set({
+          name: request.name,
+          cron: request.cron,
+          environmentId: request.environmentId,
+          enabled: request.enabled,
+          nextRunAt: request.enabled ? nextCronOccurrence(request.cron, now).toISOString() : null,
+          revision: request.baseRevision + 1,
+          updatedAt: now.toISOString(),
+        })
+        .where(
+          and(
+            eq(runSchedules.id, request.scheduleId),
+            eq(runSchedules.revision, request.baseRevision),
+            isNull(runSchedules.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The run schedule changed.');
+      await tx.delete(runScheduleTests).where(eq(runScheduleTests.scheduleId, row.id));
+      await tx
+        .insert(runScheduleTests)
+        .values([...new Set(request.testIds)].map((testId) => ({ scheduleId: row.id, testId })));
+      return this.runSchedule(tx, row);
+    });
+  }
+
+  deleteRunSchedule(
+    user: AuthenticatedUser,
+    request: DeleteRunScheduleRequest,
+  ): Promise<RunSchedule> {
+    return this.idempotent(user, 'runSchedule.delete', request, async (tx) => {
+      await this.authorizeRunSchedule(tx, user, request.scheduleId);
+      const now = new Date().toISOString();
+      const [row] = await tx
+        .update(runSchedules)
+        .set({
+          enabled: false,
+          nextRunAt: null,
+          revision: request.baseRevision + 1,
+          updatedAt: now,
+          deletedAt: now,
+          deletedBy: user.id,
+        })
+        .where(
+          and(
+            eq(runSchedules.id, request.scheduleId),
+            eq(runSchedules.revision, request.baseRevision),
+            isNull(runSchedules.deletedAt),
+          ),
+        )
+        .returning();
+      if (!row) throw new RepositoryError('CONFLICT', 'The run schedule changed.');
+      return this.runSchedule(tx, row);
+    });
+  }
+
+  enqueueRunSchedule(
+    user: AuthenticatedUser,
+    request: EnqueueRunScheduleRequest,
+  ): Promise<ServerRunJob[]> {
+    return this.idempotent(user, 'runSchedule.enqueue', request, async (tx) => {
+      const schedule = await this.authorizeRunSchedule(tx, user, request.scheduleId);
+      return this.enqueueScheduleJobs(tx, schedule, 'server-manual');
+    });
+  }
+
+  async getRunArtifact(
+    user: AuthenticatedUser,
+    runId: string,
+    kind: 'screenshot' | 'video',
+  ): Promise<string> {
+    return this.db.transaction(async (tx) => {
+      const [run] = await tx.select().from(testRuns).where(eq(testRuns.id, runId)).limit(1);
+      if (!run) throw new RepositoryError('NOT_FOUND', 'The test run was not found.');
+      await this.authorizeProject(tx, user, run.projectId);
+      const artifact = kind === 'screenshot' ? run.screenshotPath : run.videoPath;
+      if (!artifact) throw new RepositoryError('NOT_FOUND', 'The run artifact was not found.');
+      return artifact;
+    });
+  }
+
   async lookupInvitee(
     _user: AuthenticatedUser,
     email: string,
@@ -1339,6 +1482,28 @@ export class CanonicalRepository {
               .where(and(inArray(testRuns.projectId, projectIds), isNotNull(testRuns.finishedAt)))
               .orderBy(desc(testRuns.startedAt))
               .limit(200);
+      const runScheduleRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(runSchedules)
+              .where(
+                and(inArray(runSchedules.projectId, projectIds), isNull(runSchedules.deletedAt)),
+              )
+              .orderBy(asc(runSchedules.createdAt));
+      const runScheduleValues = await Promise.all(
+        runScheduleRows.map((row) => this.runSchedule(tx, row)),
+      );
+      const serverRunJobRows =
+        projectIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(serverRunJobs)
+              .where(inArray(serverRunJobs.projectId, projectIds))
+              .orderBy(desc(serverRunJobs.queuedAt))
+              .limit(200);
 
       const ownerUsers =
         projectRows.length === 0
@@ -1527,6 +1692,8 @@ export class CanonicalRepository {
         recentActivity,
         recentRuns: recentRunRows.map((row) => this.run(row)),
         activeRuns: runRows.map((row) => this.run(row)),
+        runSchedules: runScheduleValues,
+        serverRunJobs: serverRunJobRows.map((row) => this.serverRunJob(row)),
       });
     });
   }
@@ -1863,6 +2030,97 @@ export class CanonicalRepository {
     if (!test) throw new RepositoryError('NOT_FOUND', 'The test was not found.');
     await this.authorizeProject(tx, user, test.projectId);
     return test;
+  }
+
+  private async authorizeRunSchedule(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    scheduleId: string,
+  ): Promise<typeof runSchedules.$inferSelect> {
+    const [schedule] = await tx
+      .select()
+      .from(runSchedules)
+      .where(and(eq(runSchedules.id, scheduleId), isNull(runSchedules.deletedAt)))
+      .limit(1);
+    if (!schedule) throw new RepositoryError('NOT_FOUND', 'The run schedule was not found.');
+    await this.authorizeProject(tx, user, schedule.projectId);
+    return schedule;
+  }
+
+  private async validateScheduleSelection(
+    tx: Transaction,
+    projectId: string,
+    environmentId: string,
+    testIds: string[],
+  ): Promise<void> {
+    await this.requireEnvironment(tx, environmentId, projectId);
+    const uniqueIds = [...new Set(testIds)];
+    const rows = await tx
+      .select({ id: tests.id })
+      .from(tests)
+      .where(
+        and(inArray(tests.id, uniqueIds), eq(tests.projectId, projectId), isNull(tests.deletedAt)),
+      );
+    if (uniqueIds.length === 0 || rows.length !== uniqueIds.length)
+      throw new RepositoryError('NOT_FOUND', 'A selected test was not found in this project.');
+    const snapshots = await Promise.all(uniqueIds.map((testId) => this.snapshot(tx, testId)));
+    if (
+      snapshots.some(
+        (snapshot) => !snapshot.currentRevision.content.environmentIds.includes(environmentId),
+      )
+    )
+      throw new RepositoryError(
+        'CONFLICT',
+        'Every selected test must be assigned to the schedule environment.',
+      );
+  }
+
+  private async enqueueScheduleJobs(
+    tx: Transaction,
+    schedule: typeof runSchedules.$inferSelect,
+    source: 'server-manual' | 'server-scheduled',
+  ): Promise<ServerRunJob[]> {
+    const selections = await tx
+      .select({ test: tests, revision: testRevisions })
+      .from(runScheduleTests)
+      .innerJoin(tests, eq(tests.id, runScheduleTests.testId))
+      .innerJoin(testRevisions, eq(testRevisions.id, tests.currentRevisionId))
+      .where(
+        and(
+          eq(runScheduleTests.scheduleId, schedule.id),
+          eq(tests.projectId, schedule.projectId),
+          isNull(tests.deletedAt),
+        ),
+      )
+      .orderBy(asc(tests.createdAt));
+    if (selections.length === 0)
+      throw new RepositoryError('CONFLICT', 'The run schedule has no runnable tests.');
+    const values = selections.map(({ test, revision }) => {
+      const content = this.revision(revision).content;
+      if (!content.environmentIds.includes(schedule.environmentId))
+        throw new RepositoryError(
+          'CONFLICT',
+          `Test “${test.title}” is no longer assigned to the schedule environment.`,
+        );
+      return {
+        projectId: schedule.projectId,
+        scheduleId: schedule.id,
+        testId: test.id,
+        testRevisionId: revision.id,
+        testRevisionNumber: revision.number,
+        environmentId: schedule.environmentId,
+        profileId: content.profileId ?? null,
+        source,
+        status: 'queued',
+      };
+    });
+    const rows = await tx.insert(serverRunJobs).values(values).returning();
+    const now = new Date().toISOString();
+    await tx
+      .update(runSchedules)
+      .set({ lastEnqueuedAt: now, updatedAt: now })
+      .where(eq(runSchedules.id, schedule.id));
+    return rows.map((row) => this.serverRunJob(row));
   }
 
   private async authorizeTestSuite(
@@ -2297,11 +2555,57 @@ export class CanonicalRepository {
       environmentId: row.environmentId,
       profileId: row.profileId,
       status: row.status as TestRun['status'],
-      source: 'desktop-local',
+      source: row.source as TestRun['source'],
       startedAt: instant(row.startedAt),
       finishedAt: row.finishedAt ? instant(row.finishedAt) : null,
       durationMs: row.durationMs,
       error: row.error,
+      artifacts: { screenshot: row.screenshotPath !== null, video: row.videoPath !== null },
+      steps: row.steps,
     };
+  }
+
+  private async runSchedule(
+    tx: Transaction,
+    row: typeof runSchedules.$inferSelect,
+  ): Promise<RunSchedule> {
+    const selected = await tx
+      .select({ testId: runScheduleTests.testId })
+      .from(runScheduleTests)
+      .where(eq(runScheduleTests.scheduleId, row.id))
+      .orderBy(asc(runScheduleTests.testId));
+    return runScheduleSchema.parse({
+      id: row.id,
+      projectId: row.projectId,
+      name: row.name,
+      cron: row.cron,
+      environmentId: row.environmentId,
+      testIds: selected.map(({ testId }) => testId),
+      enabled: row.enabled,
+      nextRunAt: row.nextRunAt ? instant(row.nextRunAt) : null,
+      lastEnqueuedAt: row.lastEnqueuedAt ? instant(row.lastEnqueuedAt) : null,
+      revision: row.revision,
+      createdAt: instant(row.createdAt),
+      updatedAt: instant(row.updatedAt),
+    });
+  }
+
+  private serverRunJob(row: typeof serverRunJobs.$inferSelect): ServerRunJob {
+    return serverRunJobSchema.parse({
+      id: row.id,
+      projectId: row.projectId,
+      scheduleId: row.scheduleId,
+      testId: row.testId,
+      testRevision: { id: row.testRevisionId, number: row.testRevisionNumber },
+      environmentId: row.environmentId,
+      profileId: row.profileId,
+      source: row.source,
+      status: row.status,
+      runId: row.runId,
+      queuedAt: instant(row.queuedAt),
+      startedAt: row.startedAt ? instant(row.startedAt) : null,
+      finishedAt: row.finishedAt ? instant(row.finishedAt) : null,
+      error: row.error,
+    });
   }
 }

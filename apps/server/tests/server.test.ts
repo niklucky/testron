@@ -13,12 +13,14 @@ import type { PasswordResetEmail } from '../src/email.js';
 import { AuthenticationService } from '../src/auth.js';
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
+import { ServerRunQueue } from '../src/test-runs/queue.js';
 
 const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test' as const;
 const expectedDatabase = 'testron_test';
 const expectedUser = 'testron_test';
 let server: RunningTestronServer;
 let webappDirectory: string;
+let artifactsDirectory: string;
 const deliveredInvitationIds: string[] = [];
 const deliveredPasswordResets: PasswordResetEmail[] = [];
 
@@ -36,12 +38,14 @@ const assertIsolatedTestDatabase = async (): Promise<void> => {
 
 beforeAll(async () => {
   webappDirectory = await mkdtemp(path.join(tmpdir(), 'testron-webapp-'));
+  artifactsDirectory = path.join(webappDirectory, 'artifacts');
   await mkdir(path.join(webappDirectory, 'assets'));
   await writeFile(path.join(webappDirectory, 'index.html'), '<main>Testron webapp</main>');
   await writeFile(path.join(webappDirectory, 'assets', 'app.js'), 'export {};');
   server = await startTestronServer({
     databaseUrl,
     migrate: false,
+    runQueueEnabled: false,
     authenticationEncryptionKeys: `1:${Buffer.alloc(32, 7).toString('base64')}`,
     invitationMailer: {
       sendInvitation: async (invitation) => {
@@ -54,6 +58,7 @@ beforeAll(async () => {
       },
     },
     webappDirectory,
+    artifactsDirectory,
   });
   await assertIsolatedTestDatabase();
   await server.database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
@@ -1022,6 +1027,181 @@ describe('PostgreSQL tRPC vertical slice', () => {
         source: 'desktop-local',
       }),
     ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
+  it('serves run artifacts only to users who can access the project', async () => {
+    const { api, token } = await signIn();
+    const { environment, snapshot } = await createSlice(api);
+    const run = await api.run.start.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      source: 'desktop-local',
+    });
+    await api.run.finish.mutate({
+      meta: mutationMeta(),
+      runId: run.id,
+      status: 'failed',
+      durationMs: 10,
+    });
+    const runDirectory = path.join(artifactsDirectory, run.id);
+    const screenshotPath = path.join(runDirectory, 'failure.png');
+    await mkdir(runDirectory, { recursive: true });
+    await writeFile(screenshotPath, 'png evidence');
+    await server.database.db.execute(
+      sql`update test_runs set screenshot_path = ${screenshotPath} where id = ${run.id}`,
+    );
+
+    const url = `${server.url}/api/runs/${run.id}/artifacts/screenshot`;
+    await expect(fetch(url)).resolves.toMatchObject({ status: 401 });
+    const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(await response.text()).toBe('png evidence');
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      recentRuns: [{ id: run.id, artifacts: { screenshot: true, video: false } }],
+    });
+  });
+
+  it('creates, updates, hydrates, and soft-deletes UTC run schedules', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Nightly checkout',
+      cron: '0 1 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    expect(schedule).toMatchObject({
+      name: 'Nightly checkout',
+      cron: '0 1 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+      nextRunAt: null,
+      revision: 1,
+    });
+
+    const updated = await api.runSchedule.update.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+      baseRevision: schedule.revision,
+      name: 'Hourly checkout',
+      cron: '0 * * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: true,
+    });
+    expect(updated).toMatchObject({
+      name: 'Hourly checkout',
+      cron: '0 * * * *',
+      enabled: true,
+      nextRunAt: expect.any(String),
+      revision: 2,
+    });
+    await expect(api.workspace.getWeb.query({ meta: requestMeta() })).resolves.toMatchObject({
+      runSchedules: [{ id: schedule.id, testIds: [snapshot.test.id], enabled: true }],
+      serverRunJobs: [],
+    });
+
+    const otherEnvironment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Other',
+      baseUrl: 'https://other.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    await expect(
+      api.runSchedule.update.mutate({
+        meta: mutationMeta(),
+        scheduleId: schedule.id,
+        baseRevision: updated.revision,
+        name: updated.name,
+        cron: updated.cron,
+        environmentId: otherEnvironment.id,
+        testIds: [snapshot.test.id],
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+
+    await api.runSchedule.delete.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+      baseRevision: updated.revision,
+    });
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      runSchedules: [],
+    });
+  });
+
+  it('runs manually enqueued schedule tests through the persistent FIFO queue', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'On demand',
+      cron: '0 0 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    const jobs = await api.runSchedule.enqueue.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+    });
+    expect(jobs).toMatchObject([
+      { testId: snapshot.test.id, source: 'server-manual', status: 'queued' },
+    ]);
+
+    const queue = new ServerRunQueue(
+      server.database.db,
+      path.join(webappDirectory, 'artifacts'),
+      undefined,
+      5_000,
+      {
+        run: async (options) => ({
+          status: 'passed',
+          durationMs: 42,
+          error: null,
+          screenshotPath: null,
+          videoPath: null,
+          steps: options.steps.map((step, index) => ({
+            index,
+            action: step.kind,
+            status: 'passed',
+            durationMs: 42,
+            error: null,
+            pageUrl: 'https://example.test/',
+          })),
+        }),
+      },
+    );
+    await queue.processNow();
+
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      serverRunJobs: [
+        {
+          id: jobs[0]!.id,
+          status: 'passed',
+          runId: expect.any(String),
+          startedAt: expect.any(String),
+          finishedAt: expect.any(String),
+        },
+      ],
+      recentRuns: [
+        {
+          testId: snapshot.test.id,
+          source: 'server-manual',
+          status: 'passed',
+          durationMs: 42,
+          steps: [{ index: 0, status: 'passed' }],
+        },
+      ],
+    });
   });
 
   it('records one authorized, newest-first activity event for each supported mutation', async () => {

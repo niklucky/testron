@@ -314,6 +314,28 @@ export const Runs = ({
                         {run.signature}
                       </span>
                     )}
+                    {run.screenshot && (
+                      <a
+                        href={`/api/runs/${run.id}/artifacts/screenshot`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ui-mono text-xs text-accent hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        screenshot
+                      </a>
+                    )}
+                    {run.video && (
+                      <a
+                        href={`/api/runs/${run.id}/artifacts/video`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ui-mono text-xs text-accent hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        video
+                      </a>
+                    )}
                   </span>
 
                   <span className="flex min-w-0 items-center gap-1.5 text-ink-3">

@@ -39,6 +39,8 @@ export type ProjectRun = {
   /** Set on failures — the same signature Triage groups by. */
   signature?: string;
   failedStep?: number;
+  screenshot?: boolean;
+  video?: boolean;
 };
 
 const mulberry32 = (seed: number) => {

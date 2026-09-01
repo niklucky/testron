@@ -8,12 +8,16 @@ services:
       PORT: 4400
       TESTRON_PUBLIC_URL: ${TESTRON_PUBLIC_URL:?TESTRON_PUBLIC_URL is required}
       TESTRON_AUTH_ENCRYPTION_KEYS: ${TESTRON_AUTH_ENCRYPTION_KEYS:?TESTRON_AUTH_ENCRYPTION_KEYS is required}
+      TESTRON_ARTIFACTS_DIR: /data/testron/artifacts
+      TESTRON_RUN_TIMEOUT_MS: ${TESTRON_RUN_TIMEOUT_MS:-60000}
       TESTRON_BOOTSTRAP_EMAIL: ${TESTRON_BOOTSTRAP_EMAIL:-}
       TESTRON_BOOTSTRAP_PASSWORD: ${TESTRON_BOOTSTRAP_PASSWORD:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
     ports:
       - '127.0.0.1:4400:4400'
+    volumes:
+      - /data/testron/artifacts:/data/testron/artifacts
     depends_on:
       postgres:
         condition: service_healthy

@@ -31,6 +31,12 @@ const server = await startTestronServer({
   ...(process.env.TESTRON_AUTH_ENCRYPTION_KEYS
     ? { authenticationEncryptionKeys: process.env.TESTRON_AUTH_ENCRYPTION_KEYS }
     : {}),
+  ...(process.env.TESTRON_ARTIFACTS_DIR
+    ? { artifactsDirectory: process.env.TESTRON_ARTIFACTS_DIR }
+    : {}),
+  ...(process.env.TESTRON_RUN_TIMEOUT_MS
+    ? { runTimeoutMs: Number(process.env.TESTRON_RUN_TIMEOUT_MS) }
+    : {}),
 });
 
 if (process.env.TESTRON_BOOTSTRAP_EMAIL && process.env.TESTRON_BOOTSTRAP_PASSWORD)

@@ -24,6 +24,18 @@ Use `version:key` entries with 32-byte base64 or hex keys; the highest version
 encrypts new values, while retained older versions allow key rotation. The
 server refuses secret creation until this deployment-managed key is configured.
 
+Scheduled server runs use standard five-field cron expressions evaluated in
+UTC. The settings UI also renders each next occurrence in the browser's local
+timezone. `TESTRON_RUN_TIMEOUT_MS` sets the per-test deadline (60 seconds by
+default). The current worker is a single persistent FIFO queue; jobs that were
+active during a restart are safely re-queued.
+
+Failure screenshots and videos are stored below `TESTRON_ARTIFACTS_DIR`. In the
+deployment Compose file this is `/data/testron/artifacts`, bind-mounted from the
+same host path. Keep that directory persistent and writable by the container's
+`node` user. Artifact paths are never returned through the API; authenticated
+project members retrieve evidence through the run artifact endpoints.
+
 Invitation and password-reset email delivery is optional. Set both
 `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to enable it; password-reset links use
 `TESTRON_PUBLIC_URL`, and the sender must use a domain verified in Resend. If
@@ -90,6 +102,12 @@ output schemas exported by `@testron/protocol`:
 - `workspace.get` reads the signed-in user's active canonical workspace.
 - `test.create`, `test.get`, `test.history`, and `test.saveRevision` manage
   immutable test revisions and exact-base conflict checks.
+- `runSchedule.create`, `runSchedule.update`, `runSchedule.delete`, and
+  `runSchedule.enqueue` manage UTC schedules and manual queueing.
+
+Authenticated evidence is served from
+`/api/runs/:runId/artifacts/screenshot` and
+`/api/runs/:runId/artifacts/video`.
 
 `GET /health` is the unauthenticated health probe. All protected tRPC
 procedures require an opaque bearer session. Authorization is checked at the

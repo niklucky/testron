@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseCronExpression } from '@testron/domain/scheduling/cron';
 
 import {
   ACCOUNT_PASSWORD_MIN_LENGTH,
@@ -25,6 +26,8 @@ import {
   testIdAttributeSchema,
   testRunSchema,
   testRunStatusSchema,
+  runScheduleSchema,
+  serverRunJobSchema,
   testRevisionContentSchema,
   storageStateVariablesAreValid,
   testRevisionSchema,
@@ -441,6 +444,61 @@ export const finishTestRunRequestSchema = z
   })
   .strict();
 
+const cronExpressionSchema = z
+  .string()
+  .trim()
+  .min(9)
+  .max(100)
+  .refine((value) => value.split(/\s+/).length === 5, 'Use a five-field UTC cron expression.')
+  .refine((value) => {
+    try {
+      parseCronExpression(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'The UTC cron expression contains an invalid field.');
+
+export const createRunScheduleRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    cron: cronExpressionSchema,
+    environmentId: entityIdSchema,
+    testIds: z.array(entityIdSchema).min(1).max(500),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+
+export const updateRunScheduleRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    scheduleId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+    name: z.string().trim().min(1).max(100),
+    cron: cronExpressionSchema,
+    environmentId: entityIdSchema,
+    testIds: z.array(entityIdSchema).min(1).max(500),
+    enabled: z.boolean(),
+  })
+  .strict();
+
+export const deleteRunScheduleRequestSchema = z
+  .object({
+    meta: mutationMetadataSchema,
+    scheduleId: entityIdSchema,
+    baseRevision: revisionNumberSchema,
+  })
+  .strict();
+
+export const enqueueRunScheduleRequestSchema = z
+  .object({ meta: mutationMetadataSchema, scheduleId: entityIdSchema })
+  .strict();
+
+export const runScheduleSuccessSchema = runScheduleSchema;
+export const enqueueRunScheduleOutputSchema = z.array(serverRunJobSchema).min(1).max(500);
+
 export const testSnapshotSuccessSchema = z
   .object({ meta: responseMetadataSchema, ok: z.literal(true), snapshot: testSnapshotSchema })
   .strict();
@@ -549,4 +607,8 @@ export type GetTestRevisionHistoryRequest = z.infer<typeof getTestRevisionHistor
 export type SaveTestRevisionRequest = z.infer<typeof saveTestRevisionRequestSchema>;
 export type StartTestRunRequest = z.infer<typeof startTestRunRequestSchema>;
 export type FinishTestRunRequest = z.infer<typeof finishTestRunRequestSchema>;
+export type CreateRunScheduleRequest = z.infer<typeof createRunScheduleRequestSchema>;
+export type UpdateRunScheduleRequest = z.infer<typeof updateRunScheduleRequestSchema>;
+export type DeleteRunScheduleRequest = z.infer<typeof deleteRunScheduleRequestSchema>;
+export type EnqueueRunScheduleRequest = z.infer<typeof enqueueRunScheduleRequestSchema>;
 export type TestSnapshotSuccess = z.infer<typeof testSnapshotSuccessSchema>;
