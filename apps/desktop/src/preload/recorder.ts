@@ -114,6 +114,8 @@ let lastPointer: { x: number; y: number } | undefined;
 let inspectorFrame: number | undefined;
 let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 let hoverCandidate: Element | undefined;
+let inspectorSearchOpen = false;
+let inspectorSearchQuery = '';
 
 const cancelHoverCapture = (): void => {
   if (hoverTimer !== undefined) clearTimeout(hoverTimer);
@@ -369,6 +371,11 @@ const assertionOptions: Array<{ value: VerifyAssertion; label: string }> = [
 ];
 
 type InspectorChoice = { element: Element; label: string; locator: Locator };
+type InspectorTreeNode = {
+  element: Element;
+  depth: number;
+  relation: 'parent' | 'current' | 'child';
+};
 
 const directInspectorChoices = (element: Element): InspectorChoice[] => {
   const choices: Array<{ label: string; locator: Locator }> = [];
@@ -385,22 +392,71 @@ const directInspectorChoices = (element: Element): InspectorChoice[] => {
   return choices.map((choice) => ({ ...choice, element }));
 };
 
-/** Include useful attributes from nearby ancestors without flooding the picker with CSS fallbacks. */
-const inspectorChoices = (element: Element): InspectorChoice[] => {
-  const choices: InspectorChoice[] = [];
-  let candidate: Element | null = element;
-  for (let depth = 0; candidate && depth <= 4; depth += 1, candidate = candidate.parentElement) {
-    if (candidate === document.body || candidate === document.documentElement) break;
-    const prefix = depth === 0 ? '' : depth === 1 ? 'parent · ' : `ancestor ${depth} · `;
-    choices.push(
-      ...directInspectorChoices(candidate).map((choice) => ({
-        ...choice,
-        label: `${prefix}${choice.label}`,
-      })),
-    );
+const locatorLabel = (locator: Locator): string => {
+  switch (locator.strategy) {
+    case 'testId':
+      return `${locator.attribute}=${locator.value}`;
+    case 'id':
+      return `id=${locator.value}`;
+    case 'name':
+      return `name=${locator.value}`;
+    case 'role':
+      return `role=${locator.role} · ${locator.name}`;
+    case 'label':
+      return `label=${locator.text}`;
+    case 'placeholder':
+      return `placeholder=${locator.text}`;
+    case 'text':
+      return `text=${locator.text}`;
+    case 'css':
+      return `css=${locator.selector}`;
   }
-  return choices;
 };
+
+const choicesForTreeNode = (element: Element): InspectorChoice[] => {
+  const direct = directInspectorChoices(element);
+  if (direct.length > 0) return direct;
+  const locator = locatorsFor(element)[0];
+  return [{ element, label: locatorLabel(locator), locator }];
+};
+
+const elementLabel = (element: Element): string => {
+  const tag = element.tagName.toLowerCase();
+  const id = clean(element.id);
+  const testId = clean(element.getAttribute(testIdAttribute));
+  const name = clean(element.getAttribute('name'));
+  if (id) return `<${tag}#${id}>`;
+  if (testId) return `<${tag} ${testIdAttribute}="${testId}">`;
+  if (name) return `<${tag} name="${name}">`;
+  return `<${tag}>`;
+};
+
+/** Show one parent, the current node, and its direct children as a compact DOM tree. */
+const inspectorTreeNodes = (element: Element): InspectorTreeNode[] => {
+  const parent = element.parentElement;
+  const hasUsefulParent = parent && parent !== document.body && parent !== document.documentElement;
+  const currentDepth = hasUsefulParent ? 1 : 0;
+  return [
+    ...(hasUsefulParent ? [{ element: parent, depth: 0, relation: 'parent' as const }] : []),
+    { element, depth: currentDepth, relation: 'current' as const },
+    ...[...element.children].map((child) => ({
+      element: child,
+      depth: currentDepth + 1,
+      relation: 'child' as const,
+    })),
+  ];
+};
+
+/** Search only selectors that authors deliberately placed on the page. */
+const pageInspectorChoices = (): InspectorChoice[] =>
+  [...document.querySelectorAll<Element>('*')]
+    .filter(
+      (element) =>
+        element !== document.body &&
+        element !== document.documentElement &&
+        !isInspectorElement(element),
+    )
+    .flatMap(directInspectorChoices);
 
 const variableCandidates = (element: Element): string[] => {
   const autocomplete = clean(element.getAttribute('autocomplete'));
@@ -452,6 +508,8 @@ const hideInspector = (): void => {
   inspectorFrame = undefined;
   inspectedElement = undefined;
   pendingAssertionElement = undefined;
+  inspectorSearchOpen = false;
+  inspectorSearchQuery = '';
   inspector?.remove();
   inspector = undefined;
 };
@@ -484,16 +542,17 @@ const renderInspector = (): void => {
 
   const picker = document.createElement('div');
   picker.style.cssText =
-    'position:fixed;left:0;top:0;box-sizing:border-box;visibility:hidden;display:flex;width:max-content;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);flex-direction:column;gap:4px;align-items:stretch;overflow:hidden;padding:4px;border:1px solid rgb(255 255 255 / 18%);border-radius:5px;background:#14181b;box-shadow:0 4px 16px rgb(0 0 0 / 35%);pointer-events:auto';
+    'position:fixed;left:0;top:0;box-sizing:border-box;visibility:hidden;display:flex;width:360px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);flex-direction:column;gap:6px;align-items:stretch;overflow:hidden;padding:6px;border:1px solid rgb(255 255 255 / 18%);border-radius:7px;background:#14181b;box-shadow:0 6px 24px rgb(0 0 0 / 40%);pointer-events:auto';
   picker.setAttribute('aria-label', 'Choose locator');
 
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;gap:4px;align-items:center;min-width:0';
+  header.style.cssText = 'display:flex;gap:4px;align-items:center;min-width:0;flex-wrap:wrap';
   picker.append(header);
 
   const tag = document.createElement('span');
-  tag.textContent = element.tagName.toLowerCase();
-  tag.style.cssText = 'padding:1px 4px;color:#9aa4a0';
+  tag.textContent = elementLabel(element);
+  tag.style.cssText =
+    'min-width:0;max-width:160px;overflow:hidden;padding:1px 4px;color:#9aa4a0;text-overflow:ellipsis;white-space:nowrap';
   header.append(tag);
 
   if (repicking) {
@@ -551,32 +610,31 @@ const renderInspector = (): void => {
   }
 
   const chosen = preferredLocators.get(element);
-  const choices = document.createElement('div');
-  choices.setAttribute('aria-label', 'Locator choices');
-  choices.style.cssText =
-    'display:flex;max-height:calc(100vh - 88px);flex-direction:column;gap:3px;overflow:auto';
-  for (const choice of inspectorChoices(origin)) {
+  const choose = (choice: InspectorChoice): void => {
+    selectedTargets.set(origin, choice.element);
+    preferredLocators.set(choice.element, choice.locator);
+    renderInspector();
+    scheduleHoverCapture(choice.element);
+  };
+  const choiceButton = (choice: InspectorChoice, label = choice.label): HTMLButtonElement => {
     const button = document.createElement('button');
     const selected =
       choice.element === element && JSON.stringify(chosen) === JSON.stringify(choice.locator);
     button.type = 'button';
-    button.textContent = `${selected ? '✓ ' : ''}${choice.label}`;
-    button.style.cssText = `width:100%;min-width:0;padding:3px 6px;border:1px solid ${selected ? '#3987e5' : '#394147'};border-radius:4px;background:${selected ? 'rgb(57 135 229 / 22%)' : '#1a1f23'};color:#e3e8e6;cursor:pointer;font:inherit;overflow-wrap:anywhere;text-align:left;white-space:normal`;
+    button.textContent = `${selected ? '✓ ' : ''}${label}`;
+    button.setAttribute('aria-pressed', String(selected));
+    button.style.cssText = `min-width:0;padding:3px 6px;border:1px solid ${selected ? '#3987e5' : '#394147'};border-radius:4px;background:${selected ? 'rgb(57 135 229 / 22%)' : '#1a1f23'};color:#e3e8e6;cursor:pointer;font:inherit;overflow-wrap:anywhere;text-align:left;white-space:normal`;
     button.addEventListener('pointerdown', blockPageInteraction, true);
     button.addEventListener(
       'click',
       (event) => {
         blockPageInteraction(event);
-        selectedTargets.set(origin, choice.element);
-        preferredLocators.set(choice.element, choice.locator);
-        renderInspector();
-        scheduleHoverCapture(choice.element);
+        choose(choice);
       },
       true,
     );
-    choices.append(button);
-  }
-  if (choices.childElementCount > 0) picker.append(choices);
+    return button;
+  };
 
   if (
     (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
@@ -608,6 +666,139 @@ const renderInspector = (): void => {
     }
   }
 
+  const searchToggle = document.createElement('button');
+  searchToggle.type = 'button';
+  searchToggle.textContent = inspectorSearchOpen ? 'Hide search' : 'Search page';
+  searchToggle.setAttribute('aria-expanded', String(inspectorSearchOpen));
+  searchToggle.setAttribute('aria-controls', 'testron-selector-search');
+  searchToggle.style.cssText =
+    'margin-left:auto;padding:2px 6px;border:1px solid #394147;border-radius:4px;background:#1a1f23;color:#b9d9ff;cursor:pointer;font:600 12px system-ui,sans-serif';
+  searchToggle.addEventListener('pointerdown', blockPageInteraction, true);
+  searchToggle.addEventListener(
+    'click',
+    (event) => {
+      blockPageInteraction(event);
+      inspectorSearchOpen = !inspectorSearchOpen;
+      if (!inspectorSearchOpen) inspectorSearchQuery = '';
+      renderInspector();
+    },
+    true,
+  );
+  header.append(searchToggle);
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.setAttribute('aria-label', 'Cancel selector picker');
+  cancel.textContent = 'Cancel';
+  cancel.style.cssText =
+    'padding:2px 6px;border:1px solid #4b555c;border-radius:4px;background:transparent;color:#c7cfcc;cursor:pointer;font:600 12px system-ui,sans-serif';
+  cancel.addEventListener('pointerdown', blockPageInteraction, true);
+  cancel.addEventListener(
+    'click',
+    (event) => {
+      blockPageInteraction(event);
+      hideInspector();
+    },
+    true,
+  );
+  header.append(cancel);
+
+  const tree = document.createElement('div');
+  tree.setAttribute('role', 'tree');
+  tree.setAttribute('aria-label', 'Nearby element tree');
+  tree.style.cssText =
+    'display:flex;min-height:0;max-height:42vh;flex-direction:column;gap:3px;overflow:auto;padding:2px';
+  for (const node of inspectorTreeNodes(origin)) {
+    const row = document.createElement('div');
+    row.setAttribute('role', 'treeitem');
+    row.setAttribute('aria-level', String(node.depth + 1));
+    row.setAttribute('aria-label', `${node.relation} ${elementLabel(node.element)}`);
+    row.setAttribute('aria-current', String(node.relation === 'current'));
+    row.style.cssText = `display:flex;min-width:0;flex-direction:column;gap:3px;padding:4px 4px 4px ${4 + node.depth * 16}px;border-left:1px solid ${node.relation === 'current' ? '#3987e5' : '#394147'};border-radius:3px;background:${node.relation === 'current' ? 'rgb(57 135 229 / 8%)' : 'transparent'}`;
+
+    const nodeHeader = document.createElement('div');
+    nodeHeader.style.cssText = 'display:flex;min-width:0;gap:6px;align-items:center';
+    const relation = document.createElement('span');
+    relation.textContent = node.relation;
+    relation.style.cssText =
+      'flex:none;color:#7f8a85;font:600 10px/14px system-ui,sans-serif;text-transform:uppercase';
+    const nodeTag = document.createElement('span');
+    nodeTag.textContent = elementLabel(node.element);
+    nodeTag.style.cssText =
+      'min-width:0;overflow:hidden;color:#d8dfdc;text-overflow:ellipsis;white-space:nowrap';
+    nodeHeader.append(relation, nodeTag);
+    row.append(nodeHeader);
+
+    const nodeChoices = document.createElement('div');
+    nodeChoices.setAttribute('aria-label', `${node.relation} locator choices`);
+    nodeChoices.style.cssText = 'display:flex;min-width:0;flex-wrap:wrap;gap:3px';
+    for (const choice of choicesForTreeNode(node.element)) {
+      const button = choiceButton(choice);
+      button.setAttribute(
+        'aria-label',
+        `${node.relation} ${elementLabel(node.element)} selector ${choice.label}`,
+      );
+      nodeChoices.append(button);
+    }
+    row.append(nodeChoices);
+    tree.append(row);
+  }
+  picker.append(tree);
+
+  if (inspectorSearchOpen) {
+    const search = document.createElement('div');
+    search.id = 'testron-selector-search';
+    search.style.cssText =
+      'display:flex;min-height:0;flex:1 1 auto;flex-direction:column;gap:4px;border-top:1px solid #30373c;padding-top:6px';
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.value = inspectorSearchQuery;
+    input.placeholder = 'Search ID, test ID, or name…';
+    input.setAttribute('aria-label', 'Search page selectors');
+    input.autocomplete = 'off';
+    input.style.cssText =
+      'box-sizing:border-box;width:100%;height:28px;padding:4px 7px;border:1px solid #4b555c;border-radius:4px;outline:none;background:#0f1214;color:#f1f5f3;font:12px/18px ui-monospace,SFMono-Regular,Menlo,monospace';
+    const results = document.createElement('div');
+    results.setAttribute('role', 'listbox');
+    results.setAttribute('aria-label', 'Page selector results');
+    results.style.cssText =
+      'display:flex;min-height:0;max-height:34vh;flex-direction:column;gap:3px;overflow:auto';
+    const status = document.createElement('span');
+    status.style.cssText = 'color:#7f8a85;font:11px/15px system-ui,sans-serif';
+    const allChoices = pageInspectorChoices();
+    const updateResults = (): void => {
+      const query = inspectorSearchQuery.trim().toLowerCase();
+      const filtered = allChoices.filter((choice) => {
+        if (!query) return true;
+        const text = `${elementLabel(choice.element)} ${choice.label} ${accessibleName(choice.element) ?? ''}`;
+        return text.toLowerCase().includes(query);
+      });
+      const visible = filtered.slice(0, 100);
+      results.replaceChildren(
+        ...visible.map((choice) => {
+          const button = choiceButton(choice, `${elementLabel(choice.element)} · ${choice.label}`);
+          button.setAttribute('role', 'option');
+          button.setAttribute('aria-selected', button.getAttribute('aria-pressed') ?? 'false');
+          return button;
+        }),
+      );
+      status.textContent =
+        filtered.length === 0
+          ? 'No selectors found'
+          : `Showing ${visible.length} of ${filtered.length} selector${filtered.length === 1 ? '' : 's'}`;
+    };
+    input.addEventListener('input', () => {
+      inspectorSearchQuery = input.value;
+      updateResults();
+    });
+    updateResults();
+    search.append(input, status, results);
+    picker.append(search);
+    queueMicrotask(() => {
+      if (input.isConnected) input.focus();
+    });
+  }
+
   if (captureMode === 'verify') {
     const confirm = document.createElement('button');
     confirm.type = 'button';
@@ -631,10 +822,14 @@ const renderInspector = (): void => {
   root.append(picker);
   document.documentElement.append(root);
   const pickerRect = picker.getBoundingClientRect();
-  const position = inspectorPosition(rect, pickerRect, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+  const position = inspectorPosition(
+    lastPointer ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+    pickerRect,
+    {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+  );
   picker.style.left = `${position.left}px`;
   picker.style.top = `${position.top}px`;
   picker.style.visibility = 'visible';
@@ -692,9 +887,10 @@ const schedulePointerHitTest = (): void => {
 window.addEventListener(
   'pointermove',
   (event) => {
-    lastPointer = { x: event.clientX, y: event.clientY };
     const origin = event.target;
-    if (origin instanceof Element) inspect(origin);
+    if (!(origin instanceof Element) || isInspectorElement(origin)) return;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    schedulePointerHitTest();
   },
   true,
 );
@@ -718,6 +914,7 @@ window.addEventListener(
     const origin = event.target;
     if (!(origin instanceof Element)) return;
     if (isInspectorElement(origin)) return;
+    lastPointer = { x: event.clientX, y: event.clientY };
     if (repicking) {
       const hit = origin.closest(INTERACTIVE_SELECTOR) ?? origin;
       const element = selectedTargets.get(hit) ?? hit;
@@ -731,6 +928,7 @@ window.addEventListener(
       if (pendingAssertionElement) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        hideInspector();
         return;
       }
       const element =
@@ -748,14 +946,19 @@ window.addEventListener(
     const hit = origin.closest(
       'button, a, input[type="button"], input[type="submit"], [role="button"], [role="link"]',
     );
-    if (!hit) return;
+    if (!hit) {
+      hideInspector();
+      return;
+    }
     const element = selectedTargets.get(hit) ?? hit;
     if (captureMode === 'hover') {
       event.preventDefault();
       event.stopImmediatePropagation();
+      hideInspector();
       return;
     }
     send({ kind: 'click', target: observationFor(element), url: window.location.href });
+    hideInspector();
   },
   true,
 );
@@ -765,6 +968,7 @@ window.addEventListener(
   (event) => {
     if (!recordingActive || captureMode !== 'record') return;
     const element = event.target;
+    if (element instanceof Element && isInspectorElement(element)) return;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     if (automaticallyFilled.has(element) || selectedVariables.has(element)) return;
     automaticallyFilled.add(element);
@@ -780,6 +984,7 @@ window.addEventListener(
   (event) => {
     if (captureMode !== 'record') return;
     const element = event.target;
+    if (element instanceof Element && isInspectorElement(element)) return;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     if (event.isTrusted && selectedVariables.has(element)) selectedVariables.delete(element);
     send({
@@ -797,6 +1002,7 @@ window.addEventListener(
   (event) => {
     if (captureMode !== 'record') return;
     const element = event.target;
+    if (element instanceof Element && isInspectorElement(element)) return;
     if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) return;
     send({
       kind: 'input-commit',
@@ -812,6 +1018,7 @@ window.addEventListener(
   (event) => {
     if (captureMode !== 'record') return;
     const element = event.target;
+    if (element instanceof Element && isInspectorElement(element)) return;
     if (element instanceof HTMLSelectElement) {
       send({
         kind: 'select',
@@ -845,6 +1052,14 @@ window.addEventListener(
   'keydown',
   (event) => {
     const target = event.target;
+    if (target instanceof Element && isInspectorElement(target)) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideInspector();
+      }
+      event.stopImmediatePropagation();
+      return;
+    }
     const isEditable =
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||

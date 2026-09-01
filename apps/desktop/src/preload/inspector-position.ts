@@ -8,33 +8,30 @@ export type InspectorRect = {
 
 export type ViewportSize = { width: number; height: number };
 
+export type InspectorAnchor = { x: number; y: number };
+
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(Math.max(value, minimum), maximum);
 
-/** Position a measured inspector near its target while keeping every edge inside the viewport. */
+/** Position a measured inspector beside the pointer while keeping every edge inside the viewport. */
 export const inspectorPosition = (
-  target: InspectorRect,
+  anchor: InspectorAnchor,
   inspector: Pick<InspectorRect, 'width' | 'height'>,
   viewport: ViewportSize,
-  margin = 4,
-  gap = 4,
+  margin = 8,
+  gap = 12,
 ): { left: number; top: number } => {
   const maximumLeft = Math.max(margin, viewport.width - inspector.width - margin);
   const maximumTop = Math.max(margin, viewport.height - inspector.height - margin);
-  const above = target.top - inspector.height - gap;
-  const below = target.bottom + gap;
-  const fitsAbove = above >= margin;
-  const fitsBelow = below <= maximumTop;
-  const availableAbove = target.top - gap - margin;
-  const availableBelow = viewport.height - margin - target.bottom - gap;
-  const preferredTop = fitsAbove
-    ? above
-    : fitsBelow || availableBelow >= availableAbove
-      ? below
-      : above;
+  const right = anchor.x + gap;
+  const left = anchor.x - inspector.width - gap;
+  const below = anchor.y + gap;
+  const above = anchor.y - inspector.height - gap;
+  const preferredLeft = right <= maximumLeft || left < margin ? right : left;
+  const preferredTop = below <= maximumTop || above < margin ? below : above;
 
   return {
-    left: Math.round(clamp(target.left, margin, maximumLeft)),
+    left: Math.round(clamp(preferredLeft, margin, maximumLeft)),
     top: Math.round(clamp(preferredTop, margin, maximumTop)),
   };
 };

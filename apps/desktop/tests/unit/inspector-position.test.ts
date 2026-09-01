@@ -6,60 +6,42 @@ const viewport = { width: 800, height: 600 };
 const inspector = { width: 300, height: 32 };
 
 describe('inspectorPosition', () => {
-  it('places the inspector above the target when there is room', () => {
-    expect(
-      inspectorPosition(
-        { left: 200, top: 200, bottom: 240, width: 100, height: 40 },
-        inspector,
-        viewport,
-      ),
-    ).toEqual({ left: 200, top: 164 });
+  it('places the inspector below and to the right of the pointer when there is room', () => {
+    expect(inspectorPosition({ x: 200, y: 200 }, inspector, viewport)).toEqual({
+      left: 212,
+      top: 212,
+    });
   });
 
-  it('moves below a target near the top edge', () => {
-    expect(
-      inspectorPosition(
-        { left: 200, top: 8, bottom: 48, width: 100, height: 40 },
-        inspector,
-        viewport,
-      ),
-    ).toEqual({ left: 200, top: 52 });
+  it('moves to the left of a pointer near the right edge', () => {
+    expect(inspectorPosition({ x: 790, y: 200 }, inspector, viewport)).toEqual({
+      left: 478,
+      top: 212,
+    });
   });
 
-  it('moves above a target near the bottom edge', () => {
-    expect(
-      inspectorPosition(
-        { left: 200, top: 560, bottom: 596, width: 100, height: 36 },
-        inspector,
-        viewport,
-      ),
-    ).toEqual({ left: 200, top: 524 });
+  it('moves above a pointer near the bottom edge', () => {
+    expect(inspectorPosition({ x: 200, y: 590 }, inspector, viewport)).toEqual({
+      left: 212,
+      top: 546,
+    });
   });
 
-  it('keeps the inspector inside the left and right edges', () => {
-    expect(
-      inspectorPosition(
-        { left: -20, top: 200, bottom: 240, width: 100, height: 40 },
-        inspector,
-        viewport,
-      ).left,
-    ).toBe(4);
-    expect(
-      inspectorPosition(
-        { left: 760, top: 200, bottom: 240, width: 100, height: 40 },
-        inspector,
-        viewport,
-      ).left,
-    ).toBe(496);
+  it('keeps the inspector inside every viewport edge', () => {
+    expect(inspectorPosition({ x: -20, y: -20 }, inspector, viewport)).toEqual({
+      left: 8,
+      top: 8,
+    });
+    expect(inspectorPosition({ x: 820, y: 620 }, inspector, viewport)).toEqual({
+      left: 492,
+      top: 560,
+    });
   });
 
-  it('keeps the inspector inside the bottom edge when neither side fully fits', () => {
-    expect(
-      inspectorPosition(
-        { left: 200, top: 20, bottom: 580, width: 100, height: 560 },
-        { width: 300, height: 590 },
-        viewport,
-      ).top,
-    ).toBe(6);
+  it('pins an inspector larger than the viewport to the margin', () => {
+    expect(inspectorPosition({ x: 400, y: 300 }, { width: 900, height: 700 }, viewport)).toEqual({
+      left: 8,
+      top: 8,
+    });
   });
 });
