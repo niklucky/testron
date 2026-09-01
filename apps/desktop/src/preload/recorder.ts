@@ -86,8 +86,7 @@ const clean = (value: string | null | undefined): string | undefined => {
 };
 
 const exact = (value: string | null | undefined): string | undefined => {
-  const normalized = value?.replace(/\s+/g, ' ').trim();
-  return normalized || undefined;
+  return value === null || value === undefined || value.trim() === '' ? undefined : value;
 };
 
 const assertionAttributeFor = (element: Element): { name: string; value: string } | undefined => {

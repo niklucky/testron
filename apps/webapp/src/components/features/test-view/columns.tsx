@@ -411,6 +411,7 @@ export const AssertionCard = ({
           locator: assertion.locator,
           alternatives: [],
           assertion: assertion.kind,
+          assertionAttributeName: assertion.attributeName,
           value: assertion.expected,
           at: 0,
         };

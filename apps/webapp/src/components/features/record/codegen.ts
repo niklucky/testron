@@ -9,6 +9,9 @@ import type { RecordedStep } from './types';
 
 const quote = (value: string) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
+const attributeNameFor = (step: RecordedStep): string =>
+  step.assertionAttributeName?.trim() || 'data-testid';
+
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
 const translated = (
@@ -97,16 +100,15 @@ export const sentence = (step: RecordedStep, translate?: Translate): string => {
             `Expect “${step.label}” to hold “${step.value ?? ''}”`,
             { value1: step.label, value2: step.value ?? '' },
           );
-        case 'attribute':
+        case 'attribute': {
+          const attributeName = attributeNameFor(step);
           return translated(
             translate,
             'step_expect_target_attribute',
-            `Expect “${step.label}” to have ${step.assertionAttributeName ?? 'attribute'} “${step.value ?? ''}”`,
-            {
-              value1: step.label,
-              value2: `${step.assertionAttributeName ?? 'attribute'}=${step.value ?? ''}`,
-            },
+            `Expect “${step.label}” to have ${attributeName} “${step.value ?? ''}”`,
+            { value1: step.label, value2: `${attributeName}=${step.value ?? ''}` },
           );
+        }
         case 'class':
           return translated(
             translate,
@@ -207,7 +209,7 @@ const call = (step: RecordedStep): string => {
         case 'value':
           return `await expect(${target}).toHaveValue(${quote(step.value ?? '')});`;
         case 'attribute':
-          return `await expect(${target}).toHaveAttribute(${quote(step.assertionAttributeName ?? 'data-testid')}, ${quote(step.value ?? '')});`;
+          return `await expect(${target}).toHaveAttribute(${quote(attributeNameFor(step))}, ${quote(step.value ?? '')});`;
         case 'class':
           return `await expect(${target}).toHaveClass(${quote(step.value ?? '')});`;
         case 'enabled':

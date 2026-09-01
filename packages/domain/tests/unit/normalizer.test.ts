@@ -243,4 +243,35 @@ describe('RecorderNormalizer', () => {
       { type: 'class', expected: 'button selected' },
     ]);
   });
+
+  it('skips attribute assertions when the observed attribute is incomplete', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    const target = {
+      fingerprint: 'save',
+      sensitive: false,
+      locators: [{ strategy: 'testId' as const, attribute: 'data-testid', value: 'save' }],
+    };
+
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'attribute',
+      observedText: '',
+      observedValue: '',
+      observedAttributeValue: 'selected',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'attribute',
+      observedText: '',
+      observedValue: '',
+      observedAttributeName: 'data-state',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+
+    expect(steps).toEqual([]);
+  });
 });
