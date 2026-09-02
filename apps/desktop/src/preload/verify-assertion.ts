@@ -12,6 +12,8 @@ export const verifyAssertionSchema = z.enum([
   'unchecked',
   'countExactly',
   'countAtLeast',
+  'attribute',
+  'class',
 ]);
 
 export type VerifyAssertion = z.infer<typeof verifyAssertionSchema>;

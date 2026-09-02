@@ -17,6 +17,8 @@ export const elementAssertionSchema = z.discriminatedUnion('type', [
     expected: z.string(),
   }),
   z.object({ type: z.literal('value'), expected: z.string() }),
+  z.object({ type: z.literal('attribute'), name: z.string().min(1), expected: z.string() }),
+  z.object({ type: z.literal('class'), expected: z.string() }),
 ]);
 
 export type ElementAssertion = z.infer<typeof elementAssertionSchema>;

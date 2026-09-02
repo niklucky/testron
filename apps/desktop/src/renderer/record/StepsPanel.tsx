@@ -25,6 +25,7 @@ export const StepsPanel = ({
   onExpand,
   onUseAlternative,
   onEditLocator,
+  onEditAssertion,
   onRepick,
   onCancelRepick,
   onConvertToAssertion,
@@ -42,6 +43,7 @@ export const StepsPanel = ({
   onExpand: (id: string) => void;
   onUseAlternative: (id: string, locator: string) => void;
   onEditLocator: (id: string, locator: string) => void;
+  onEditAssertion: (id: string, patch: { attributeName?: string; expected: string }) => void;
   onRepick: (id: string) => void;
   onCancelRepick: () => void;
   onConvertToAssertion: (id: string) => void;
@@ -146,6 +148,11 @@ export const StepsPanel = ({
                     <LocatorEditor id={step.id} locator={step.locator} onSave={onEditLocator} />
                   )}
 
+                  {viewMode === 'developer' &&
+                    (step.assertion === 'attribute' || step.assertion === 'class') && (
+                      <AssertionEditor step={step} onSave={onEditAssertion} />
+                    )}
+
                   {viewMode === 'developer' && step.warning && (
                     <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
                       {step.secret ? t('secret') : t('locator_2')}
@@ -229,6 +236,72 @@ export const StepsPanel = ({
         </p>
       )}
     </div>
+  );
+};
+
+const AssertionEditor = ({
+  step,
+  onSave,
+}: {
+  step: RecordedStep;
+  onSave: (id: string, patch: { attributeName?: string; expected: string }) => void;
+}) => {
+  const { t } = useTranslation();
+  const [attributeName, setAttributeName] = useState(step.assertionAttributeName ?? '');
+  const [expected, setExpected] = useState(step.value ?? '');
+  useEffect(() => {
+    setAttributeName(step.assertionAttributeName ?? '');
+    setExpected(step.value ?? '');
+  }, [step.assertionAttributeName, step.value]);
+
+  if (step.assertion !== 'attribute' && step.assertion !== 'class') return null;
+
+  const changed =
+    expected !== (step.value ?? '') ||
+    (step.assertion === 'attribute' && attributeName !== (step.assertionAttributeName ?? ''));
+  const valid = step.assertion === 'class' || attributeName.trim().length > 0;
+
+  return (
+    <form
+      className="mt-1 grid gap-1"
+      onClick={(event) => event.stopPropagation()}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!changed || !valid) return;
+        onSave(step.id, {
+          ...(step.assertion === 'attribute' ? { attributeName: attributeName.trim() } : {}),
+          expected,
+        });
+      }}
+    >
+      {step.assertion === 'attribute' && (
+        <label className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-1 text-ink-3">
+          <span>{t('attribute')}</span>
+          <input
+            aria-label="Expected attribute name"
+            value={attributeName}
+            onChange={(event) => setAttributeName(event.target.value)}
+            className="ui-mono min-w-0 rounded border border-line bg-plane px-1 py-1 text-ink outline-none focus:border-accent"
+          />
+        </label>
+      )}
+      <label className="grid grid-cols-[76px_minmax(0,1fr)_auto] items-center gap-1 text-ink-3">
+        <span>{step.assertion === 'class' ? t('class') : t('Expected')}</span>
+        <input
+          aria-label={step.assertion === 'class' ? 'Expected class' : 'Expected attribute value'}
+          value={expected}
+          onChange={(event) => setExpected(event.target.value)}
+          className="ui-mono min-w-0 rounded border border-line bg-plane px-1 py-1 text-ink outline-none focus:border-accent"
+        />
+        <button
+          type="submit"
+          disabled={!changed || !valid}
+          className="rounded border border-line px-2 py-1 text-ink-2 hover:border-accent disabled:opacity-40"
+        >
+          {t('save')}
+        </button>
+      </label>
+    </form>
   );
 };
 

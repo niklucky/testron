@@ -411,6 +411,7 @@ export const AssertionCard = ({
           locator: assertion.locator,
           alternatives: [],
           assertion: assertion.kind,
+          assertionAttributeName: assertion.attributeName,
           value: assertion.expected,
           at: 0,
         };
@@ -455,6 +456,15 @@ export const AssertionCard = ({
                 onChange={(kind) => onAssertion({ ...assertion, kind })}
                 className=""
               />
+              {assertion.kind === 'attribute' && (
+                <InlineText
+                  label={t('attribute')}
+                  mono
+                  value={assertion.attributeName ?? 'data-testid'}
+                  onChange={(attributeName) => onAssertion({ ...assertion, attributeName })}
+                  className="text-ink-2"
+                />
+              )}
               {assertionNeedsValue(assertion.kind) && (
                 <InlineText
                   label={

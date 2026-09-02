@@ -49,6 +49,10 @@ export const presentStep = (step: Step): string => {
           return `Verify ${target} text ${step.assertion.match} “${step.assertion.expected}”`;
         case 'value':
           return `Verify ${target} has value “${step.assertion.expected}”`;
+        case 'attribute':
+          return `Verify ${target} has ${step.assertion.name} attribute “${step.assertion.expected}”`;
+        case 'class':
+          return `Verify ${target} has class “${step.assertion.expected}”`;
         case 'count':
           return `Verify ${target} has ${step.assertion.operator === 'equals' ? 'exactly' : 'at least'} ${step.assertion.expected} matches`;
         default:

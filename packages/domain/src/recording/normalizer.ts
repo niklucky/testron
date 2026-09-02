@@ -1,5 +1,5 @@
 import type { ActionCandidate } from './schema';
-import type { Step } from '../steps/schema';
+import type { ElementAssertion, Step } from '../steps/schema';
 
 interface BufferedInput {
   candidate: Extract<ActionCandidate, { kind: 'input' }>;
@@ -51,7 +51,7 @@ export class RecorderNormalizer {
         this.emit({ version: 1, kind: 'press', target, key: candidate.key, metadata });
         break;
       case 'assertion': {
-        const assertion = (() => {
+        const assertion: ElementAssertion | undefined = (() => {
           switch (candidate.assertion) {
             case 'textContains':
               return {
@@ -79,10 +79,24 @@ export class RecorderNormalizer {
                 operator: 'atLeast' as const,
                 expected: candidate.observedCount ?? 0,
               };
+            case 'attribute':
+              if (
+                !candidate.observedAttributeName?.trim() ||
+                candidate.observedAttributeValue === undefined
+              )
+                return undefined;
+              return {
+                type: 'attribute' as const,
+                name: candidate.observedAttributeName,
+                expected: candidate.observedAttributeValue,
+              };
+            case 'class':
+              return { type: 'class' as const, expected: candidate.observedClass ?? '' };
             default:
               return { type: candidate.assertion };
           }
         })();
+        if (!assertion) break;
         this.emit({ version: 1, kind: 'assertElement', target, assertion, metadata });
         break;
       }

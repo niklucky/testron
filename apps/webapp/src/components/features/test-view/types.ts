@@ -22,6 +22,8 @@ export type AssertionKind =
   | 'unchecked'
   | 'countExactly'
   | 'countAtLeast'
+  | 'attribute'
+  | 'class'
   | 'urlPath';
 
 export type Assertion = {
@@ -35,6 +37,7 @@ export type Assertion = {
   label: string;
   locator: string;
   kind: AssertionKind;
+  attributeName?: string;
   expected: string;
 };
 
@@ -92,6 +95,8 @@ export const assertionLabels: Record<AssertionKind, string> = {
   unchecked: 'is unchecked',
   countExactly: 'count is exactly',
   countAtLeast: 'count is at least',
+  attribute: 'has attribute',
+  class: 'has class',
   urlPath: 'URL path equals',
 };
 
@@ -102,4 +107,6 @@ export const assertionNeedsValue = (kind: AssertionKind) =>
   kind === 'value' ||
   kind === 'countExactly' ||
   kind === 'countAtLeast' ||
+  kind === 'attribute' ||
+  kind === 'class' ||
   kind === 'urlPath';

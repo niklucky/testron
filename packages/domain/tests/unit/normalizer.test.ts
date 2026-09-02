@@ -209,4 +209,69 @@ describe('RecorderNormalizer', () => {
       { type: 'count', operator: 'atLeast', expected: 20 },
     ]);
   });
+
+  it('records attribute and class assertions from observed element state', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    const target = {
+      fingerprint: 'save',
+      sensitive: false,
+      locators: [{ strategy: 'testId' as const, attribute: 'data-testid', value: 'save' }],
+    };
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'attribute',
+      observedText: '',
+      observedValue: '',
+      observedAttributeName: 'data-state',
+      observedAttributeValue: 'selected',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'class',
+      observedText: '',
+      observedValue: '',
+      observedClass: 'button selected',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+
+    expect(steps.map((step) => ('assertion' in step ? step.assertion : undefined))).toEqual([
+      { type: 'attribute', name: 'data-state', expected: 'selected' },
+      { type: 'class', expected: 'button selected' },
+    ]);
+  });
+
+  it('skips attribute assertions when the observed attribute is incomplete', () => {
+    const steps: Step[] = [];
+    const normalizer = new RecorderNormalizer((step) => steps.push(step));
+    const target = {
+      fingerprint: 'save',
+      sensitive: false,
+      locators: [{ strategy: 'testId' as const, attribute: 'data-testid', value: 'save' }],
+    };
+
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'attribute',
+      observedText: '',
+      observedValue: '',
+      observedAttributeValue: 'selected',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+    normalizer.accept({
+      kind: 'assertion',
+      assertion: 'attribute',
+      observedText: '',
+      observedValue: '',
+      observedAttributeName: 'data-state',
+      url: 'http://127.0.0.1:4174/',
+      target,
+    });
+
+    expect(steps).toEqual([]);
+  });
 });
