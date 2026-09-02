@@ -1149,6 +1149,44 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
     })()`);
     expect(searchResults).toContain('<button name="remote-control"> · name=remote-control');
 
+    const searchStability = await websiteEval(`(async () => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      const remote = document.querySelector('[name="remote-control"]');
+      if (!input || !remote) return undefined;
+      input.focus();
+      input.setSelectionRange(2, 8);
+      const originalInput = input;
+      const originalQuerySelectorAll = document.querySelectorAll;
+      let pageScans = 0;
+      document.querySelectorAll = function (selector) {
+        if (selector === '*') pageScans += 1;
+        return originalQuerySelectorAll.call(this, selector);
+      };
+      const rect = remote.getBoundingClientRect();
+      remote.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const currentInput = document.querySelector('[aria-label="Search page selectors"]');
+      document.querySelectorAll = originalQuerySelectorAll;
+      return {
+        sameInput: currentInput === originalInput,
+        value: currentInput?.value,
+        selectionStart: currentInput?.selectionStart,
+        selectionEnd: currentInput?.selectionEnd,
+        pageScans,
+      };
+    })()`);
+    expect(searchStability).toEqual({
+      sameInput: true,
+      value: 'remote-control',
+      selectionStart: 2,
+      selectionEnd: 8,
+      pageScans: 0,
+    });
+
     await websiteEval(`(() => {
       const result = document.querySelector('[aria-label="Page selector results"] button');
       result?.click();

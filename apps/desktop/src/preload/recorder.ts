@@ -514,6 +514,42 @@ const hideInspector = (): void => {
   inspector = undefined;
 };
 
+const positionRenderedInspector = (
+  root: HTMLDivElement,
+  picker: HTMLDivElement,
+  element: Element,
+): void => {
+  const rect = element.getBoundingClientRect();
+  const outline = root.querySelector<HTMLElement>('[data-testron-outline]');
+  if (outline) {
+    outline.style.left = `${Math.round(rect.left)}px`;
+    outline.style.top = `${Math.round(rect.top)}px`;
+    outline.style.width = `${Math.round(rect.width)}px`;
+    outline.style.height = `${Math.round(rect.height)}px`;
+  }
+  const pickerRect = picker.getBoundingClientRect();
+  const position = inspectorPosition(
+    lastPointer ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+    pickerRect,
+    {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+  );
+  picker.style.left = `${position.left}px`;
+  picker.style.top = `${position.top}px`;
+};
+
+/** Keep an active search and its caret intact while moving only the rendered inspector. */
+const repositionSearchingInspector = (): boolean => {
+  const origin = inspectedElement;
+  const root = inspector;
+  const picker = root?.querySelector<HTMLDivElement>('[aria-label="Choose locator"]');
+  if (!inspectorSearchOpen || !origin?.isConnected || !root || !picker) return false;
+  positionRenderedInspector(root, picker, selectedTargets.get(origin) ?? origin);
+  return true;
+};
+
 const renderInspector = (): void => {
   const origin = inspectedElement;
   if ((!recordingActive && !repicking) || !origin?.isConnected) {
@@ -530,6 +566,7 @@ const renderInspector = (): void => {
 
   const rect = element.getBoundingClientRect();
   const outline = document.createElement('div');
+  outline.setAttribute('data-testron-outline', '');
   outline.style.cssText = `position:fixed;left:${Math.round(rect.left)}px;top:${Math.round(rect.top)}px;width:${Math.round(rect.width)}px;height:${Math.round(rect.height)}px;border:2px solid #3987e5;border-radius:3px;box-sizing:border-box;background:rgb(57 135 229 / 8%);pointer-events:none`;
   root.append(outline);
 
@@ -821,17 +858,7 @@ const renderInspector = (): void => {
 
   root.append(picker);
   document.documentElement.append(root);
-  const pickerRect = picker.getBoundingClientRect();
-  const position = inspectorPosition(
-    lastPointer ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
-    pickerRect,
-    {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    },
-  );
-  picker.style.left = `${position.left}px`;
-  picker.style.top = `${position.top}px`;
+  positionRenderedInspector(root, picker, element);
   picker.style.visibility = 'visible';
   inspector = root;
 };
@@ -846,6 +873,7 @@ const isPageShell = (element: Element): boolean => {
 const inspect = (origin: Element, reposition = false): void => {
   if ((!recordingActive && !repicking) || isInspectorElement(origin)) return;
   if (captureMode === 'verify' && pendingAssertionElement) return;
+  if (reposition && repositionSearchingInspector()) return;
   // Promote icon/span children to the control they belong to, but keep every
   // other element exact. Attribute-bearing ancestors such as React's #root
   // must never swallow the card, chart, SVG node, or text actually under the
@@ -870,6 +898,7 @@ const inspect = (origin: Element, reposition = false): void => {
 const inspectAtLastPointer = (): void => {
   inspectorFrame = undefined;
   if (!lastPointer || (!recordingActive && !repicking)) return;
+  if (repositionSearchingInspector()) return;
   if (pendingAssertionElement) {
     renderInspector();
     return;
