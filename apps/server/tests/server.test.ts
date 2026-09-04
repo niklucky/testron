@@ -1083,8 +1083,13 @@ describe('PostgreSQL tRPC vertical slice', () => {
     );
     const videoUrl = `${server.url}/api/runs/${run.id}/artifacts/video`;
     const videoResponse = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
+    expect(videoResponse.status).toBe(200);
     expect(videoResponse.headers.get('content-type')).toBe('video/webm');
-    expect(Buffer.from(await videoResponse.arrayBuffer())).toEqual(video);
+    const downloadedVideo = Buffer.from(await videoResponse.arrayBuffer());
+    expect(downloadedVideo.byteLength).toBe(video.byteLength);
+    // Deep equality walks millions of indexed properties and can exceed CI's
+    // test timeout. Buffer.equals checks the same bytes using native comparison.
+    expect(downloadedVideo.equals(video)).toBe(true);
     const cancelled = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
     await cancelled.body?.cancel();
     expect((await fetch(`${server.url}/api/health`)).status).toBe(200);
