@@ -26,6 +26,7 @@ FROM node:24-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV TESTRON_ARTIFACTS_DIR=/data/testron/artifacts
 WORKDIR /app
 
 COPY --from=build --chown=node:node /opt/testron-server ./

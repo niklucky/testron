@@ -112,7 +112,8 @@ export class ServerRunQueue {
     try {
       while (!this.closing) {
         const claimed = await this.claimNext();
-        if (!claimed) break;
+        if (claimed === undefined) break;
+        if (claimed === null) continue;
         await this.execute(claimed);
       }
     } catch (error) {
@@ -207,7 +208,7 @@ export class ServerRunQueue {
     });
   }
 
-  private async claimNext(): Promise<ClaimedRun | undefined> {
+  private async claimNext(): Promise<ClaimedRun | null | undefined> {
     return this.db.transaction(async (tx) => {
       const [job] = await tx
         .select()
@@ -235,8 +236,22 @@ export class ServerRunQueue {
               )
           : Promise.resolve([]),
       ]);
-      if (!revision || !environment)
-        throw new Error(`Queued server run ${job.id} references missing execution data.`);
+      let content: ClaimedRun['content'];
+      try {
+        if (!revision || !environment)
+          throw new Error('The queued run references missing execution data.');
+        content = revisionContent(revision.content);
+      } catch {
+        await tx
+          .update(serverRunJobs)
+          .set({
+            status: 'failed',
+            finishedAt: new Date().toISOString(),
+            error: 'The queued run references missing or invalid execution data.',
+          })
+          .where(eq(serverRunJobs.id, job.id));
+        return null;
+      }
       const startedAt = new Date().toISOString();
       const [run] = await tx
         .insert(testRuns)
@@ -260,8 +275,8 @@ export class ServerRunQueue {
       return {
         job: { ...job, status: 'running', runId: run.id, startedAt } as JobRow,
         runId: run.id,
-        content: revisionContent(revision.content),
-        environment,
+        content,
+        environment: environment!,
         ...(profileRows[0] ? { profile: profileRows[0] } : {}),
         variables,
       };
@@ -291,6 +306,7 @@ export class ServerRunQueue {
           },
           async (input) => {
             const authResult = await this.runner.run({
+              environmentUrl: claimed.environment.baseUrl,
               steps: input.setupTest.steps.map(({ payload }) => payload),
               environmentVariables: input.secrets,
               timeoutMs: this.timeoutMs,
@@ -309,6 +325,7 @@ export class ServerRunQueue {
         );
       }
       const result = await this.runner.run({
+        environmentUrl: claimed.environment.baseUrl,
         steps: claimed.content.steps.map(({ payload }) => payload),
         environmentVariables: claimed.profile?.authenticationType === 'credentials' ? values : {},
         timeoutMs: this.timeoutMs,

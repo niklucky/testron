@@ -425,6 +425,7 @@ export const testRuns = pgTable(
     durationMs: integer('duration_ms'),
     error: text('error'),
     screenshotPath: text('screenshot_path'),
+    artifactsExpiredAt: instant('artifacts_expired_at'),
     videoPath: text('video_path'),
     steps: jsonb('steps')
       .$type<

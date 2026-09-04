@@ -42,7 +42,7 @@ const assertIsolatedTestDatabase = async (): Promise<void> => {
 
 beforeAll(async () => {
   webappDirectory = await mkdtemp(path.join(tmpdir(), 'testron-webapp-'));
-  artifactsDirectory = path.join(webappDirectory, 'artifacts');
+  artifactsDirectory = await mkdtemp(path.join(tmpdir(), 'testron-artifacts-'));
   await mkdir(path.join(webappDirectory, 'assets'));
   await writeFile(path.join(webappDirectory, 'index.html'), '<main>Testron webapp</main>');
   await writeFile(path.join(webappDirectory, 'assets', 'app.js'), 'export {};');
@@ -81,6 +81,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await server.close();
   await rm(webappDirectory, { recursive: true });
+  await rm(artifactsDirectory, { recursive: true });
 });
 
 const requestMeta = (): RequestMetadata => ({
@@ -1062,8 +1063,33 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
     expect(await response.text()).toBe('png evidence');
+    const head = await fetch(url, {
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(head.status).toBe(200);
+    expect(head.headers.get('content-length')).toBe(String(Buffer.byteLength('png evidence')));
+    expect(await head.text()).toBe('');
+    expect((await fetch(`${server.url}/artifacts/${run.id}/failure.png`)).status).toBe(404);
+    const outsider = await signIn('outsider@example.test');
+    expect(
+      (await fetch(url, { headers: { authorization: `Bearer ${outsider.token}` } })).status,
+    ).toBe(403);
+    const videoPath = path.join(runDirectory, 'failure.webm');
+    const video = Buffer.alloc(2 * 1024 * 1024, 42);
+    await writeFile(videoPath, video);
+    await server.database.db.execute(
+      sql`update test_runs set video_path = ${videoPath} where id = ${run.id}`,
+    );
+    const videoUrl = `${server.url}/api/runs/${run.id}/artifacts/video`;
+    const videoResponse = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
+    expect(videoResponse.headers.get('content-type')).toBe('video/webm');
+    expect(Buffer.from(await videoResponse.arrayBuffer())).toEqual(video);
+    const cancelled = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
+    await cancelled.body?.cancel();
+    expect((await fetch(`${server.url}/api/health`)).status).toBe(200);
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
-      recentRuns: [{ id: run.id, artifacts: { screenshot: true, video: false } }],
+      recentRuns: [{ id: run.id, artifacts: { screenshot: true, video: true } }],
     });
     await rm(screenshotPath);
     await expect(
@@ -1145,6 +1171,76 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
   });
 
+  it.each(['update', 'delete'] as const)(
+    'serializes manual enqueue with a concurrent schedule %s',
+    async (operation) => {
+      const { api } = await signIn();
+      const { project, environment, snapshot } = await createSlice(api);
+      const other = await api.environment.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Other',
+        baseUrl: 'https://other.example.test',
+        testIdAttribute: 'data-testid',
+      });
+      await api.test.saveRevision.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        baseRevision: snapshot.test.currentRevision,
+        content: {
+          ...content(environment.id, 'checkout'),
+          environmentIds: [environment.id, other.id],
+        },
+      });
+      const schedule = await api.runSchedule.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Concurrent',
+        cron: '0 0 * * *',
+        environmentId: environment.id,
+        testIds: [snapshot.test.id],
+        enabled: false,
+      });
+      const connection = await server.database.pool.connect();
+      try {
+        await connection.query('BEGIN');
+        if (operation === 'update')
+          await connection.query('UPDATE run_schedules SET environment_id = $1 WHERE id = $2', [
+            other.id,
+            schedule.id,
+          ]);
+        else
+          await connection.query('UPDATE run_schedules SET deleted_at = now() WHERE id = $1', [
+            schedule.id,
+          ]);
+        const queued = api.runSchedule.enqueue
+          .mutate({ meta: mutationMeta(), scheduleId: schedule.id })
+          .then(
+            (jobs) => ({ jobs }),
+            (error: unknown) => ({ error }),
+          );
+        // Wait until enqueue actually reaches the lock, rather than relying on sleeps.
+        await vi.waitFor(
+          async () => {
+            const waiting = await server.database.pool.query(
+              "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%run_schedules%'",
+            );
+            expect(waiting.rowCount).toBeGreaterThan(0);
+          },
+          { timeout: 3_000 },
+        );
+        await connection.query('COMMIT');
+        const result = await queued;
+        if (operation === 'update')
+          expect(result).toMatchObject({ jobs: [{ environmentId: other.id }] });
+        else expect(result).toMatchObject({ error: { data: { code: 'NOT_FOUND' } } });
+      } finally {
+        await connection.query('ROLLBACK');
+        connection.release();
+      }
+    },
+  );
+
   it('runs manually enqueued schedule tests through the persistent FIFO queue', async () => {
     const { api } = await signIn();
     const { project, environment, snapshot } = await createSlice(api);
@@ -1165,29 +1261,23 @@ describe('PostgreSQL tRPC vertical slice', () => {
       { testId: snapshot.test.id, source: 'server-manual', status: 'queued' },
     ]);
 
-    const queue = new ServerRunQueue(
-      server.database.db,
-      path.join(webappDirectory, 'artifacts'),
-      undefined,
-      5_000,
-      {
-        run: async (options) => ({
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run: async (options) => ({
+        status: 'passed',
+        durationMs: 42,
+        error: null,
+        screenshotPath: null,
+        videoPath: null,
+        steps: options.steps.map((step, index) => ({
+          index,
+          action: step.kind,
           status: 'passed',
           durationMs: 42,
           error: null,
-          screenshotPath: null,
-          videoPath: null,
-          steps: options.steps.map((step, index) => ({
-            index,
-            action: step.kind,
-            status: 'passed',
-            durationMs: 42,
-            error: null,
-            pageUrl: 'https://example.test/',
-          })),
-        }),
-      },
-    );
+          pageUrl: 'https://example.test/',
+        })),
+      }),
+    });
     await queue.processNow();
 
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
@@ -1210,6 +1300,63 @@ describe('PostgreSQL tRPC vertical slice', () => {
         },
       ],
     });
+  });
+
+  it('fails malformed queued execution data and continues to the next job', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const valid = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: content(environment.id, 'Valid'),
+    });
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Queue recovery',
+      cron: '0 0 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id, valid.test.id],
+      enabled: false,
+    });
+    await api.runSchedule.enqueue.mutate({ meta: mutationMeta(), scheduleId: schedule.id });
+    await server.database.db.execute(
+      sql`update server_run_jobs set queued_at = '2000-01-01Z' where test_id = ${snapshot.test.id}`,
+    );
+    await server.database.db.execute(
+      sql`update test_revisions set content = '{}'::jsonb where id = ${snapshot.test.currentRevision.id}`,
+    );
+    const run = vi.fn(async (): Promise<ServerRunResult> => ({
+      status: 'passed',
+      durationMs: 1,
+      error: null,
+      screenshotPath: null,
+      videoPath: null,
+      steps: [],
+    }));
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run,
+    });
+    try {
+      await queue.processNow();
+      const result = await server.database.pool.query(
+        'select test_id, status, error from server_run_jobs order by queued_at',
+      );
+      expect(result.rows).toEqual([
+        {
+          test_id: snapshot.test.id,
+          status: 'failed',
+          error: 'The queued run references missing or invalid execution data.',
+        },
+        { test_id: valid.test.id, status: 'passed', error: null },
+      ]);
+      expect(run).toHaveBeenCalledOnce();
+      expect(run.mock.calls[0]).toEqual([
+        expect.objectContaining({ environmentUrl: environment.baseUrl }),
+      ]);
+    } finally {
+      await queue.close();
+    }
   });
 
   it('enqueues due schedules while a test is running without overlapping executions', async () => {
@@ -1346,7 +1493,10 @@ describe('PostgreSQL tRPC vertical slice', () => {
         steps: row.steps,
         screenshotPath: expired ? null : row.screenshotPath,
         videoPath: expired ? null : row.videoPath,
+        artifactsExpiredAt: expired ? expect.any(String) : null,
       });
+      if (expired)
+        expect(new Date(stored!.artifactsExpiredAt!).toISOString()).toBe(now.toISOString());
     }
     const evidence = await fetch(`${server.url}/api/runs/${rows[0]!.id}/artifacts/screenshot`, {
       headers: { authorization: `Bearer ${token}` },
@@ -1356,7 +1506,12 @@ describe('PostgreSQL tRPC vertical slice', () => {
     const expiredRun = workspace.recentRuns?.find((run) => run.id === rows[0]!.id);
     expect(expiredRun).toBeDefined();
     expect(expiredRun?.artifacts?.screenshot).toBeFalsy();
+    // A later sweep must not even attempt removal of an already-cleaned run.
+    const sentinel = path.join(artifactsDirectory, rows[0]!.id, 'keep');
+    await mkdir(path.dirname(sentinel), { recursive: true });
+    await writeFile(sentinel, 'Already processed');
     await cleanup.processNow(now);
+    expect(existsSync(sentinel)).toBe(true);
     await cleanup.close();
   });
 
@@ -1424,6 +1579,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       expect(errorLog).toHaveBeenCalled();
       const [failed] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
       expect(failed?.screenshotPath).toBe(screenshotPath);
+      expect(failed?.artifactsExpiredAt).toBeNull();
       expect(existsSync(blockedRoot)).toBe(true);
       await rm(blockedRoot);
       await mkdir(path.join(blockedRoot, id), { recursive: true });
@@ -1431,6 +1587,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
       await cleanup.processNow(now);
       const [retried] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
       expect(retried?.screenshotPath).toBeNull();
+      expect(new Date(retried!.artifactsExpiredAt!).toISOString()).toBe(now.toISOString());
       expect(existsSync(path.join(blockedRoot, id))).toBe(false);
     } finally {
       await cleanup.close();

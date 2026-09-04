@@ -14,6 +14,8 @@ export interface ParsedCronExpression {
 const parsePart = (part: string, minimum: number, maximum: number): number[] => {
   const [rangePart, stepPart] = part.split('/');
   if (!rangePart || part.split('/').length > 2) throw new Error(`Invalid cron field: ${part}`);
+  if (stepPart !== undefined && !/^\d+$/.test(stepPart))
+    throw new Error(`Invalid cron step: ${part}`);
   const step = stepPart === undefined ? 1 : Number(stepPart);
   if (!Number.isInteger(step) || step < 1) throw new Error(`Invalid cron step: ${part}`);
   let start: number;
@@ -22,11 +24,13 @@ const parsePart = (part: string, minimum: number, maximum: number): number[] => 
     start = minimum;
     end = maximum;
   } else if (rangePart.includes('-')) {
-    const bounds = rangePart.split('-').map(Number);
-    if (bounds.length !== 2 || bounds.some((value) => !Number.isInteger(value)))
+    const rawBounds = rangePart.split('-');
+    if (rawBounds.length !== 2 || rawBounds.some((value) => !/^\d+$/.test(value)))
       throw new Error(`Invalid cron range: ${part}`);
+    const bounds = rawBounds.map(Number);
     [start, end] = bounds as [number, number];
   } else {
+    if (!/^\d+$/.test(rangePart)) throw new Error(`Invalid cron field: ${part}`);
     start = Number(rangePart);
     end = stepPart === undefined ? start : maximum;
   }
@@ -60,9 +64,7 @@ export const parseCronExpression = (expression: string): ParsedCronExpression =>
   };
 };
 
-const matches = (cron: ParsedCronExpression, candidate: Date): boolean => {
-  if (!cron.minute.values.has(candidate.getUTCMinutes())) return false;
-  if (!cron.hour.values.has(candidate.getUTCHours())) return false;
+const matchesDay = (cron: ParsedCronExpression, candidate: Date): boolean => {
   if (!cron.month.values.has(candidate.getUTCMonth() + 1)) return false;
   const dayOfMonthMatches = cron.dayOfMonth.values.has(candidate.getUTCDate());
   const dayOfWeekMatches = cron.dayOfWeek.values.has(candidate.getUTCDay());
@@ -78,9 +80,20 @@ export const nextCronOccurrence = (expression: string, after = new Date()): Date
   const candidate = new Date(after.getTime());
   candidate.setUTCSeconds(0, 0);
   candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
-  const maximumMinutes = 366 * 24 * 60 * 5;
-  for (let index = 0; index < maximumMinutes; index += 1) {
-    if (matches(cron, candidate)) return candidate;
+  const deadline = candidate.getTime() + 366 * 24 * 60 * 60 * 1_000 * 5;
+  while (candidate.getTime() < deadline) {
+    // Skip impossible days/hours as a unit so invalid calendar dates don't
+    // trigger millions of synchronous minute checks in the scheduler form.
+    if (!matchesDay(cron, candidate)) {
+      candidate.setUTCDate(candidate.getUTCDate() + 1);
+      candidate.setUTCHours(0, 0, 0, 0);
+      continue;
+    }
+    if (!cron.hour.values.has(candidate.getUTCHours())) {
+      candidate.setUTCHours(candidate.getUTCHours() + 1, 0, 0, 0);
+      continue;
+    }
+    if (cron.minute.values.has(candidate.getUTCMinutes())) return candidate;
     candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
   }
   throw new Error('Cron expression has no occurrence in the next five years.');

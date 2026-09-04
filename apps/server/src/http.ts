@@ -1,6 +1,7 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import { nodeHTTPRequestHandler } from '@trpc/server/adapters/node-http';
 
@@ -172,15 +173,25 @@ export const createHttpServer = (options: {
           const root = path.resolve(options.artifactsDirectory);
           const resolved = path.resolve(artifact);
           if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error('Unsafe artifact path.');
-          const body = await readFile(resolved);
-          response.writeHead(200, {
-            'content-type': kind === 'screenshot' ? 'image/png' : 'video/webm',
-            'content-length': body.length,
-            'cache-control': 'private, max-age=300',
-            'x-content-type-options': 'nosniff',
-          });
-          response.end(request.method === 'HEAD' ? undefined : body);
+          const file = await open(resolved, 'r');
+          try {
+            const metadata = await file.stat();
+            response.writeHead(200, {
+              'content-type': kind === 'screenshot' ? 'image/png' : 'video/webm',
+              'content-length': metadata.size,
+              'cache-control': 'private, max-age=300',
+              'x-content-type-options': 'nosniff',
+            });
+            if (request.method === 'HEAD') response.end();
+            else await pipeline(file.createReadStream({ autoClose: false }), response);
+          } finally {
+            await file.close();
+          }
         } catch (error) {
+          if (response.headersSent || response.destroyed) {
+            response.destroy();
+            return;
+          }
           if (error instanceof RepositoryError) {
             json(response, error.code === 'FORBIDDEN' ? 403 : 404, { error: error.message });
             return;

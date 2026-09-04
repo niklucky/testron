@@ -2041,7 +2041,8 @@ export class CanonicalRepository {
       .select()
       .from(runSchedules)
       .where(and(eq(runSchedules.id, scheduleId), isNull(runSchedules.deletedAt)))
-      .limit(1);
+      .limit(1)
+      .for('update');
     if (!schedule) throw new RepositoryError('NOT_FOUND', 'The run schedule was not found.');
     await this.authorizeProject(tx, user, schedule.projectId);
     return schedule;

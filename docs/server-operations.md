@@ -33,6 +33,40 @@ Execution can still wait behind earlier jobs. Jobs active during a restart are
 re-queued: execution is at-least-once, so previously performed test actions may
 repeat. Run only one server instance until worker ownership/leases are implemented.
 
+## Server browser network policy
+
+Server runs support **public HTTP(S) websites only**. Localhost, private networks,
+link-local/cloud metadata, reserved addresses, and local-file URLs are blocked.
+There is no private-network override. This applies to authentication setup runs
+as well as scheduled/manual tests; desktop recording is unaffected.
+
+Each run starts an ephemeral, loopback-only filtering proxy outside Chromium.
+It allows the selected environment origin plus exact public origins listed by
+the administrator in `TESTRON_RUNNER_ALLOWED_ORIGINS` (comma-separated, for
+example `https://cdn.example.com,https://login.example.com`). Include the API,
+CDN and login origins the site needs; other origins fail closed. All DNS answers
+must be public, and the proxy connects to a checked IP without resolving the
+hostname a second time. Redirect requests and new HTTPS tunnels are checked too.
+An allowed origin cannot override the non-public-address block.
+DNS/VPN setups that map public hostnames to synthetic private or reserved IPs
+are also blocked; the deployment must resolve targets to their real public IPs.
+
+Chromium has no direct proxy fallback; its implicit localhost bypass is disabled.
+QUIC and non-proxied WebRTC UDP are disabled, and service workers are blocked.
+HTTPS WebSockets (WSS) use checked tunnels; plain WebSocket upgrades are currently
+unsupported and blocked. The proxy adds no exposed port or extra container.
+These controls restrict ordinary browser requests, not a compromised Chromium
+process: keep the browser patched, avoid privileged containers, and use a separate
+network-isolated worker if stronger process isolation is required later.
+
+Chromium proxy behavior is documented in its
+[proxy support guide](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md).
+Address exclusions are conservative subsets of the
+[IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/) and
+[IPv6 special-purpose registries](https://www.iana.org/assignments/iana-ipv6-special-registry/).
+
+## Failure artifacts
+
 Failure screenshots and videos are stored below `TESTRON_ARTIFACTS_DIR`. In the
 deployment Compose file this is `/data/testron/artifacts`, bind-mounted from the
 same host path. Keep that directory persistent and writable by the container's
@@ -42,6 +76,8 @@ project members retrieve evidence through the run artifact endpoints.
 Server artifacts are retained for 30 days after a run finishes. A background
 cleanup runs at startup and hourly, independently of test execution, deleting
 expired per-run directories in batches and clearing their screenshot/video links.
+Migration `0018` adds a completion timestamp so later sweeps skip cleaned runs,
+including runs with no evidence files. The marker is written only after removal succeeds.
 Run history, results, and step feedback remain in PostgreSQL. Active runs and
 desktop recordings are excluded. Failed deletions are logged and retried on the
 next sweep; monitor disk usage and cleanup errors. No host cron or extra service

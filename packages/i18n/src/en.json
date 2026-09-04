@@ -1,4 +1,7 @@
 {
+  "test_runs_scheduler": "Test runs scheduler",
+  "run_screenshot": "screenshot",
+  "run_video": "video",
   "ago_value": "{{value}} ago",
   "assertions_hint": "{{count}} assertions hang off them.",
   "attempts_count": "{{count}} attempts",

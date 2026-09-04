@@ -322,7 +322,7 @@ export const Runs = ({
                         className="ui-mono text-xs text-accent hover:underline"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        screenshot
+                        {t('run_screenshot')}
                       </a>
                     )}
                     {run.video && (
@@ -333,7 +333,7 @@ export const Runs = ({
                         className="ui-mono text-xs text-accent hover:underline"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        video
+                        {t('run_video')}
                       </a>
                     )}
                   </span>

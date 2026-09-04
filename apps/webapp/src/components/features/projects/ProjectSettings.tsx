@@ -202,9 +202,9 @@ export const ProjectSettings = ({
           <nav className="mt-2 space-y-1" aria-label={t('settings_sections')}>
             {(
               [
-                ['general', 'settings', 'General'],
-                ['environments', 'suite', 'Environments'],
-                ['scheduler', 'rerun', 'Test runs scheduler'],
+                ['general', 'settings', t('general')],
+                ['environments', 'suite', t('environments')],
+                ['scheduler', 'rerun', t('test_runs_scheduler')],
               ] as const
             ).map(([id, icon, label]) => (
               <button
@@ -229,7 +229,7 @@ export const ProjectSettings = ({
                 ? t('general')
                 : tab === 'environments'
                   ? t('environments')
-                  : 'Test runs scheduler'}
+                  : t('test_runs_scheduler')}
             </h3>
             <IconButton
               icon="close"

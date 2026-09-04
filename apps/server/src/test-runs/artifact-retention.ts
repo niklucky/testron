@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 
-import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte } from 'drizzle-orm';
 
 import type { Database } from '../database/database.js';
 import { testRuns } from '../database/schema.js';
@@ -65,6 +65,7 @@ export class ServerArtifactRetention {
             inArray(testRuns.source, ['server-manual', 'server-scheduled']),
             inArray(testRuns.status, ['passed', 'failed', 'timedOut', 'cancelled']),
             lte(testRuns.finishedAt, cutoff),
+            isNull(testRuns.artifactsExpiredAt),
             afterId ? gt(testRuns.id, afterId) : undefined,
           ),
         )
@@ -82,11 +83,10 @@ export class ServerArtifactRetention {
           await rm(path.join(root, run.id), { recursive: true, force: true });
           // Missing directories are fine; clear expired links too. If deletion
           // fails, retain the references and retry on the next sweep.
-          if (run.screenshotPath || run.videoPath)
-            await this.db
-              .update(testRuns)
-              .set({ screenshotPath: null, videoPath: null })
-              .where(eq(testRuns.id, run.id));
+          await this.db
+            .update(testRuns)
+            .set({ screenshotPath: null, videoPath: null, artifactsExpiredAt: now.toISOString() })
+            .where(eq(testRuns.id, run.id));
         } catch (error) {
           console.error(`Could not expire artifacts for server run ${run.id}.`, error);
         }

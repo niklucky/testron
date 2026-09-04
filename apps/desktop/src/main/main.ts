@@ -70,6 +70,7 @@ import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
+import { resetBrowserAfterTestCreation } from './recording/reset-after-create';
 import { LocalReplayRunner, type BrowserStorageState, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
 import {
@@ -1984,7 +1985,10 @@ const createWindow = async (): Promise<void> => {
             selectedTestId = snapshot.test.id;
             replaySnapshot = { status: 'idle', steps: [] };
             session.load(snapshot.test.title, []);
-            await resetTestedWebsiteSession(true);
+            await resetBrowserAfterTestCreation(
+              () => resetTestedWebsiteSession(true),
+              (message) => session.warn(message),
+            );
             const state = { ...serverState };
             delete state.message;
             serverState = { ...state, workspace: 'loaded', status: 'synced' };

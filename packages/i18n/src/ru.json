@@ -1,4 +1,7 @@
 {
+  "test_runs_scheduler": "Планировщик запусков тестов",
+  "run_screenshot": "скриншот",
+  "run_video": "видео",
   "ago_value": "{{value}} назад",
   "assertions_hint": "К ним привязано проверок: {{count}}.",
   "attempts_count": "Попыток: {{count}}",

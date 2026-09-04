@@ -17,6 +17,8 @@ import { createHttpServer } from './http.js';
 import { createAppRouter, type AppRouter } from './trpc/router.js';
 import { ServerRunQueue } from './test-runs/queue.js';
 import { ServerArtifactRetention } from './test-runs/artifact-retention.js';
+import { ServerPlaywrightRunner } from './test-runs/runner.js';
+import type { RunnerEgressPolicy } from './test-runs/egress.js';
 
 export interface RunningTestronServer {
   url: string;
@@ -42,6 +44,7 @@ export const startTestronServer = async (options: {
   artifactsDirectory?: string;
   runTimeoutMs?: number;
   runQueueEnabled?: boolean;
+  runnerEgressPolicy?: RunnerEgressPolicy;
 }): Promise<RunningTestronServer> => {
   if (
     options.runTimeoutMs !== undefined &&
@@ -94,6 +97,7 @@ export const startTestronServer = async (options: {
     artifactsDirectory,
     authenticationStates,
     options.runTimeoutMs,
+    new ServerPlaywrightRunner(options.runnerEgressPolicy),
   );
   if (options.runQueueEnabled !== false) {
     await runQueue.start();

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import type {
+  Browser,
   BrowserContext,
   BrowserContextOptions,
   Locator as PwLocator,
@@ -13,6 +14,7 @@ import type {
 import type { Locator } from '@testron/domain/locators/schema';
 import { presentStep } from '@testron/domain/steps/present';
 import type { Step } from '@testron/domain/steps/schema';
+import { RunnerEgressProxy, runnerOrigin, type RunnerEgressPolicy } from './egress.js';
 
 export interface ServerRunStepResult {
   index: number;
@@ -34,6 +36,7 @@ export interface ServerRunResult {
 }
 
 export interface ServerRunOptions {
+  environmentUrl: string;
   steps: readonly Step[];
   environmentVariables: Readonly<Record<string, string>>;
   timeoutMs: number;
@@ -77,9 +80,13 @@ const executeStep = async (
   expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
-    case 'navigate':
-      await page.goto(step.url);
+    case 'navigate': {
+      runnerOrigin(step.url);
+      const response = await page.goto(step.url);
+      if (await response?.headerValue('x-testron-egress-denied'))
+        throw new Error('Runner egress denied: destination must be an approved public website.');
       break;
+    }
     case 'click':
       await resolveLocator(page, step.target.primary).click();
       break;
@@ -153,6 +160,8 @@ const executeStep = async (
 };
 
 export class ServerPlaywrightRunner {
+  constructor(private readonly egressPolicy: RunnerEgressPolicy = {}) {}
+
   async run(options: ServerRunOptions): Promise<ServerRunResult> {
     const { chromium, expect } = await import('@playwright/test');
     const started = Date.now();
@@ -165,11 +174,9 @@ export class ServerPlaywrightRunner {
       rm(videoPath, { force: true }),
       rm(videoDirectory, { recursive: true, force: true }),
     ]);
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      ...(options.storageState ? { storageState: options.storageState } : {}),
-      ...(options.captureArtifacts === false ? {} : { recordVideo: { dir: videoDirectory } }),
-    });
+    const proxy = new RunnerEgressProxy(options.environmentUrl, this.egressPolicy);
+    let browser: Browser | undefined;
+    let context: BrowserContext | undefined;
     const results: ServerRunStepResult[] = [];
     let status: ServerRunResult['status'] = 'passed';
     let runError: string | null = null;
@@ -178,6 +185,21 @@ export class ServerPlaywrightRunner {
     let page: Page | undefined;
     let capturedStorageState: Awaited<ReturnType<BrowserContext['storageState']>> | undefined;
     try {
+      const proxyUrl = await proxy.start();
+      browser = await chromium.launch({
+        headless: true,
+        proxy: { server: proxyUrl, bypass: '<-loopback>' },
+        args: [
+          '--disable-quic',
+          '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+          '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+        ],
+      });
+      context = await browser.newContext({
+        serviceWorkers: 'block',
+        ...(options.storageState ? { storageState: options.storageState } : {}),
+        ...(options.captureArtifacts === false ? {} : { recordVideo: { dir: videoDirectory } }),
+      });
       if (options.cookies?.length) await context.addCookies(options.cookies);
       page = await context.newPage();
       if (options.headers) {
@@ -252,13 +274,14 @@ export class ServerPlaywrightRunner {
       ).slice(0, 10_000);
     } finally {
       const recordedVideo = page?.video();
-      await context.close().catch(() => undefined);
+      await context?.close().catch(() => undefined);
       if (status !== 'passed' && recordedVideo && options.captureArtifacts !== false)
         video = await recordedVideo
           .saveAs(videoPath)
           .then(() => videoPath)
           .catch(() => null);
-      await browser.close().catch(() => undefined);
+      await browser?.close().catch(() => undefined);
+      await proxy.close();
       await rm(videoDirectory, { recursive: true, force: true });
     }
     return {
