@@ -185,6 +185,11 @@ export const createHttpServer = (options: {
             json(response, error.code === 'FORBIDDEN' ? 403 : 404, { error: error.message });
             return;
           }
+          // Retention may remove the file after authorization read its path.
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            json(response, 404, { error: 'The run artifact was not found.' });
+            return;
+          }
           throw error;
         }
         return;

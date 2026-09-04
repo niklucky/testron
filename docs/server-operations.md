@@ -27,14 +27,25 @@ server refuses secret creation until this deployment-managed key is configured.
 Scheduled server runs use standard five-field cron expressions evaluated in
 UTC. The settings UI also renders each next occurrence in the browser's local
 timezone. `TESTRON_RUN_TIMEOUT_MS` sets the per-test deadline (60 seconds by
-default). The current worker is a single persistent FIFO queue; jobs that were
-active during a restart are safely re-queued.
+default). Schedule checks run every second independently of the single persistent
+FIFO execution worker, so long-running tests do not delay enqueueing due work.
+Execution can still wait behind earlier jobs. Jobs active during a restart are
+re-queued: execution is at-least-once, so previously performed test actions may
+repeat. Run only one server instance until worker ownership/leases are implemented.
 
 Failure screenshots and videos are stored below `TESTRON_ARTIFACTS_DIR`. In the
 deployment Compose file this is `/data/testron/artifacts`, bind-mounted from the
 same host path. Keep that directory persistent and writable by the container's
 `node` user. Artifact paths are never returned through the API; authenticated
 project members retrieve evidence through the run artifact endpoints.
+
+Server artifacts are retained for 30 days after a run finishes. A background
+cleanup runs at startup and hourly, independently of test execution, deleting
+expired per-run directories in batches and clearing their screenshot/video links.
+Run history, results, and step feedback remain in PostgreSQL. Active runs and
+desktop recordings are excluded. Failed deletions are logged and retried on the
+next sweep; monitor disk usage and cleanup errors. No host cron or extra service
+is required.
 
 Invitation and password-reset email delivery is optional. Set both
 `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to enable it; password-reset links use

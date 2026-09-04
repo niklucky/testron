@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@testron/protocol';
@@ -14,6 +15,9 @@ import { AuthenticationService } from '../src/auth.js';
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
 import { ServerRunQueue } from '../src/test-runs/queue.js';
+import { ServerArtifactRetention } from '../src/test-runs/artifact-retention.js';
+import type { ServerRunOptions, ServerRunResult } from '../src/test-runs/runner.js';
+import { testRuns } from '../src/database/schema.js';
 
 const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test' as const;
 const expectedDatabase = 'testron_test';
@@ -1061,6 +1065,10 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
       recentRuns: [{ id: run.id, artifacts: { screenshot: true, video: false } }],
     });
+    await rm(screenshotPath);
+    await expect(
+      fetch(url, { headers: { authorization: `Bearer ${token}` } }),
+    ).resolves.toMatchObject({ status: 404 });
   });
 
   it('creates, updates, hydrates, and soft-deletes UTC run schedules', async () => {
@@ -1202,6 +1210,232 @@ describe('PostgreSQL tRPC vertical slice', () => {
         },
       ],
     });
+  });
+
+  it('enqueues due schedules while a test is running without overlapping executions', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Busy queue',
+      cron: '0 0 1 1 *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    await api.runSchedule.enqueue.mutate({ meta: mutationMeta(), scheduleId: schedule.id });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0;
+    let maxActive = 0;
+    const run = vi.fn(async (_options: ServerRunOptions): Promise<ServerRunResult> => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      if (run.mock.calls.length === 1) await gate;
+      active--;
+      return {
+        status: 'passed',
+        durationMs: 42,
+        error: null,
+        screenshotPath: null,
+        videoPath: null,
+        steps: [],
+      };
+    });
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run,
+    });
+    try {
+      await queue.start();
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+      await server.database.db.execute(
+        sql`update run_schedules set enabled = true, next_run_at = '2000-01-01T00:00:00Z' where id = ${schedule.id}`,
+      );
+      // No explicit wake: the regular timer must enqueue while the first run is blocked.
+      await vi.waitFor(
+        async () => {
+          const workspace = await api.workspace.get.query({ meta: requestMeta() });
+          expect(workspace.serverRunJobs).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ source: 'server-manual', status: 'running' }),
+              expect.objectContaining({ source: 'server-scheduled', status: 'queued' }),
+            ]),
+          );
+          expect(workspace.serverRunJobs).toHaveLength(2);
+        },
+        { timeout: 4_000, interval: 25 },
+      );
+      expect(run).toHaveBeenCalledTimes(1);
+      queue.wake();
+      queue.wake();
+      release();
+      await Promise.all([queue.processNow(), queue.processNow()]);
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(maxActive).toBe(1);
+      expect((await api.workspace.get.query({ meta: requestMeta() })).serverRunJobs).toHaveLength(
+        2,
+      );
+    } finally {
+      release();
+      await queue.close();
+    }
+  });
+
+  it('expires only completed server artifacts after 30 days and retains run history', async () => {
+    const { api, token } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const now = new Date('2026-09-04T12:00:00Z');
+    const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000);
+    const before = new Date(cutoff.getTime() - 1_000).toISOString();
+    const after = new Date(cutoff.getTime() + 1_000).toISOString();
+    const base = {
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-manual',
+      status: 'failed',
+      startedAt: before,
+      finishedAt: before,
+      durationMs: 42,
+      error: 'Expected failure',
+      steps: [
+        {
+          index: 0,
+          action: 'Navigate',
+          status: 'failed' as const,
+          durationMs: 42,
+          error: 'Expected failure',
+          pageUrl: null,
+        },
+      ],
+    };
+    const rows = [
+      { ...base, id: randomUUID() },
+      { ...base, id: randomUUID(), source: 'server-scheduled', finishedAt: cutoff.toISOString() },
+      { ...base, id: randomUUID(), finishedAt: after },
+      { ...base, id: randomUUID(), status: 'running', finishedAt: null },
+      { ...base, id: randomUUID(), source: 'desktop-local' },
+    ].map((row) => ({
+      ...row,
+      screenshotPath: path.join(artifactsDirectory, row.id, 'failure.png'),
+      videoPath: path.join(artifactsDirectory, row.id, 'failure.webm'),
+    }));
+    await server.database.db.insert(testRuns).values(rows);
+    for (const row of rows) {
+      await mkdir(path.join(artifactsDirectory, row.id), { recursive: true });
+      await writeFile(row.screenshotPath, 'png evidence');
+      await writeFile(row.videoPath, 'video evidence');
+    }
+    const cleanup = new ServerArtifactRetention(server.database.db, artifactsDirectory);
+    await cleanup.processNow(now);
+    for (const [index, row] of rows.entries()) {
+      const expired = index < 2;
+      expect(existsSync(path.join(artifactsDirectory, row.id))).toBe(!expired);
+      const [stored] = await server.database.db
+        .select()
+        .from(testRuns)
+        .where(eq(testRuns.id, row.id));
+      expect(stored).toMatchObject({
+        status: row.status,
+        error: row.error,
+        steps: row.steps,
+        screenshotPath: expired ? null : row.screenshotPath,
+        videoPath: expired ? null : row.videoPath,
+      });
+    }
+    const evidence = await fetch(`${server.url}/api/runs/${rows[0]!.id}/artifacts/screenshot`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(evidence.status).toBe(404);
+    const workspace = await api.workspace.get.query({ meta: requestMeta() });
+    const expiredRun = workspace.recentRuns?.find((run) => run.id === rows[0]!.id);
+    expect(expiredRun).toBeDefined();
+    expect(expiredRun?.artifacts?.screenshot).toBeFalsy();
+    await cleanup.processNow(now);
+    await cleanup.close();
+  });
+
+  it('cleans expired artifact directories in batches without following paths or symlinks outside the root', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const directory = await mkdtemp(path.join(webappDirectory, 'retention-'));
+    const outside = path.join(webappDirectory, 'outside-evidence');
+    await mkdir(outside);
+    const outsideFile = path.join(outside, 'keep.png');
+    await writeFile(outsideFile, 'Keep this file');
+    const rows = Array.from({ length: 102 }, () => ({
+      id: randomUUID(),
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-scheduled',
+      status: 'failed',
+      startedAt: '2026-01-01T00:00:00Z',
+      finishedAt: '2026-01-01T00:01:00Z',
+      screenshotPath: outsideFile,
+    }));
+    await server.database.db.insert(testRuns).values(rows);
+    await symlink(outside, path.join(directory, rows[0]!.id), 'dir');
+    await mkdir(path.join(directory, rows[101]!.id));
+    await writeFile(path.join(directory, rows[101]!.id, 'failure.png'), 'Expired');
+    const cleanup = new ServerArtifactRetention(server.database.db, directory);
+    await cleanup.processNow(new Date('2026-09-04T12:00:00Z'));
+    expect(existsSync(outsideFile)).toBe(true);
+    expect(existsSync(path.join(directory, rows[0]!.id))).toBe(false);
+    expect(existsSync(path.join(directory, rows[101]!.id))).toBe(false);
+    const stored = await server.database.db.select().from(testRuns);
+    expect(stored).toHaveLength(102);
+    expect(stored.every((run) => run.screenshotPath === null)).toBe(true);
+    await cleanup.close();
+  });
+
+  it('retains artifact references on deletion failure and retries on the next sweep', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const blockedRoot = path.join(webappDirectory, 'blocked-artifact-root');
+    await writeFile(blockedRoot, 'Not a directory');
+    const id = randomUUID();
+    const screenshotPath = path.join(blockedRoot, id, 'failure.png');
+    await server.database.db.insert(testRuns).values({
+      id,
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-manual',
+      status: 'failed',
+      startedAt: '2026-01-01T00:00:00Z',
+      finishedAt: '2026-01-01T00:01:00Z',
+      screenshotPath,
+    });
+    const cleanup = new ServerArtifactRetention(server.database.db, blockedRoot);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const now = new Date('2026-09-04T12:00:00Z');
+    try {
+      await cleanup.processNow(now);
+      expect(errorLog).toHaveBeenCalled();
+      const [failed] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
+      expect(failed?.screenshotPath).toBe(screenshotPath);
+      expect(existsSync(blockedRoot)).toBe(true);
+      await rm(blockedRoot);
+      await mkdir(path.join(blockedRoot, id), { recursive: true });
+      await writeFile(screenshotPath, 'expired evidence');
+      await cleanup.processNow(now);
+      const [retried] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
+      expect(retried?.screenshotPath).toBeNull();
+      expect(existsSync(path.join(blockedRoot, id))).toBe(false);
+    } finally {
+      await cleanup.close();
+      errorLog.mockRestore();
+    }
   });
 
   it('records one authorized, newest-first activity event for each supported mutation', async () => {

@@ -49,6 +49,7 @@ const redact = (message: string, values: readonly string[]): string => {
 
 export class ServerRunQueue {
   private timer?: ReturnType<typeof setInterval>;
+  private scheduling: Promise<void> | undefined;
   private processing: Promise<void> | undefined;
   private closing = false;
 
@@ -68,10 +69,30 @@ export class ServerRunQueue {
   }
 
   wake(): void {
-    void this.processNow();
+    // A busy worker must not prevent the next cron occurrence being enqueued.
+    void this.scheduleNow().then(() => {
+      void this.processQueue();
+    });
   }
 
-  processNow(): Promise<void> {
+  async processNow(): Promise<void> {
+    await this.scheduleNow();
+    await this.processQueue();
+  }
+
+  private scheduleNow(): Promise<void> {
+    if (this.closing) return Promise.resolve();
+    if (this.scheduling) return this.scheduling;
+    const scheduling = this.enqueueDueSchedules()
+      .catch((error: unknown) => console.error('Server test-run scheduling failed.', error))
+      .finally(() => {
+        if (this.scheduling === scheduling) this.scheduling = undefined;
+      });
+    this.scheduling = scheduling;
+    return scheduling;
+  }
+
+  private processQueue(): Promise<void> {
     if (this.closing) return Promise.resolve();
     if (this.processing) return this.processing;
     const processing = this.tick().finally(() => {
@@ -84,12 +105,11 @@ export class ServerRunQueue {
   async close(): Promise<void> {
     this.closing = true;
     if (this.timer) clearInterval(this.timer);
-    await this.processing;
+    await Promise.all([this.scheduling, this.processing]);
   }
 
   private async tick(): Promise<void> {
     try {
-      await this.enqueueDueSchedules();
       while (!this.closing) {
         const claimed = await this.claimNext();
         if (!claimed) break;

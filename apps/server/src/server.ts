@@ -16,6 +16,7 @@ import {
 import { createHttpServer } from './http.js';
 import { createAppRouter, type AppRouter } from './trpc/router.js';
 import { ServerRunQueue } from './test-runs/queue.js';
+import { ServerArtifactRetention } from './test-runs/artifact-retention.js';
 
 export interface RunningTestronServer {
   url: string;
@@ -87,13 +88,17 @@ export const startTestronServer = async (options: {
     ? new ServerAuthenticationStateStore(database.db, authenticationEncryption)
     : undefined;
   const artifactsDirectory = options.artifactsDirectory ?? 'data/artifacts';
+  const artifactRetention = new ServerArtifactRetention(database.db, artifactsDirectory);
   const runQueue = new ServerRunQueue(
     database.db,
     artifactsDirectory,
     authenticationStates,
     options.runTimeoutMs,
   );
-  if (options.runQueueEnabled !== false) await runQueue.start();
+  if (options.runQueueEnabled !== false) {
+    await runQueue.start();
+    artifactRetention.start();
+  }
   const router = createAppRouter({
     authentication,
     repository,
@@ -124,8 +129,7 @@ export const startTestronServer = async (options: {
       clearInterval(passwordResetDeliveryTimer);
       return new Promise<void>((resolve, reject) => {
         server.close((error) => {
-          void runQueue
-            .close()
+          void Promise.all([runQueue.close(), artifactRetention.close()])
             .then(() => authentication.waitForPasswordResetDelivery())
             .then(() => database.close())
             .then(() => {

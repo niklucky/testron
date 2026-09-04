@@ -179,74 +179,127 @@ test('recorder header controls stay above the tested website view', async () => 
   }
 });
 
-test('starting a new test resets only the tested website session', async () => {
-  test.setTimeout(60_000);
-  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
-  try {
-    const usesDefaultSession = await electronApp.evaluate(
-      async ({ BrowserWindow, session, webContents }) => {
-        const mainContents = BrowserWindow.getAllWindows()[0].webContents;
-        const target = webContents
-          .getAllWebContents()
-          .find(
-            (contents) =>
-              contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
-          );
-        if (!target) throw new Error('Tested website webContents was not found.');
-
-        await session.defaultSession.cookies.set({
-          url: 'http://127.0.0.1:4174/',
-          name: 'testron-product-session',
-          value: 'keep',
-        });
-        await target.executeJavaScript(`
-          localStorage.setItem('login-state', 'authenticated');
-          sessionStorage.setItem('login-state', 'authenticated');
-          document.cookie = 'target-session=authenticated; path=/';
-        `);
-        return target.session === session.defaultSession;
-      },
-    );
-    expect(usesDefaultSession).toBe(false);
-
-    await appWindow.evaluate(() =>
-      window.testron.command({ type: 'prepare-new-test', title: 'Failed login' }),
-    );
-
-    await expect
-      .poll(() =>
-        electronApp.evaluate(async ({ BrowserWindow, webContents }) => {
+for (const commandType of ['prepare-new-test', 'create-test'] as const) {
+  test(`${commandType} resets the tested page to the environment entry point`, async () => {
+    test.setTimeout(60_000);
+    const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+    try {
+      await appWindow.evaluate(() =>
+        window.testron.command({ type: 'create-project', name: 'Reset' }),
+      );
+      await expect.poll(async () => (await appSnapshot(appWindow)).library.projects.length).toBe(1);
+      const projectId = (await appSnapshot(appWindow)).library.selectedProjectId!;
+      await appWindow.evaluate(
+        (id) =>
+          window.testron.command({
+            type: 'create-environment',
+            projectId: id,
+            name: 'Local',
+            baseUrl: 'http://127.0.0.1:4174/',
+            testIdAttribute: 'data-testid',
+          }),
+        projectId,
+      );
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).library.environments.length)
+        .toBe(1);
+      const environmentId = (await appSnapshot(appWindow)).library.selectedEnvironmentId!;
+      await appWindow.evaluate(() =>
+        window.testron.command({
+          type: 'navigate',
+          url: 'http://127.0.0.1:4174/welcome',
+        }),
+      );
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).currentUrl)
+        .toBe('http://127.0.0.1:4174/welcome');
+      const usesDefaultSession = await electronApp.evaluate(
+        async ({ BrowserWindow, session, webContents }) => {
           const mainContents = BrowserWindow.getAllWindows()[0].webContents;
           const target = webContents
             .getAllWebContents()
             .find(
               (contents) =>
-                contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+                contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/welcome',
             );
-          if (!target || target.isLoading()) return null;
-          try {
-            return await target.executeJavaScript(
-              `[localStorage.getItem('login-state'), sessionStorage.getItem('login-state'), document.cookie]`,
-            );
-          } catch {
-            return null;
-          }
-        }),
-      )
-      .toEqual([null, null, '']);
+          if (!target) throw new Error('Tested website webContents was not found.');
 
-    const productCookies = await electronApp.evaluate(({ session }) =>
-      session.defaultSession.cookies.get({
-        url: 'http://127.0.0.1:4174/',
-        name: 'testron-product-session',
-      }),
-    );
-    expect(productCookies).toHaveLength(1);
-  } finally {
-    await closeElectron(electronApp);
-    rmSync(dataDirectory, { recursive: true, force: true });
-  }
-});
+          await session.defaultSession.cookies.set({
+            url: 'http://127.0.0.1:4174/',
+            name: 'testron-product-session',
+            value: 'keep',
+          });
+          await target.executeJavaScript(`
+          window.previousTestState = 'signed-in';
+          localStorage.setItem('login-state', 'authenticated');
+          sessionStorage.setItem('login-state', 'authenticated');
+          document.cookie = 'target-session=authenticated; path=/';
+        `);
+          return target.session === session.defaultSession;
+        },
+      );
+      expect(usesDefaultSession).toBe(false);
+
+      await appWindow.evaluate(
+        ({ commandType, projectId, environmentId }) =>
+          window.testron.command(
+            commandType === 'create-test'
+              ? {
+                  type: 'create-test',
+                  title: 'Test two',
+                  projectId,
+                  environmentIds: [environmentId],
+                }
+              : { type: 'prepare-new-test', title: 'Test two' },
+          ),
+        { commandType, projectId, environmentId },
+      );
+
+      await expect
+        .poll(() =>
+          electronApp.evaluate(async ({ BrowserWindow, webContents }) => {
+            const mainContents = BrowserWindow.getAllWindows()[0].webContents;
+            const target = webContents
+              .getAllWebContents()
+              .find(
+                (contents) =>
+                  contents !== mainContents && contents.getURL() === 'http://127.0.0.1:4174/',
+              );
+            if (!target || target.isLoading()) return null;
+            try {
+              return await target.executeJavaScript(
+                `[localStorage.getItem('login-state'), sessionStorage.getItem('login-state'), document.cookie, window.previousTestState ?? null, document.querySelector('h1')?.textContent]`,
+              );
+            } catch {
+              return null;
+            }
+          }),
+        )
+        .toEqual([null, null, '', null, 'Welcome back']);
+
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).currentUrl)
+        .toBe('http://127.0.0.1:4174/');
+      await appWindow.evaluate(() =>
+        window.testron.command({ type: 'start-recording', append: false }),
+      );
+      await expect
+        .poll(async () => (await appSnapshot(appWindow)).steps)
+        .toEqual([expect.objectContaining({ kind: 'navigate', url: 'http://127.0.0.1:4174/' })]);
+
+      const productCookies = await electronApp.evaluate(({ session }) =>
+        session.defaultSession.cookies.get({
+          url: 'http://127.0.0.1:4174/',
+          name: 'testron-product-session',
+        }),
+      );
+      expect(productCookies).toHaveLength(1);
+    } finally {
+      await closeElectron(electronApp);
+      rmSync(dataDirectory, { recursive: true, force: true });
+    }
+  });
+}
 
 test('test steps switch between tester summaries and developer locators', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
