@@ -286,7 +286,7 @@ export const RecordScreen = () => {
     if (index < 0 || !('target' in snapshot.steps[index])) return;
     window.testron?.command({ type: 'set-repick-step', index });
     setSelectedId(id);
-    setLog(`Repick step ${index + 1} · click the correct element in the website`);
+    setLog(`Repick step ${index + 1} · click an element, choose a locator, then Confirm`);
   };
 
   const cancelRepick = () => {

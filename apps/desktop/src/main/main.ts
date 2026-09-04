@@ -129,6 +129,7 @@ const recorderControlSchema = z.discriminatedUnion('kind', [
     assertion: verifyAssertionSchema,
   }),
   z.object({ kind: z.literal('hover-captured') }),
+  z.object({ kind: z.literal('selector-cancelled') }),
   z.object({ kind: z.literal('repick-target'), target: targetObservationSchema }),
   z.object({ kind: z.literal('shortcut'), key: recordShortcutKeySchema }),
 ]);
@@ -1210,6 +1211,10 @@ const createWindow = async (): Promise<void> => {
         applyContext();
       } else if (control.data.kind === 'hover-captured') {
         if (session.snapshot().captureMode === 'hover') session.setCaptureMode('record');
+        applyContext();
+      } else if (control.data.kind === 'selector-cancelled') {
+        repickIndex = undefined;
+        session.setCaptureMode('record');
         applyContext();
       } else if (repickIndex !== undefined) {
         const index = repickIndex;

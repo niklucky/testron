@@ -1007,6 +1007,7 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
     await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    await appWindow.getByRole('button', { name: /^Hover/ }).click();
     const websiteEval = (source: string) =>
       electronApp.evaluate(async ({ webContents }, script) => {
         const website = webContents
@@ -1020,7 +1021,7 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
         document.body.style.cssText = 'margin:0;display:block;min-height:1500px';
         document.body.innerHTML = [
           '<div id="root" style="position:relative;width:100vw;height:1500px">',
-          '<span data-probe="first" style="position:absolute;left:10px;top:100px;width:200px;height:80px">Card text</span>',
+          '<span data-probe="first" style="position:absolute;left:10px;top:100px;width:calc(100vw - 20px);height:500px">Card text</span>',
           '<svg data-probe="second" style="position:absolute;left:10px;top:700px;width:200px;height:80px">',
           '<circle cx="20" cy="20" r="20"></circle>',
           '</svg>',
@@ -1032,16 +1033,19 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
     const inspectFirst = `(() => {
         const first = document.elementFromPoint(30, 120);
         first.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 30, clientY: 120 }));
+        const panel = document.querySelector('[aria-label="Selector targeting hint"]');
+        const panelRect = panel?.getBoundingClientRect();
         return {
           hit: first?.tagName?.toLowerCase(),
-          inspector: document.querySelector('[aria-label="Choose locator"]')?.outerHTML,
+          inspector: panel?.outerHTML,
+          position: panelRect ? { left: panelRect.left, top: panelRect.top } : undefined,
         };
       })()`;
     await expect
       .poll(() => websiteEval(inspectFirst))
       .toMatchObject({
         hit: 'span',
-        inspector: expect.stringContaining('>span<'),
+        inspector: expect.stringContaining('&lt;span&gt;'),
       });
 
     await websiteEval(`(async () => {
@@ -1050,17 +1054,23 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
       })()`);
     await expect
       .poll(() =>
-        websiteEval(`document.querySelector('[aria-label="Choose locator"] > span')?.textContent`),
+        websiteEval(
+          `document.querySelector('[aria-label="Selector targeting hint"]')?.textContent`,
+        ),
       )
-      .toBe('circle');
+      .toContain('<circle>');
 
     await websiteEval(`(() => {
+        const x = window.innerWidth - 2;
+        const y = window.innerHeight - 2;
         document.querySelector('#root').dispatchEvent(
-          new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 300 }),
+          new PointerEvent('pointermove', { bubbles: true, clientX: x, clientY: y }),
         );
       })()`);
     await expect
-      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .poll(() =>
+        websiteEval(`Boolean(document.querySelector('[aria-label="Selector targeting hint"]'))`),
+      )
       .toBe(false);
   } finally {
     await closeElectron(electronApp);
@@ -1068,7 +1078,7 @@ test('hover inspector targets deep HTML and SVG content and re-hits after scroll
   }
 });
 
-test('hover picker can target a test-id-bearing ancestor under the pointer', async () => {
+test('selector picker exposes a nearby tree, page search, and dismissal controls', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
     await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
@@ -1079,11 +1089,16 @@ test('hover picker can target a test-id-bearing ancestor under the pointer', asy
           .getAllWebContents()
           .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
         if (!website) throw new Error('Fixture WebContentsView was not found.');
-        return website.executeJavaScript(script);
+        // Instrument the recorder's isolated world, not the page's separate JS globals.
+        return website.executeJavaScriptInIsolatedWorld(999, [{ code: script }]);
       }, source);
 
     await websiteEval(`(() => {
-      document.body.innerHTML = '<div data-testId="id1"><div data-probe="inner">Some text</div></div>';
+      document.body.innerHTML = [
+        '<div data-testid="id1"><div data-probe="inner" style="padding:20px"><span data-testid="child">Some text</span></div></div>',
+        '<section id="remote-group"><button name="remote-control">Remote</button><button name="remote-second">Second remote</button></section>',
+        '<div data-outside>Outside</div>',
+      ].join('');
       const inner = document.querySelector('[data-probe="inner"]');
       const rect = inner.getBoundingClientRect();
       inner.dispatchEvent(new PointerEvent('pointermove', {
@@ -1091,24 +1106,494 @@ test('hover picker can target a test-id-bearing ancestor under the pointer', asy
         clientX: rect.left + 2,
         clientY: rect.top + 2,
       }));
+      inner.click();
     })()`);
 
     await expect
       .poll(() =>
-        websiteEval(`document.querySelector('[aria-label="Choose locator"]')?.textContent`),
+        websiteEval(`(() => ({
+          tree: [...document.querySelectorAll('[role="treeitem"]')].map((item) => ({
+            label: item.getAttribute('aria-label'),
+            level: item.getAttribute('aria-level'),
+          })),
+          panel: document.querySelector('[aria-label="Choose locator"]')?.textContent,
+        }))()`),
       )
-      .toContain('parent · data-testid=id1');
+      .toMatchObject({
+        tree: [
+          { label: 'parent <div data-testid="id1">', level: '1' },
+          { label: 'current <div>', level: '2' },
+          { label: 'child <span data-testid="child">', level: '3' },
+        ],
+        panel: expect.stringContaining('data-testid="id1"'),
+      });
+    expect(
+      await websiteEval(`(() => {
+      const parent = document.querySelector('[role="treeitem"][aria-level="1"]');
+      const current = parent.querySelector('[role="treeitem"][aria-current="true"]');
+      const child = current.querySelector('[role="treeitem"][aria-level="3"]');
+      return {
+        parentTag: parent.querySelector('[data-tree-opening-tag]').textContent,
+        currentWeight: getComputedStyle(current.querySelector('[data-tree-opening-tag]')).fontWeight,
+        currentColor: getComputedStyle(current.querySelector('[data-tree-opening-tag]')).color,
+        parentColor: getComputedStyle(parent.querySelector('[data-tree-opening-tag]')).color,
+        currentMarker: current.textContent.includes('# current'),
+        inlineSelector: parent.querySelector('[data-tree-opening-tag] button').textContent,
+        childText: child.textContent,
+        border: getComputedStyle(current).borderColor,
+        background: getComputedStyle(current).backgroundColor,
+      };
+    })()`),
+    ).toMatchObject({
+      parentTag: '<div data-testid="id1">',
+      currentWeight: '700',
+      currentColor: 'rgb(196, 181, 253)',
+      parentColor: 'rgb(132, 145, 158)',
+      currentMarker: false,
+      inlineSelector: 'data-testid="id1"',
+      childText: expect.stringContaining('Some text'),
+      border: 'rgb(57, 135, 229)',
+      background: 'rgba(57, 135, 229, 0.06)',
+    });
+    expect(
+      await websiteEval(`(() => {
+      const chip = document.querySelector('[data-tree-opening-tag] button');
+      const before = getComputedStyle(chip).backgroundColor;
+      chip.dispatchEvent(new PointerEvent('pointerenter'));
+      const hover = { background: getComputedStyle(chip).backgroundColor, border: getComputedStyle(chip).borderColor };
+      chip.dispatchEvent(new PointerEvent('pointerleave'));
+      return { before, ...hover, restored: getComputedStyle(chip).backgroundColor };
+    })()`),
+    ).toEqual({
+      before: 'rgba(148, 163, 184, 0.08)',
+      background: 'rgba(148, 163, 184, 0.24)',
+      border: 'rgb(167, 183, 202)',
+      restored: 'rgba(148, 163, 184, 0.08)',
+    });
+    expect(
+      await websiteEval(`(() => {
+      const tree = document.querySelector('[aria-label="Nearby element tree"]');
+      const current = tree.querySelector('[aria-current="true"]');
+      const child = current.querySelector('[role="treeitem"]');
+      child.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      const hovered = { border: getComputedStyle(child).borderColor, background: getComputedStyle(child).backgroundColor, parentBorder: getComputedStyle(current).borderColor };
+      tree.dispatchEvent(new PointerEvent('pointerleave'));
+      return { ...hovered, restoredBorder: getComputedStyle(child).borderColor };
+    })()`),
+    ).toEqual({
+      border: 'rgb(57, 184, 121)',
+      background: 'rgba(57, 184, 121, 0.12)',
+      parentBorder: 'rgb(57, 135, 229)',
+      restoredBorder: 'rgb(57, 135, 229)',
+    });
     await websiteEval(`(() => {
       const choices = [...document.querySelectorAll('[aria-label="Choose locator"] button')];
-      const parent = choices.find((button) => button.textContent.includes('parent · data-testid=id1'));
+      const parent = choices.find((button) =>
+        button.getAttribute('aria-label') ===
+          'parent <div data-testid="id1"> selector data-testid=id1');
       parent.click();
     })()`);
 
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+
+    const searchResults = await websiteEval(`(() => {
+      window.searchMetrics = { scans: 0, textReads: 0 };
+      const querySelectorAll = document.querySelectorAll;
+      document.querySelectorAll = function (selector) {
+        if (selector === '*') window.searchMetrics.scans += 1;
+        return querySelectorAll.call(this, selector);
+      };
+      const sentinel = document.createElement('button');
+      sentinel.id = 'search-sentinel';
+      sentinel.textContent = 'Cache sentinel';
+      sentinel.style.display = 'none';
+      document.body.append(sentinel);
+      const textContent = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+      Object.defineProperty(sentinel, 'textContent', { get() {
+        window.searchMetrics.textReads += 1;
+        return textContent.get.call(this);
+      } });
+      const search = [...document.querySelectorAll('[aria-label="Choose locator"] button')]
+        .find((button) => button.textContent === 'Search on page');
+      search?.click();
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      if (!input) return undefined;
+      input.value = 'remote-control';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return document.querySelector('[aria-label="Page selector results"]')?.textContent;
+    })()`);
+    expect(searchResults).toContain('<button name="remote-control">');
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 1, textReads: 1 });
+    expect(
+      await websiteEval(`(() => {
+      const picker = document.querySelector('[aria-label="Choose locator"]');
+      const header = picker.firstElementChild;
+      const actions = picker.querySelector('[aria-label="Selector actions"]');
+      const results = picker.querySelector('[aria-label="Page selector results"]');
+      const input = picker.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'remote';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const parent = results.querySelector('[role="treeitem"][aria-level="1"]');
+      return {
+        headerLayout: getComputedStyle(header).justifyContent,
+        actionLabels: [...actions.children].map((button) => button.textContent),
+        advancedHint: picker.querySelector('[role="tablist"]').previousElementSibling.textContent,
+        separatorBeforeHint: picker.querySelector('#testron-advanced-hint').previousElementSibling.getAttribute('role'),
+        tabs: [...picker.querySelectorAll('[role="tab"]')].map((tab) => ({ text: tab.textContent, selected: tab.getAttribute('aria-selected') })),
+        nearbyVisible: Boolean(picker.querySelector('[aria-label="Nearby element tree"]')),
+        roots: results.querySelectorAll(':scope > [role="treeitem"]').length,
+        nestedMatches: parent.querySelectorAll('[role="treeitem"]').length,
+      };
+    })()`),
+    ).toEqual({
+      headerLayout: 'space-between',
+      actionLabels: ['Cancel', 'Confirm'],
+      advancedHint: 'You can change selector in advanced mode',
+      separatorBeforeHint: 'separator',
+      tabs: [
+        { text: 'Current selection', selected: 'false' },
+        { text: 'Search on page', selected: 'true' },
+      ],
+      nearbyVisible: false,
+      roots: 1,
+      nestedMatches: 2,
+    });
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 1, textReads: 1 });
+    await websiteEval(`document.querySelector('#testron-current-tab').click()`);
+    expect(
+      await websiteEval(`Boolean(document.querySelector('[aria-label="Search page selectors"]'))`),
+    ).toBe(false);
+    await websiteEval(`document.querySelector('#testron-search-tab').click()`);
+    expect(
+      await websiteEval(`document.querySelector('[aria-label="Search page selectors"]').value`),
+    ).toBe('remote');
+    await websiteEval(`(() => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'remote-control';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+
+    const searchStability = await websiteEval(`(async () => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      const remote = document.querySelector('[name="remote-control"]');
+      if (!input || !remote) return undefined;
+      input.focus();
+      input.setSelectionRange(2, 8);
+      const originalInput = input;
+      const originalQuerySelectorAll = document.querySelectorAll;
+      let pageScans = 0;
+      document.querySelectorAll = function (selector) {
+        if (selector === '*') pageScans += 1;
+        return originalQuerySelectorAll.call(this, selector);
+      };
+      const rect = remote.getBoundingClientRect();
+      remote.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+      window.dispatchEvent(new Event('scroll'));
+      window.dispatchEvent(new Event('resize'));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const currentInput = document.querySelector('[aria-label="Search page selectors"]');
+      document.querySelectorAll = originalQuerySelectorAll;
+      return {
+        sameInput: currentInput === originalInput,
+        value: currentInput?.value,
+        selectionStart: currentInput?.selectionStart,
+        selectionEnd: currentInput?.selectionEnd,
+        pageScans,
+      };
+    })()`);
+    expect(searchStability).toEqual({
+      sameInput: true,
+      value: 'remote-control',
+      selectionStart: 2,
+      selectionEnd: 8,
+      pageScans: 0,
+    });
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 2, textReads: 2 });
+
+    await websiteEval(`(() => {
+      const result = [...document.querySelectorAll('[aria-label="Page selector results"] button')].find((button) => button.textContent === 'name="remote-control"');
+      result?.click();
+    })()`);
+    await expect
+      .poll(() =>
+        websiteEval(
+          `document.querySelector('[aria-label="Choose locator"] > div:first-child > span')?.textContent`,
+        ),
+      )
+      .toBe('<button name="remote-control">');
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 2, textReads: 2 });
+    expect(
+      await websiteEval(`(() => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      return { start: input.selectionStart, end: input.selectionEnd, value: input.value, focused: document.activeElement === input };
+    })()`),
+    ).toEqual({ start: 2, end: 8, value: 'remote-control', focused: true });
+
+    // Results are a tab-opening snapshot: omit newly inserted nodes until
+    // refresh, but discard detached nodes immediately on the next query.
+    await websiteEval(`(() => {
+      const added = document.createElement('button');
+      added.id = 'fresh-result';
+      document.body.append(added);
+      document.querySelector('[name="remote-second"]').remove();
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'fresh-result';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toBe('');
+    await websiteEval(`document.querySelector('#testron-current-tab').click()`);
+    await websiteEval(`document.querySelector('#testron-search-tab').click()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toContain('id="fresh-result"');
+    await websiteEval(`(() => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'remote-second';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toBe('');
+    await websiteEval(`document.querySelector('#testron-current-tab').click()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Nearby element tree"] [aria-current="true"] [data-tree-opening-tag]').textContent`,
+      ),
+    ).toBe('<button name="remote-control">');
+
+    await websiteEval(`document.querySelector('#testron-search-tab').click()`);
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
+    await websiteEval(
+      `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`,
+    );
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .toBe(false);
+    await expect(appWindow.getByRole('button', { name: /^Hover/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+    await appWindow.getByRole('button', { name: /^Hover/ }).click();
+
+    await websiteEval(`(() => {
+      const inner = document.querySelector('[data-probe="inner"]');
+      const rect = inner.getBoundingClientRect();
+      inner.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: rect.left + 2,
+        clientY: rect.top + 2,
+      }));
+      inner.click();
+    })()`);
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .toBe(true);
+    await websiteEval(`document.querySelector('[data-outside]')?.click()`);
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .toBe(false);
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('pinned picker is reachable with real pointer movement and commits only on confirmation', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    const websiteEval = (script: string) =>
+      electronApp.evaluate(async ({ webContents }, source) => {
+        const website = webContents
+          .getAllWebContents()
+          .find((item) => item.getURL() === 'http://127.0.0.1:4174/');
+        if (!website) throw new Error('Fixture not found');
+        return website.executeJavaScript(source);
+      }, script);
+    const pointFor = (selector: string) =>
+      websiteEval(`(() => {
+      const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`) as Promise<{ x: number; y: number }>;
+    let pointer = { x: 0, y: 0 };
+    const moveTo = async (point: { x: number; y: number }, click = false, alt = false) => {
+      await electronApp.evaluate(
+        async ({ webContents, BrowserWindow }, { from, to, click, alt }) => {
+          const website = webContents
+            .getAllWebContents()
+            .find((item) => item.getURL() === 'http://127.0.0.1:4174/');
+          if (!website) throw new Error('Fixture not found');
+          BrowserWindow.getAllWindows()[0].focus();
+          website.focus();
+          // Cross the actual gap between the page and the picker, letting each
+          // frame run. DOM button.click() cannot catch a panel chasing the mouse.
+          for (let step = 1; step <= 12; step += 1) {
+            website.sendInputEvent({
+              type: 'mouseMove',
+              x: Math.round(from.x + ((to.x - from.x) * step) / 12),
+              y: Math.round(from.y + ((to.y - from.y) * step) / 12),
+            });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          if (click) {
+            website.sendInputEvent({
+              type: 'mouseDown',
+              ...to,
+              button: 'left',
+              clickCount: 1,
+              modifiers: alt ? ['alt'] : [],
+            });
+            website.sendInputEvent({
+              type: 'mouseUp',
+              ...to,
+              button: 'left',
+              clickCount: 1,
+              modifiers: alt ? ['alt'] : [],
+            });
+          }
+        },
+        { from: pointer, to: point, click, alt },
+      );
+      pointer = point;
+    };
+    const clickSelector = async (selector: string) => moveTo(await pointFor(selector), true);
+    await websiteEval(`(() => {
+      document.body.style.cssText = 'display:block;margin:0;min-height:1800px';
+      document.body.innerHTML = '<div id="root" style="width:100vw;min-height:1800px"><button id="primary" data-testid="primary" style="position:absolute;left:20px;top:20px;width:160px">First</button><button id="secondary" data-testid="secondary" style="position:absolute;left:20px;top:420px;width:160px">Second</button></div>';
+      document.querySelector('#secondary').setAttribute('name', 'a&"b');
+      window.siteActions = [];
+      for (const type of ['pointerdown', 'mousedown', 'click']) document.addEventListener(type, (event) => {
+        if (event.target.closest('#primary, #secondary')) window.siteActions.push(type);
+      });
+    })()`);
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    const blankPoint = await websiteEval('({ x: window.innerWidth - 20, y: 10 })');
+    // Both body and full-page #root hits must leave normal recording usable.
+    await websiteEval(`document.querySelector('#root').style.pointerEvents = 'none'`);
+    await moveTo(blankPoint, true, true);
+    await websiteEval(`document.querySelector('#root').style.pointerEvents = ''`);
+    await moveTo(blankPoint, true, true);
+    await clickSelector('#primary');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'click'))
+      .toMatchObject({ target: { primary: { strategy: 'testId', value: 'primary' } } });
+    expect(
+      await websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`),
+    ).toBe(false);
+    await websiteEval('window.siteActions = []');
+    await appWindow.getByRole('button', { name: /^Hover/ }).click();
+    await moveTo(await pointFor('#primary'));
+    await expect
+      .poll(() =>
+        websiteEval(`Boolean(document.querySelector('[aria-label="Selector targeting hint"]'))`),
+      )
+      .toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+    expect(
+      await websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`),
+    ).toBe(false);
+    await clickSelector('#primary');
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .toBe(true);
+    const pinnedPosition = await websiteEval(`(() => {
+      window.originalPicker = document.querySelector('[aria-label="Choose locator"]');
+      const rect = window.originalPicker.getBoundingClientRect();
+      return { left: rect.left, top: rect.top };
+    })()`);
+    await moveTo(await pointFor('#secondary'));
+    expect(
+      await websiteEval(`(() => {
+      const panel = document.querySelector('[aria-label="Choose locator"]');
+      const rect = panel.getBoundingClientRect();
+      return { sameNode: panel === window.originalPicker, left: rect.left, top: rect.top };
+    })()`),
+    ).toEqual({ sameNode: true, ...pinnedPosition });
+    // Reach and click a locator using native input, without forcing the click.
+    const idPoint = await websiteEval(`(() => {
+      const button = [...document.querySelectorAll('[aria-label="Choose locator"] button')].find((item) => item.textContent === 'id="primary"');
+      const rect = button.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()`);
+    await moveTo(idPoint, true);
+    expect(
+      await websiteEval(`Boolean(document.activeElement.closest('[aria-label="Choose locator"]'))`),
+    ).toBe(true);
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+    await clickSelector('[aria-label="Record hover"]');
     await expect
       .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'hover'))
-      .toMatchObject({
-        target: { primary: { strategy: 'testId', attribute: 'data-testid', value: 'id1' } },
-      });
+      .toMatchObject({ target: { primary: { strategy: 'id', value: 'primary' } } });
+    expect(await websiteEval('window.siteActions')).toEqual([]);
+
+    const snapshot = await appSnapshot(appWindow);
+    const index = snapshot.steps.findIndex((step) => step.kind === 'hover');
+    await appWindow.evaluate(
+      (index) => window.testron.command({ type: 'set-repick-step', index }),
+      index,
+    );
+    await clickSelector('#secondary');
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Apply locator"]'))`))
+      .toBe(true);
+    expect((await appSnapshot(appWindow)).steps[index]).toEqual(snapshot.steps[index]);
+    await clickSelector('#testron-search-tab');
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
+    await electronApp.evaluate(({ webContents }) => {
+      const website = webContents
+        .getAllWebContents()
+        .find((item) => item.getURL() === 'http://127.0.0.1:4174/')!;
+      website.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      website.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    });
+    await expect.poll(async () => (await appSnapshot(appWindow)).repickIndex).toBeUndefined();
+    expect((await appSnapshot(appWindow)).steps[index]).toEqual(snapshot.steps[index]);
+
+    await appWindow.evaluate(
+      (index) => window.testron.command({ type: 'set-repick-step', index }),
+      index,
+    );
+    await clickSelector('#secondary');
+    await clickSelector('#testron-search-tab');
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
+    await clickSelector('[aria-label="Cancel selector picker"]');
+    await expect.poll(async () => (await appSnapshot(appWindow)).repickIndex).toBeUndefined();
+    expect((await appSnapshot(appWindow)).steps[index]).toEqual(snapshot.steps[index]);
+    await appWindow.evaluate(
+      (index) => window.testron.command({ type: 'set-repick-step', index }),
+      index,
+    );
+    await clickSelector('#secondary');
+    expect(
+      await websiteEval(`document.querySelector('[aria-label*="selector name="]').textContent`),
+    ).toBe('name="a&"b"');
+    await clickSelector('[aria-label*="selector name="]');
+    await clickSelector('[aria-label="Apply locator"]');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps[index])
+      .toMatchObject({ target: { primary: { strategy: 'name', value: 'a&"b' } } });
+    await expect.poll(async () => (await appSnapshot(appWindow)).repickIndex).toBeUndefined();
+    expect(await websiteEval('window.siteActions')).toEqual([]);
   } finally {
     await closeElectron(electronApp);
     rmSync(dataDirectory, { recursive: true, force: true });
@@ -1155,7 +1640,11 @@ test('records only an explicitly armed hover before asserting dynamic popover co
         clientX: rect.left + 2,
         clientY: rect.top + 2,
       }));
+      help.click();
     })()`);
+
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
+    await websiteEval(`document.querySelector('[aria-label="Record hover"]').click()`);
 
     await expect
       .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'hover'))
@@ -1177,19 +1666,14 @@ test('records only an explicitly armed hover before asserting dynamic popover co
         clientY: rect.top + 2,
       }));
       popover.click();
-      document.querySelector('[data-testid="help"]').click();
     })()`);
-
-    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'assertElement')).toBe(
-      false,
-    );
 
     await expect
       .poll(() =>
         websiteEval(`(() => {
           const panel = document.querySelector('[aria-label="Choose locator"]');
-          const choices = document.querySelector('[aria-label="Locator choices"]');
-          const selector = choices?.querySelector('button');
+          const choices = document.querySelector('[aria-label="Nearby element tree"]');
+          const selector = choices?.querySelector('[aria-label="current locator choices"] button');
           window.dispatchEvent(new PointerEvent('pointerout', { relatedTarget: null }));
           return {
             panelVisible: Boolean(panel),
@@ -1203,8 +1687,23 @@ test('records only an explicitly armed hover before asserting dynamic popover co
         panelVisible: true,
         direction: 'column',
         whiteSpace: 'normal',
-        selectorText: 'data-testid=popover',
+        selectorText: 'data-testid="popover"',
       });
+    await websiteEval(`document.querySelector('[data-testid="help"]').click()`);
+    await expect
+      .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
+      .toBe(false);
+    expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'assertElement')).toBe(
+      false,
+    );
+
+    await appWindow.getByRole('button', { name: 'Assert' }).click();
+    await websiteEval(`document.querySelector('[data-testid="popover"]').click()`);
+    await expect
+      .poll(() =>
+        websiteEval(`Boolean(document.querySelector('[aria-label="Confirm assertion"]'))`),
+      )
+      .toBe(true);
     await websiteEval(`document.querySelector('[aria-label="Confirm assertion"]').click()`);
 
     await expect
@@ -1221,7 +1720,7 @@ test('records only an explicitly armed hover before asserting dynamic popover co
   }
 });
 
-test('hover picker chooses a primary locator and an action can become an assertion', async () => {
+test('explicit locator editor chooses a primary locator and an action can become an assertion', async () => {
   const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
   try {
     await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
@@ -1241,10 +1740,13 @@ test('hover picker chooses a primary locator and an action can become an asserti
               clientX: rect.left + 4,
               clientY: rect.top + 4,
             }));
+            if (document.querySelector('[aria-label="Choose locator"]')) return false;
+            input.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true, clientX: rect.left + 4, clientY: rect.top + 4 }));
             const choices = [...document.querySelectorAll('[aria-label="Choose locator"] button')];
-            const idChoice = choices.find((button) => button.textContent === 'id=email');
+            const idChoice = choices.find((button) => button.textContent === 'id="email"');
             if (!idChoice) return false;
             idChoice.click();
+            document.querySelector('[aria-label="Use locator"]').click();
             input.value = 'picked@example.test';
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
