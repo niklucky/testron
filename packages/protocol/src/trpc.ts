@@ -32,6 +32,11 @@ import {
   lookupInviteeRequestSchema,
   moveTestRequestSchema,
   finishTestRunRequestSchema,
+  createRunScheduleRequestSchema,
+  updateRunScheduleRequestSchema,
+  deleteRunScheduleRequestSchema,
+  enqueueRunScheduleRequestSchema,
+  enqueueRunScheduleOutputSchema,
   saveTestRevisionRequestSchema,
   startTestRunRequestSchema,
   respondInvitationRequestSchema,
@@ -53,6 +58,7 @@ import {
   projectSchema,
   testRevisionSchema,
   testRunSchema,
+  runScheduleSchema,
   testSnapshotSchema,
   testSuiteSchema,
   testSuiteSummarySchema,
@@ -251,6 +257,22 @@ export const startTestRunProcedure = {
 export const finishTestRunProcedure = {
   input: finishTestRunRequestSchema,
   output: testRunSchema,
+} as const;
+export const createRunScheduleProcedure = {
+  input: createRunScheduleRequestSchema,
+  output: runScheduleSchema,
+} as const;
+export const updateRunScheduleProcedure = {
+  input: updateRunScheduleRequestSchema,
+  output: runScheduleSchema,
+} as const;
+export const deleteRunScheduleProcedure = {
+  input: deleteRunScheduleRequestSchema,
+  output: runScheduleSchema,
+} as const;
+export const enqueueRunScheduleProcedure = {
+  input: enqueueRunScheduleRequestSchema,
+  output: enqueueRunScheduleOutputSchema,
 } as const;
 
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;

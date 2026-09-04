@@ -71,6 +71,7 @@ import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
 import { RecordingSession } from './recording/session';
+import { resetBrowserAfterTestCreation } from './recording/reset-after-create';
 import { LocalReplayRunner, type BrowserStorageState, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
 import {
@@ -1162,14 +1163,21 @@ const createWindow = async (): Promise<void> => {
     appliedProfileLocalStorage = [];
     await applyRecordingAuthentication();
 
+    // Storage clearing alone leaves both the document and recorder snapshot at
+    // the previous test's URL. Seed the new renderer with the environment entry
+    // point before it can mount a webview using that stale snapshot.
+    const initialUrl = selectedContext().environment?.baseUrl ?? contents?.getURL() ?? '';
+    session.navigated(initialUrl);
     if (
       reload &&
       contents &&
       contents === websiteContents &&
       !contents.isDestroyed() &&
-      contents.getURL()
-    )
-      contents.reloadIgnoringCache();
+      initialUrl
+    ) {
+      await contents.loadURL(safeUrl(initialUrl));
+      if (!contents.isDestroyed()) contents.navigationHistory.clear();
+    }
   };
 
   const unloadRecorderWebsite = (): void => {
@@ -1946,6 +1954,12 @@ const createWindow = async (): Promise<void> => {
             replaySnapshot = { status: 'idle', steps: [] };
             session.load(test.title, []);
             applyContext();
+            void resetTestedWebsiteSession(true).catch((error: unknown) => {
+              session.warn(
+                error instanceof Error ? error.message : 'Browser session reset failed.',
+              );
+              sendSnapshot(session.snapshot());
+            });
             break;
           }
           session.warn('Sign in before creating a test.');
@@ -1978,6 +1992,10 @@ const createWindow = async (): Promise<void> => {
             selectedTestId = snapshot.test.id;
             replaySnapshot = { status: 'idle', steps: [] };
             session.load(snapshot.test.title, []);
+            await resetBrowserAfterTestCreation(
+              () => resetTestedWebsiteSession(true),
+              (message) => session.warn(message),
+            );
             const state = { ...serverState };
             delete state.message;
             serverState = { ...state, workspace: 'loaded', status: 'synced' };

@@ -1,6 +1,7 @@
 import { startTestronServer } from './server.js';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseRunnerOrigins } from './test-runs/egress.js';
 
 try {
   process.loadEnvFile(new URL('../../../.env', import.meta.url));
@@ -22,6 +23,9 @@ const webappDirectory =
 if (resendApiKey && !resendFrom)
   throw new Error('RESEND_FROM_EMAIL is required when RESEND_API_KEY is configured.');
 const server = await startTestronServer({
+  runnerEgressPolicy: {
+    allowedOrigins: parseRunnerOrigins(process.env.TESTRON_RUNNER_ALLOWED_ORIGINS),
+  },
   databaseUrl,
   host,
   port,
@@ -30,6 +34,12 @@ const server = await startTestronServer({
   ...(resendApiKey && resendFrom ? { resend: { apiKey: resendApiKey, from: resendFrom } } : {}),
   ...(process.env.TESTRON_AUTH_ENCRYPTION_KEYS
     ? { authenticationEncryptionKeys: process.env.TESTRON_AUTH_ENCRYPTION_KEYS }
+    : {}),
+  ...(process.env.TESTRON_ARTIFACTS_DIR
+    ? { artifactsDirectory: process.env.TESTRON_ARTIFACTS_DIR }
+    : {}),
+  ...(process.env.TESTRON_RUN_TIMEOUT_MS
+    ? { runTimeoutMs: Number(process.env.TESTRON_RUN_TIMEOUT_MS) }
     : {}),
 });
 

@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@testron/protocol';
@@ -13,12 +14,17 @@ import type { PasswordResetEmail } from '../src/email.js';
 import { AuthenticationService } from '../src/auth.js';
 import type { AppRouter } from '../src/trpc/router.js';
 import { startTestronServer, type RunningTestronServer } from '../src/server.js';
+import { ServerRunQueue } from '../src/test-runs/queue.js';
+import { ServerArtifactRetention } from '../src/test-runs/artifact-retention.js';
+import type { ServerRunOptions, ServerRunResult } from '../src/test-runs/runner.js';
+import { testRuns } from '../src/database/schema.js';
 
 const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test' as const;
 const expectedDatabase = 'testron_test';
 const expectedUser = 'testron_test';
 let server: RunningTestronServer;
 let webappDirectory: string;
+let artifactsDirectory: string;
 const deliveredInvitationIds: string[] = [];
 const deliveredPasswordResets: PasswordResetEmail[] = [];
 
@@ -36,12 +42,14 @@ const assertIsolatedTestDatabase = async (): Promise<void> => {
 
 beforeAll(async () => {
   webappDirectory = await mkdtemp(path.join(tmpdir(), 'testron-webapp-'));
+  artifactsDirectory = await mkdtemp(path.join(tmpdir(), 'testron-artifacts-'));
   await mkdir(path.join(webappDirectory, 'assets'));
   await writeFile(path.join(webappDirectory, 'index.html'), '<main>Testron webapp</main>');
   await writeFile(path.join(webappDirectory, 'assets', 'app.js'), 'export {};');
   server = await startTestronServer({
     databaseUrl,
     migrate: false,
+    runQueueEnabled: false,
     authenticationEncryptionKeys: `1:${Buffer.alloc(32, 7).toString('base64')}`,
     invitationMailer: {
       sendInvitation: async (invitation) => {
@@ -54,6 +62,7 @@ beforeAll(async () => {
       },
     },
     webappDirectory,
+    artifactsDirectory,
   });
   await assertIsolatedTestDatabase();
   await server.database.migrate(fileURLToPath(new URL('../drizzle', import.meta.url)));
@@ -72,6 +81,7 @@ beforeEach(async () => {
 afterAll(async () => {
   await server.close();
   await rm(webappDirectory, { recursive: true });
+  await rm(artifactsDirectory, { recursive: true });
 });
 
 const requestMeta = (): RequestMetadata => ({
@@ -1022,6 +1032,567 @@ describe('PostgreSQL tRPC vertical slice', () => {
         source: 'desktop-local',
       }),
     ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+  });
+
+  it('serves run artifacts only to users who can access the project', async () => {
+    const { api, token } = await signIn();
+    const { environment, snapshot } = await createSlice(api);
+    const run = await api.run.start.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      source: 'desktop-local',
+    });
+    await api.run.finish.mutate({
+      meta: mutationMeta(),
+      runId: run.id,
+      status: 'failed',
+      durationMs: 10,
+    });
+    const runDirectory = path.join(artifactsDirectory, run.id);
+    const screenshotPath = path.join(runDirectory, 'failure.png');
+    await mkdir(runDirectory, { recursive: true });
+    await writeFile(screenshotPath, 'png evidence');
+    await server.database.db.execute(
+      sql`update test_runs set screenshot_path = ${screenshotPath} where id = ${run.id}`,
+    );
+
+    const url = `${server.url}/api/runs/${run.id}/artifacts/screenshot`;
+    await expect(fetch(url)).resolves.toMatchObject({ status: 401 });
+    const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(await response.text()).toBe('png evidence');
+    const head = await fetch(url, {
+      method: 'HEAD',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(head.status).toBe(200);
+    expect(head.headers.get('content-length')).toBe(String(Buffer.byteLength('png evidence')));
+    expect(await head.text()).toBe('');
+    expect((await fetch(`${server.url}/artifacts/${run.id}/failure.png`)).status).toBe(404);
+    const outsider = await signIn('outsider@example.test');
+    expect(
+      (await fetch(url, { headers: { authorization: `Bearer ${outsider.token}` } })).status,
+    ).toBe(403);
+    const videoPath = path.join(runDirectory, 'failure.webm');
+    const video = Buffer.alloc(2 * 1024 * 1024, 42);
+    await writeFile(videoPath, video);
+    await server.database.db.execute(
+      sql`update test_runs set video_path = ${videoPath} where id = ${run.id}`,
+    );
+    const videoUrl = `${server.url}/api/runs/${run.id}/artifacts/video`;
+    const videoResponse = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
+    expect(videoResponse.headers.get('content-type')).toBe('video/webm');
+    expect(Buffer.from(await videoResponse.arrayBuffer())).toEqual(video);
+    const cancelled = await fetch(videoUrl, { headers: { authorization: `Bearer ${token}` } });
+    await cancelled.body?.cancel();
+    expect((await fetch(`${server.url}/api/health`)).status).toBe(200);
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      recentRuns: [{ id: run.id, artifacts: { screenshot: true, video: true } }],
+    });
+    await rm(screenshotPath);
+    await expect(
+      fetch(url, { headers: { authorization: `Bearer ${token}` } }),
+    ).resolves.toMatchObject({ status: 404 });
+  });
+
+  it('creates, updates, hydrates, and soft-deletes UTC run schedules', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Nightly checkout',
+      cron: '0 1 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    expect(schedule).toMatchObject({
+      name: 'Nightly checkout',
+      cron: '0 1 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+      nextRunAt: null,
+      revision: 1,
+    });
+
+    const updated = await api.runSchedule.update.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+      baseRevision: schedule.revision,
+      name: 'Hourly checkout',
+      cron: '0 * * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: true,
+    });
+    expect(updated).toMatchObject({
+      name: 'Hourly checkout',
+      cron: '0 * * * *',
+      enabled: true,
+      nextRunAt: expect.any(String),
+      revision: 2,
+    });
+    await expect(api.workspace.getWeb.query({ meta: requestMeta() })).resolves.toMatchObject({
+      runSchedules: [{ id: schedule.id, testIds: [snapshot.test.id], enabled: true }],
+      serverRunJobs: [],
+    });
+
+    const otherEnvironment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Other',
+      baseUrl: 'https://other.example.test/',
+      testIdAttribute: 'data-testid',
+    });
+    await expect(
+      api.runSchedule.update.mutate({
+        meta: mutationMeta(),
+        scheduleId: schedule.id,
+        baseRevision: updated.revision,
+        name: updated.name,
+        cron: updated.cron,
+        environmentId: otherEnvironment.id,
+        testIds: [snapshot.test.id],
+        enabled: true,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'CONFLICT' } });
+
+    await api.runSchedule.delete.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+      baseRevision: updated.revision,
+    });
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      runSchedules: [],
+    });
+  });
+
+  it.each(['update', 'delete'] as const)(
+    'serializes manual enqueue with a concurrent schedule %s',
+    async (operation) => {
+      const { api } = await signIn();
+      const { project, environment, snapshot } = await createSlice(api);
+      const other = await api.environment.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Other',
+        baseUrl: 'https://other.example.test',
+        testIdAttribute: 'data-testid',
+      });
+      await api.test.saveRevision.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        baseRevision: snapshot.test.currentRevision,
+        content: {
+          ...content(environment.id, 'checkout'),
+          environmentIds: [environment.id, other.id],
+        },
+      });
+      const schedule = await api.runSchedule.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Concurrent',
+        cron: '0 0 * * *',
+        environmentId: environment.id,
+        testIds: [snapshot.test.id],
+        enabled: false,
+      });
+      const connection = await server.database.pool.connect();
+      try {
+        await connection.query('BEGIN');
+        if (operation === 'update')
+          await connection.query('UPDATE run_schedules SET environment_id = $1 WHERE id = $2', [
+            other.id,
+            schedule.id,
+          ]);
+        else
+          await connection.query('UPDATE run_schedules SET deleted_at = now() WHERE id = $1', [
+            schedule.id,
+          ]);
+        const queued = api.runSchedule.enqueue
+          .mutate({ meta: mutationMeta(), scheduleId: schedule.id })
+          .then(
+            (jobs) => ({ jobs }),
+            (error: unknown) => ({ error }),
+          );
+        // Wait until enqueue actually reaches the lock, rather than relying on sleeps.
+        await vi.waitFor(
+          async () => {
+            const waiting = await server.database.pool.query(
+              "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%run_schedules%'",
+            );
+            expect(waiting.rowCount).toBeGreaterThan(0);
+          },
+          { timeout: 3_000 },
+        );
+        await connection.query('COMMIT');
+        const result = await queued;
+        if (operation === 'update')
+          expect(result).toMatchObject({ jobs: [{ environmentId: other.id }] });
+        else expect(result).toMatchObject({ error: { data: { code: 'NOT_FOUND' } } });
+      } finally {
+        await connection.query('ROLLBACK');
+        connection.release();
+      }
+    },
+  );
+
+  it('runs manually enqueued schedule tests through the persistent FIFO queue', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'On demand',
+      cron: '0 0 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    const jobs = await api.runSchedule.enqueue.mutate({
+      meta: mutationMeta(),
+      scheduleId: schedule.id,
+    });
+    expect(jobs).toMatchObject([
+      { testId: snapshot.test.id, source: 'server-manual', status: 'queued' },
+    ]);
+
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run: async (options) => ({
+        status: 'passed',
+        durationMs: 42,
+        error: null,
+        screenshotPath: null,
+        videoPath: null,
+        steps: options.steps.map((step, index) => ({
+          index,
+          action: step.kind,
+          status: 'passed',
+          durationMs: 42,
+          error: null,
+          pageUrl: 'https://example.test/',
+        })),
+      }),
+    });
+    await queue.processNow();
+
+    await expect(api.workspace.get.query({ meta: requestMeta() })).resolves.toMatchObject({
+      serverRunJobs: [
+        {
+          id: jobs[0]!.id,
+          status: 'passed',
+          runId: expect.any(String),
+          startedAt: expect.any(String),
+          finishedAt: expect.any(String),
+        },
+      ],
+      recentRuns: [
+        {
+          testId: snapshot.test.id,
+          source: 'server-manual',
+          status: 'passed',
+          durationMs: 42,
+          steps: [{ index: 0, status: 'passed' }],
+        },
+      ],
+    });
+  });
+
+  it('fails malformed queued execution data and continues to the next job', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const valid = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: content(environment.id, 'Valid'),
+    });
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Queue recovery',
+      cron: '0 0 * * *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id, valid.test.id],
+      enabled: false,
+    });
+    await api.runSchedule.enqueue.mutate({ meta: mutationMeta(), scheduleId: schedule.id });
+    await server.database.db.execute(
+      sql`update server_run_jobs set queued_at = '2000-01-01Z' where test_id = ${snapshot.test.id}`,
+    );
+    await server.database.db.execute(
+      sql`update test_revisions set content = '{}'::jsonb where id = ${snapshot.test.currentRevision.id}`,
+    );
+    const run = vi.fn(async (): Promise<ServerRunResult> => ({
+      status: 'passed',
+      durationMs: 1,
+      error: null,
+      screenshotPath: null,
+      videoPath: null,
+      steps: [],
+    }));
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run,
+    });
+    try {
+      await queue.processNow();
+      const result = await server.database.pool.query(
+        'select test_id, status, error from server_run_jobs order by queued_at',
+      );
+      expect(result.rows).toEqual([
+        {
+          test_id: snapshot.test.id,
+          status: 'failed',
+          error: 'The queued run references missing or invalid execution data.',
+        },
+        { test_id: valid.test.id, status: 'passed', error: null },
+      ]);
+      expect(run).toHaveBeenCalledOnce();
+      expect(run.mock.calls[0]).toEqual([
+        expect.objectContaining({ environmentUrl: environment.baseUrl }),
+      ]);
+    } finally {
+      await queue.close();
+    }
+  });
+
+  it('enqueues due schedules while a test is running without overlapping executions', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const schedule = await api.runSchedule.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Busy queue',
+      cron: '0 0 1 1 *',
+      environmentId: environment.id,
+      testIds: [snapshot.test.id],
+      enabled: false,
+    });
+    await api.runSchedule.enqueue.mutate({ meta: mutationMeta(), scheduleId: schedule.id });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let active = 0;
+    let maxActive = 0;
+    const run = vi.fn(async (_options: ServerRunOptions): Promise<ServerRunResult> => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      if (run.mock.calls.length === 1) await gate;
+      active--;
+      return {
+        status: 'passed',
+        durationMs: 42,
+        error: null,
+        screenshotPath: null,
+        videoPath: null,
+        steps: [],
+      };
+    });
+    const queue = new ServerRunQueue(server.database.db, artifactsDirectory, undefined, 5_000, {
+      run,
+    });
+    try {
+      await queue.start();
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+      await server.database.db.execute(
+        sql`update run_schedules set enabled = true, next_run_at = '2000-01-01T00:00:00Z' where id = ${schedule.id}`,
+      );
+      // No explicit wake: the regular timer must enqueue while the first run is blocked.
+      await vi.waitFor(
+        async () => {
+          const workspace = await api.workspace.get.query({ meta: requestMeta() });
+          expect(workspace.serverRunJobs).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ source: 'server-manual', status: 'running' }),
+              expect.objectContaining({ source: 'server-scheduled', status: 'queued' }),
+            ]),
+          );
+          expect(workspace.serverRunJobs).toHaveLength(2);
+        },
+        { timeout: 4_000, interval: 25 },
+      );
+      expect(run).toHaveBeenCalledTimes(1);
+      queue.wake();
+      queue.wake();
+      release();
+      await Promise.all([queue.processNow(), queue.processNow()]);
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(maxActive).toBe(1);
+      expect((await api.workspace.get.query({ meta: requestMeta() })).serverRunJobs).toHaveLength(
+        2,
+      );
+    } finally {
+      release();
+      await queue.close();
+    }
+  });
+
+  it('expires only completed server artifacts after 30 days and retains run history', async () => {
+    const { api, token } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const now = new Date('2026-09-04T12:00:00Z');
+    const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1_000);
+    const before = new Date(cutoff.getTime() - 1_000).toISOString();
+    const after = new Date(cutoff.getTime() + 1_000).toISOString();
+    const base = {
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-manual',
+      status: 'failed',
+      startedAt: before,
+      finishedAt: before,
+      durationMs: 42,
+      error: 'Expected failure',
+      steps: [
+        {
+          index: 0,
+          action: 'Navigate',
+          status: 'failed' as const,
+          durationMs: 42,
+          error: 'Expected failure',
+          pageUrl: null,
+        },
+      ],
+    };
+    const rows = [
+      { ...base, id: randomUUID() },
+      { ...base, id: randomUUID(), source: 'server-scheduled', finishedAt: cutoff.toISOString() },
+      { ...base, id: randomUUID(), finishedAt: after },
+      { ...base, id: randomUUID(), status: 'running', finishedAt: null },
+      { ...base, id: randomUUID(), source: 'desktop-local' },
+    ].map((row) => ({
+      ...row,
+      screenshotPath: path.join(artifactsDirectory, row.id, 'failure.png'),
+      videoPath: path.join(artifactsDirectory, row.id, 'failure.webm'),
+    }));
+    await server.database.db.insert(testRuns).values(rows);
+    for (const row of rows) {
+      await mkdir(path.join(artifactsDirectory, row.id), { recursive: true });
+      await writeFile(row.screenshotPath, 'png evidence');
+      await writeFile(row.videoPath, 'video evidence');
+    }
+    const cleanup = new ServerArtifactRetention(server.database.db, artifactsDirectory);
+    await cleanup.processNow(now);
+    for (const [index, row] of rows.entries()) {
+      const expired = index < 2;
+      expect(existsSync(path.join(artifactsDirectory, row.id))).toBe(!expired);
+      const [stored] = await server.database.db
+        .select()
+        .from(testRuns)
+        .where(eq(testRuns.id, row.id));
+      expect(stored).toMatchObject({
+        status: row.status,
+        error: row.error,
+        steps: row.steps,
+        screenshotPath: expired ? null : row.screenshotPath,
+        videoPath: expired ? null : row.videoPath,
+        artifactsExpiredAt: expired ? expect.any(String) : null,
+      });
+      if (expired)
+        expect(new Date(stored!.artifactsExpiredAt!).toISOString()).toBe(now.toISOString());
+    }
+    const evidence = await fetch(`${server.url}/api/runs/${rows[0]!.id}/artifacts/screenshot`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(evidence.status).toBe(404);
+    const workspace = await api.workspace.get.query({ meta: requestMeta() });
+    const expiredRun = workspace.recentRuns?.find((run) => run.id === rows[0]!.id);
+    expect(expiredRun).toBeDefined();
+    expect(expiredRun?.artifacts?.screenshot).toBeFalsy();
+    // A later sweep must not even attempt removal of an already-cleaned run.
+    const sentinel = path.join(artifactsDirectory, rows[0]!.id, 'keep');
+    await mkdir(path.dirname(sentinel), { recursive: true });
+    await writeFile(sentinel, 'Already processed');
+    await cleanup.processNow(now);
+    expect(existsSync(sentinel)).toBe(true);
+    await cleanup.close();
+  });
+
+  it('cleans expired artifact directories in batches without following paths or symlinks outside the root', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const directory = await mkdtemp(path.join(webappDirectory, 'retention-'));
+    const outside = path.join(webappDirectory, 'outside-evidence');
+    await mkdir(outside);
+    const outsideFile = path.join(outside, 'keep.png');
+    await writeFile(outsideFile, 'Keep this file');
+    const rows = Array.from({ length: 102 }, () => ({
+      id: randomUUID(),
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-scheduled',
+      status: 'failed',
+      startedAt: '2026-01-01T00:00:00Z',
+      finishedAt: '2026-01-01T00:01:00Z',
+      screenshotPath: outsideFile,
+    }));
+    await server.database.db.insert(testRuns).values(rows);
+    await symlink(outside, path.join(directory, rows[0]!.id), 'dir');
+    await mkdir(path.join(directory, rows[101]!.id));
+    await writeFile(path.join(directory, rows[101]!.id, 'failure.png'), 'Expired');
+    const cleanup = new ServerArtifactRetention(server.database.db, directory);
+    await cleanup.processNow(new Date('2026-09-04T12:00:00Z'));
+    expect(existsSync(outsideFile)).toBe(true);
+    expect(existsSync(path.join(directory, rows[0]!.id))).toBe(false);
+    expect(existsSync(path.join(directory, rows[101]!.id))).toBe(false);
+    const stored = await server.database.db.select().from(testRuns);
+    expect(stored).toHaveLength(102);
+    expect(stored.every((run) => run.screenshotPath === null)).toBe(true);
+    await cleanup.close();
+  });
+
+  it('retains artifact references on deletion failure and retries on the next sweep', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const blockedRoot = path.join(webappDirectory, 'blocked-artifact-root');
+    await writeFile(blockedRoot, 'Not a directory');
+    const id = randomUUID();
+    const screenshotPath = path.join(blockedRoot, id, 'failure.png');
+    await server.database.db.insert(testRuns).values({
+      id,
+      projectId: project.id,
+      testId: snapshot.test.id,
+      environmentId: environment.id,
+      testRevisionId: snapshot.test.currentRevision.id,
+      testRevisionNumber: snapshot.test.currentRevision.number,
+      source: 'server-manual',
+      status: 'failed',
+      startedAt: '2026-01-01T00:00:00Z',
+      finishedAt: '2026-01-01T00:01:00Z',
+      screenshotPath,
+    });
+    const cleanup = new ServerArtifactRetention(server.database.db, blockedRoot);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const now = new Date('2026-09-04T12:00:00Z');
+    try {
+      await cleanup.processNow(now);
+      expect(errorLog).toHaveBeenCalled();
+      const [failed] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
+      expect(failed?.screenshotPath).toBe(screenshotPath);
+      expect(failed?.artifactsExpiredAt).toBeNull();
+      expect(existsSync(blockedRoot)).toBe(true);
+      await rm(blockedRoot);
+      await mkdir(path.join(blockedRoot, id), { recursive: true });
+      await writeFile(screenshotPath, 'expired evidence');
+      await cleanup.processNow(now);
+      const [retried] = await server.database.db.select().from(testRuns).where(eq(testRuns.id, id));
+      expect(retried?.screenshotPath).toBeNull();
+      expect(new Date(retried!.artifactsExpiredAt!).toISOString()).toBe(now.toISOString());
+      expect(existsSync(path.join(blockedRoot, id))).toBe(false);
+    } finally {
+      await cleanup.close();
+      errorLog.mockRestore();
+    }
   });
 
   it('records one authorized, newest-first activity event for each supported mutation', async () => {

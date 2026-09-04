@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs" ADD COLUMN "artifacts_expired_at" timestamp with time zone;

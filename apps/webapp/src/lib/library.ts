@@ -15,6 +15,8 @@ import type {
   ProfileEnvironmentAuthentication,
   ProjectSecretMetadata,
   AuthenticationStateMetadata,
+  RunSchedule,
+  ServerRunJob,
 } from '@testron/protocol';
 
 export interface ProjectRecord {
@@ -88,6 +90,8 @@ export interface LibrarySnapshot {
   latestTestRuns?: WebWorkspaceSnapshot['latestTestRuns'];
   recentRuns?: TestRun[];
   activeRuns?: TestRun[];
+  runSchedules?: RunSchedule[];
+  serverRunJobs?: ServerRunJob[];
   projectOverviews?: ProjectOverviewSummary[];
   recentActivity?: ProjectActivity[];
   selectedProjectId?: string;

@@ -25,6 +25,10 @@ import {
   createProjectProcedure,
   createTestProcedure,
   createTestSuiteProcedure,
+  createRunScheduleProcedure,
+  updateRunScheduleProcedure,
+  deleteRunScheduleProcedure,
+  enqueueRunScheduleProcedure,
   deleteTestSuiteProcedure,
   deleteTestProcedure,
   getTestProcedure,
@@ -62,6 +66,7 @@ export interface TrpcContext {
 export interface RouterServices {
   authentication: AuthenticationService;
   repository: CanonicalRepository;
+  runQueue?: { wake(): void };
 }
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -127,7 +132,7 @@ const callAuthentication = async <T>(operation: () => Promise<T>): Promise<T> =>
   }
 };
 
-export const createAppRouter = ({ authentication, repository }: RouterServices) =>
+export const createAppRouter = ({ authentication, repository, runQueue }: RouterServices) =>
   t.router({
     auth: t.router({
       register: publicProcedure
@@ -357,6 +362,28 @@ export const createAppRouter = ({ authentication, repository }: RouterServices) 
         .input(finishTestRunProcedure.input)
         .output(finishTestRunProcedure.output)
         .mutation(({ ctx, input }) => call(() => repository.finishTestRun(ctx.user, input))),
+    }),
+    runSchedule: t.router({
+      create: authenticatedProcedure
+        .input(createRunScheduleProcedure.input)
+        .output(createRunScheduleProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.createRunSchedule(ctx.user, input))),
+      update: authenticatedProcedure
+        .input(updateRunScheduleProcedure.input)
+        .output(updateRunScheduleProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.updateRunSchedule(ctx.user, input))),
+      delete: authenticatedProcedure
+        .input(deleteRunScheduleProcedure.input)
+        .output(deleteRunScheduleProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.deleteRunSchedule(ctx.user, input))),
+      enqueue: authenticatedProcedure
+        .input(enqueueRunScheduleProcedure.input)
+        .output(enqueueRunScheduleProcedure.output)
+        .mutation(async ({ ctx, input }) => {
+          const jobs = await call(() => repository.enqueueRunSchedule(ctx.user, input));
+          runQueue?.wake();
+          return jobs;
+        }),
     }),
   });
 

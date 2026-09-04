@@ -111,6 +111,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
       '@testron/domain':
         specifier: workspace:*
         version: link:../../packages/domain

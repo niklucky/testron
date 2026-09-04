@@ -15,12 +15,17 @@ import {
 } from './email.js';
 import { createHttpServer } from './http.js';
 import { createAppRouter, type AppRouter } from './trpc/router.js';
+import { ServerRunQueue } from './test-runs/queue.js';
+import { ServerArtifactRetention } from './test-runs/artifact-retention.js';
+import { ServerPlaywrightRunner } from './test-runs/runner.js';
+import type { RunnerEgressPolicy } from './test-runs/egress.js';
 
 export interface RunningTestronServer {
   url: string;
   database: ServerDatabase;
   authentication: AuthenticationService;
   authenticationStates?: ServerAuthenticationStateStore;
+  runQueue: ServerRunQueue;
   router: AppRouter;
   close(): Promise<void>;
 }
@@ -36,7 +41,18 @@ export const startTestronServer = async (options: {
   resend?: { apiKey: string; from: string };
   webappDirectory?: string;
   authenticationEncryptionKeys?: string;
+  artifactsDirectory?: string;
+  runTimeoutMs?: number;
+  runQueueEnabled?: boolean;
+  runnerEgressPolicy?: RunnerEgressPolicy;
 }): Promise<RunningTestronServer> => {
+  if (
+    options.runTimeoutMs !== undefined &&
+    (!Number.isInteger(options.runTimeoutMs) ||
+      options.runTimeoutMs < 1_000 ||
+      options.runTimeoutMs > 3_600_000)
+  )
+    throw new Error('TESTRON_RUN_TIMEOUT_MS must be between 1000 and 3600000 milliseconds.');
   if (options.resend && !options.publicBaseUrl)
     throw new Error(
       'TESTRON_PUBLIC_URL is required when password-reset email delivery is enabled.',
@@ -74,10 +90,29 @@ export const startTestronServer = async (options: {
   const authenticationStates = authenticationEncryption
     ? new ServerAuthenticationStateStore(database.db, authenticationEncryption)
     : undefined;
-  const router = createAppRouter({ authentication, repository });
+  const artifactsDirectory = options.artifactsDirectory ?? 'data/artifacts';
+  const artifactRetention = new ServerArtifactRetention(database.db, artifactsDirectory);
+  const runQueue = new ServerRunQueue(
+    database.db,
+    artifactsDirectory,
+    authenticationStates,
+    options.runTimeoutMs,
+    new ServerPlaywrightRunner(options.runnerEgressPolicy),
+  );
+  if (options.runQueueEnabled !== false) {
+    await runQueue.start();
+    artifactRetention.start();
+  }
+  const router = createAppRouter({
+    authentication,
+    repository,
+    ...(options.runQueueEnabled === false ? {} : { runQueue }),
+  });
   const server = createHttpServer({
     router,
     authentication,
+    repository,
+    artifactsDirectory,
     secureCookies: new URL(options.publicBaseUrl ?? 'http://localhost').protocol === 'https:',
     ...(options.webappDirectory ? { webappDirectory: options.webappDirectory } : {}),
   });
@@ -92,13 +127,14 @@ export const startTestronServer = async (options: {
     database,
     authentication,
     ...(authenticationStates ? { authenticationStates } : {}),
+    runQueue,
     router,
     close: () => {
       clearInterval(passwordResetDeliveryTimer);
       return new Promise<void>((resolve, reject) => {
         server.close((error) => {
-          void authentication
-            .waitForPasswordResetDelivery()
+          void Promise.all([runQueue.close(), artifactRetention.close()])
+            .then(() => authentication.waitForPasswordResetDelivery())
             .then(() => database.close())
             .then(() => {
               if (error) reject(error);

@@ -1,12 +1,14 @@
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { open, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import { nodeHTTPRequestHandler } from '@trpc/server/adapters/node-http';
 
 import type { AuthenticationService } from './auth.js';
 import type { AppRouter } from './trpc/router.js';
 import type { AuthSessionOutput } from '@testron/protocol';
+import { RepositoryError, type CanonicalRepository } from './database/repository.js';
 
 const sessionCookieName = 'testron_session';
 
@@ -108,6 +110,8 @@ const serveWebapp = async (
 export const createHttpServer = (options: {
   router: AppRouter;
   authentication: AuthenticationService;
+  repository: CanonicalRepository;
+  artifactsDirectory: string;
   secureCookies?: boolean;
   webappDirectory?: string;
 }): Server =>
@@ -150,6 +154,55 @@ export const createHttpServer = (options: {
             };
           },
         });
+        return;
+      }
+      const artifactMatch = url.pathname.match(
+        /^\/api\/runs\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/artifacts\/(screenshot|video)$/i,
+      );
+      if ((request.method === 'GET' || request.method === 'HEAD') && artifactMatch) {
+        const authorization =
+          request.headers.authorization ?? (cookieToken ? `Bearer ${cookieToken}` : undefined);
+        const user = await options.authentication.authenticate(authorization);
+        if (!user) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const kind = artifactMatch[2] as 'screenshot' | 'video';
+        try {
+          const artifact = await options.repository.getRunArtifact(user, artifactMatch[1]!, kind);
+          const root = path.resolve(options.artifactsDirectory);
+          const resolved = path.resolve(artifact);
+          if (!resolved.startsWith(`${root}${path.sep}`)) throw new Error('Unsafe artifact path.');
+          const file = await open(resolved, 'r');
+          try {
+            const metadata = await file.stat();
+            response.writeHead(200, {
+              'content-type': kind === 'screenshot' ? 'image/png' : 'video/webm',
+              'content-length': metadata.size,
+              'cache-control': 'private, max-age=300',
+              'x-content-type-options': 'nosniff',
+            });
+            if (request.method === 'HEAD') response.end();
+            else await pipeline(file.createReadStream({ autoClose: false }), response);
+          } finally {
+            await file.close();
+          }
+        } catch (error) {
+          if (response.headersSent || response.destroyed) {
+            response.destroy();
+            return;
+          }
+          if (error instanceof RepositoryError) {
+            json(response, error.code === 'FORBIDDEN' ? 403 : 404, { error: error.message });
+            return;
+          }
+          // Retention may remove the file after authorization read its path.
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            json(response, 404, { error: 'The run artifact was not found.' });
+            return;
+          }
+          throw error;
+        }
         return;
       }
       if (

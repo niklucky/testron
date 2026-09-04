@@ -22,14 +22,21 @@ RUN pnpm --filter @testron/server build
 RUN pnpm --filter @testron/webapp build
 RUN pnpm --filter @testron/server deploy --prod --legacy /opt/testron-server
 
-FROM node:24-alpine AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV TESTRON_ARTIFACTS_DIR=/data/testron/artifacts
 WORKDIR /app
 
 COPY --from=build --chown=node:node /opt/testron-server ./
 COPY --from=build --chown=node:node /workspace/apps/webapp/dist ./public
+RUN ./node_modules/.bin/playwright install --with-deps chromium \
+  && chmod -R a+rX /ms-playwright \
+  && mkdir -p /data/testron/artifacts \
+  && chown -R node:node /data/testron/artifacts
 
 USER node
+VOLUME ["/data/testron/artifacts"]
 EXPOSE 4400
 CMD ["node", "dist/cli.js"]

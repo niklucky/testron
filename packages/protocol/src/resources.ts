@@ -75,6 +75,15 @@ export const projectActivitySchema = z
   })
   .strict();
 export const testRunStatusSchema = z.enum(['running', 'passed', 'failed', 'cancelled', 'timedOut']);
+export const testRunSourceSchema = z.enum(['desktop-local', 'server-manual', 'server-scheduled']);
+export const serverRunJobStatusSchema = z.enum([
+  'queued',
+  'running',
+  'passed',
+  'failed',
+  'cancelled',
+  'timedOut',
+]);
 
 export const projectSchema = z
   .object({
@@ -520,10 +529,61 @@ export const testRunSchema = z
     environmentId: entityIdSchema,
     profileId: entityIdSchema.nullable(),
     status: testRunStatusSchema,
-    source: z.literal('desktop-local'),
+    source: testRunSourceSchema,
     startedAt: timestampSchema,
     finishedAt: timestampSchema.nullable(),
     durationMs: z.number().int().nonnegative().nullable(),
+    error: z.string().max(10_000).nullable(),
+    artifacts: z.object({ screenshot: z.boolean(), video: z.boolean() }).strict(),
+    steps: z
+      .array(
+        z
+          .object({
+            index: z.number().int().nonnegative(),
+            action: z.string().min(1).max(1_000),
+            status: z.enum(['passed', 'failed']),
+            durationMs: z.number().int().nonnegative(),
+            error: z.string().max(10_000).nullable(),
+            pageUrl: z.string().max(10_000).nullable(),
+          })
+          .strict(),
+      )
+      .max(10_000),
+  })
+  .strict();
+
+export const runScheduleSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    name: z.string().trim().min(1).max(100),
+    cron: z.string().trim().min(1).max(100),
+    environmentId: entityIdSchema,
+    testIds: z.array(entityIdSchema).min(1).max(500),
+    enabled: z.boolean(),
+    nextRunAt: timestampSchema.nullable(),
+    lastEnqueuedAt: timestampSchema.nullable(),
+    revision: revisionNumberSchema,
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .strict();
+
+export const serverRunJobSchema = z
+  .object({
+    id: entityIdSchema,
+    projectId: entityIdSchema,
+    scheduleId: entityIdSchema.nullable(),
+    testId: entityIdSchema,
+    testRevision: revisionPointerSchema,
+    environmentId: entityIdSchema,
+    profileId: entityIdSchema.nullable(),
+    source: testRunSourceSchema.exclude(['desktop-local']),
+    status: serverRunJobStatusSchema,
+    runId: entityIdSchema.nullable(),
+    queuedAt: timestampSchema,
+    startedAt: timestampSchema.nullable(),
+    finishedAt: timestampSchema.nullable(),
     error: z.string().max(10_000).nullable(),
   })
   .strict();
@@ -563,6 +623,8 @@ export const workspaceSnapshotSchema = z
     recentActivity: z.array(projectActivitySchema).max(200),
     recentRuns: z.array(testRunSchema).optional(),
     activeRuns: z.array(testRunSchema),
+    runSchedules: z.array(runScheduleSchema).optional(),
+    serverRunJobs: z.array(serverRunJobSchema).max(200).optional(),
   })
   .strict();
 
@@ -613,6 +675,10 @@ export type TestRevision = z.infer<typeof testRevisionSchema>;
 export type TestSnapshot = z.infer<typeof testSnapshotSchema>;
 export type TestRunStatus = z.infer<typeof testRunStatusSchema>;
 export type TestRun = z.infer<typeof testRunSchema>;
+export type TestRunSource = z.infer<typeof testRunSourceSchema>;
+export type RunSchedule = z.infer<typeof runScheduleSchema>;
+export type ServerRunJobStatus = z.infer<typeof serverRunJobStatusSchema>;
+export type ServerRunJob = z.infer<typeof serverRunJobSchema>;
 export type WorkspaceViewer = z.infer<typeof workspaceViewerSchema>;
 export type ProjectMemberStatus = z.infer<typeof projectMemberStatusSchema>;
 export type InvitationStatus = z.infer<typeof invitationStatusSchema>;

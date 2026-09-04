@@ -5,15 +5,16 @@ import { toneInk, toneWash, type Tone } from '../tone';
 import { Kbd } from './Kbd';
 
 /**
- * Four weights of the same button, ordered by how loudly they ask to be
+ * Action weights of the same button, ordered by how loudly they ask to be
  * pressed. A screen should contain at most one `primary`.
  *
  *   primary   the single committing action ("Run all")
  *   default   an ordinary action that needs an edge to be findable
  *   soft      an action inside dense chrome — filled, but quiet
  *   ghost     a navigation-ish action in a list or rail
+ *   destructive an action that deletes data
  */
-export type ButtonVariant = 'primary' | 'default' | 'soft' | 'ghost';
+export type ButtonVariant = 'primary' | 'default' | 'soft' | 'ghost' | 'destructive';
 
 const base =
   'inline-flex shrink-0 items-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:pointer-events-none';
@@ -29,6 +30,8 @@ const byVariant: Record<ButtonVariant, string> = {
   default: 'border border-line bg-surface text-ink-2 hover:text-ink',
   soft: 'border border-line bg-raised text-ink-2 hover:text-ink',
   ghost: 'text-ink-2 hover:bg-raised hover:text-ink',
+  destructive:
+    'border border-critical/30 bg-critical-wash text-critical hover:bg-critical/20 hover:border-critical',
 };
 
 export const Button = ({
