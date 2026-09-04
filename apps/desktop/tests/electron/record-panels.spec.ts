@@ -1089,7 +1089,8 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
           .getAllWebContents()
           .find((contents) => contents.getURL() === 'http://127.0.0.1:4174/');
         if (!website) throw new Error('Fixture WebContentsView was not found.');
-        return website.executeJavaScript(script);
+        // Instrument the recorder's isolated world, not the page's separate JS globals.
+        return website.executeJavaScriptInIsolatedWorld(999, [{ code: script }]);
       }, source);
 
     await websiteEval(`(() => {
@@ -1196,6 +1197,22 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
     expect((await appSnapshot(appWindow)).steps.some((step) => step.kind === 'hover')).toBe(false);
 
     const searchResults = await websiteEval(`(() => {
+      window.searchMetrics = { scans: 0, textReads: 0 };
+      const querySelectorAll = document.querySelectorAll;
+      document.querySelectorAll = function (selector) {
+        if (selector === '*') window.searchMetrics.scans += 1;
+        return querySelectorAll.call(this, selector);
+      };
+      const sentinel = document.createElement('button');
+      sentinel.id = 'search-sentinel';
+      sentinel.textContent = 'Cache sentinel';
+      sentinel.style.display = 'none';
+      document.body.append(sentinel);
+      const textContent = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+      Object.defineProperty(sentinel, 'textContent', { get() {
+        window.searchMetrics.textReads += 1;
+        return textContent.get.call(this);
+      } });
       const search = [...document.querySelectorAll('[aria-label="Choose locator"] button')]
         .find((button) => button.textContent === 'Search on page');
       search?.click();
@@ -1206,6 +1223,7 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
       return document.querySelector('[aria-label="Page selector results"]')?.textContent;
     })()`);
     expect(searchResults).toContain('<button name="remote-control">');
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 1, textReads: 1 });
     expect(
       await websiteEval(`(() => {
       const picker = document.querySelector('[aria-label="Choose locator"]');
@@ -1240,6 +1258,7 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
       roots: 1,
       nestedMatches: 2,
     });
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 1, textReads: 1 });
     await websiteEval(`document.querySelector('#testron-current-tab').click()`);
     expect(
       await websiteEval(`Boolean(document.querySelector('[aria-label="Search page selectors"]'))`),
@@ -1293,6 +1312,7 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
       selectionEnd: 8,
       pageScans: 0,
     });
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 2, textReads: 2 });
 
     await websiteEval(`(() => {
       const result = [...document.querySelectorAll('[aria-label="Page selector results"] button')].find((button) => button.textContent === 'name="remote-control"');
@@ -1305,6 +1325,47 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
         ),
       )
       .toBe('<button name="remote-control">');
+    expect(await websiteEval('window.searchMetrics')).toEqual({ scans: 2, textReads: 2 });
+    expect(
+      await websiteEval(`(() => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      return { start: input.selectionStart, end: input.selectionEnd, value: input.value, focused: document.activeElement === input };
+    })()`),
+    ).toEqual({ start: 2, end: 8, value: 'remote-control', focused: true });
+
+    // Results are a tab-opening snapshot: omit newly inserted nodes until
+    // refresh, but discard detached nodes immediately on the next query.
+    await websiteEval(`(() => {
+      const added = document.createElement('button');
+      added.id = 'fresh-result';
+      document.body.append(added);
+      document.querySelector('[name="remote-second"]').remove();
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'fresh-result';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toBe('');
+    await websiteEval(`document.querySelector('#testron-current-tab').click()`);
+    await websiteEval(`document.querySelector('#testron-search-tab').click()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toContain('id="fresh-result"');
+    await websiteEval(`(() => {
+      const input = document.querySelector('[aria-label="Search page selectors"]');
+      input.value = 'remote-second';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    expect(
+      await websiteEval(
+        `document.querySelector('[aria-label="Page selector results"]').textContent`,
+      ),
+    ).toBe('');
     await websiteEval(`document.querySelector('#testron-current-tab').click()`);
     expect(
       await websiteEval(
@@ -1312,7 +1373,13 @@ test('selector picker exposes a nearby tree, page search, and dismissal controls
       ),
     ).toBe('<button name="remote-control">');
 
-    await websiteEval(`document.querySelector('[aria-label="Cancel selector picker"]')?.click()`);
+    await websiteEval(`document.querySelector('#testron-search-tab').click()`);
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
+    await websiteEval(
+      `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`,
+    );
     await expect
       .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`))
       .toBe(false);
@@ -1364,9 +1431,9 @@ test('pinned picker is reachable with real pointer movement and commits only on 
       return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
     })()`) as Promise<{ x: number; y: number }>;
     let pointer = { x: 0, y: 0 };
-    const moveTo = async (point: { x: number; y: number }, click = false) => {
+    const moveTo = async (point: { x: number; y: number }, click = false, alt = false) => {
       await electronApp.evaluate(
-        async ({ webContents, BrowserWindow }, { from, to, click }) => {
+        async ({ webContents, BrowserWindow }, { from, to, click, alt }) => {
           const website = webContents
             .getAllWebContents()
             .find((item) => item.getURL() === 'http://127.0.0.1:4174/');
@@ -1384,24 +1451,51 @@ test('pinned picker is reachable with real pointer movement and commits only on 
             await new Promise((resolve) => setTimeout(resolve, 20));
           }
           if (click) {
-            website.sendInputEvent({ type: 'mouseDown', ...to, button: 'left', clickCount: 1 });
-            website.sendInputEvent({ type: 'mouseUp', ...to, button: 'left', clickCount: 1 });
+            website.sendInputEvent({
+              type: 'mouseDown',
+              ...to,
+              button: 'left',
+              clickCount: 1,
+              modifiers: alt ? ['alt'] : [],
+            });
+            website.sendInputEvent({
+              type: 'mouseUp',
+              ...to,
+              button: 'left',
+              clickCount: 1,
+              modifiers: alt ? ['alt'] : [],
+            });
           }
         },
-        { from: pointer, to: point, click },
+        { from: pointer, to: point, click, alt },
       );
       pointer = point;
     };
     const clickSelector = async (selector: string) => moveTo(await pointFor(selector), true);
     await websiteEval(`(() => {
       document.body.style.cssText = 'display:block;margin:0;min-height:1800px';
-      document.body.innerHTML = '<button id="primary" data-testid="primary" style="position:absolute;left:20px;top:20px;width:160px">First</button><button id="secondary" data-testid="secondary" style="position:absolute;left:20px;top:420px;width:160px">Second</button>';
+      document.body.innerHTML = '<div id="root" style="width:100vw;min-height:1800px"><button id="primary" data-testid="primary" style="position:absolute;left:20px;top:20px;width:160px">First</button><button id="secondary" data-testid="secondary" style="position:absolute;left:20px;top:420px;width:160px">Second</button></div>';
+      document.querySelector('#secondary').setAttribute('name', 'a&"b');
       window.siteActions = [];
       for (const type of ['pointerdown', 'mousedown', 'click']) document.addEventListener(type, (event) => {
         if (event.target.closest('#primary, #secondary')) window.siteActions.push(type);
       });
     })()`);
     await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    const blankPoint = await websiteEval('({ x: window.innerWidth - 20, y: 10 })');
+    // Both body and full-page #root hits must leave normal recording usable.
+    await websiteEval(`document.querySelector('#root').style.pointerEvents = 'none'`);
+    await moveTo(blankPoint, true, true);
+    await websiteEval(`document.querySelector('#root').style.pointerEvents = ''`);
+    await moveTo(blankPoint, true, true);
+    await clickSelector('#primary');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.find((step) => step.kind === 'click'))
+      .toMatchObject({ target: { primary: { strategy: 'testId', value: 'primary' } } });
+    expect(
+      await websiteEval(`Boolean(document.querySelector('[aria-label="Choose locator"]'))`),
+    ).toBe(false);
+    await websiteEval('window.siteActions = []');
     await appWindow.getByRole('button', { name: /^Hover/ }).click();
     await moveTo(await pointFor('#primary'));
     await expect
@@ -1459,6 +1553,10 @@ test('pinned picker is reachable with real pointer movement and commits only on 
       .poll(() => websiteEval(`Boolean(document.querySelector('[aria-label="Apply locator"]'))`))
       .toBe(true);
     expect((await appSnapshot(appWindow)).steps[index]).toEqual(snapshot.steps[index]);
+    await clickSelector('#testron-search-tab');
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
     await electronApp.evaluate(({ webContents }) => {
       const website = webContents
         .getAllWebContents()
@@ -1474,10 +1572,26 @@ test('pinned picker is reachable with real pointer movement and commits only on 
       index,
     );
     await clickSelector('#secondary');
+    await clickSelector('#testron-search-tab');
+    expect(await websiteEval(`document.activeElement.getAttribute('aria-label')`)).toBe(
+      'Search page selectors',
+    );
+    await clickSelector('[aria-label="Cancel selector picker"]');
+    await expect.poll(async () => (await appSnapshot(appWindow)).repickIndex).toBeUndefined();
+    expect((await appSnapshot(appWindow)).steps[index]).toEqual(snapshot.steps[index]);
+    await appWindow.evaluate(
+      (index) => window.testron.command({ type: 'set-repick-step', index }),
+      index,
+    );
+    await clickSelector('#secondary');
+    expect(
+      await websiteEval(`document.querySelector('[aria-label*="selector name="]').textContent`),
+    ).toBe('name="a&"b"');
+    await clickSelector('[aria-label*="selector name="]');
     await clickSelector('[aria-label="Apply locator"]');
     await expect
       .poll(async () => (await appSnapshot(appWindow)).steps[index])
-      .toMatchObject({ target: { primary: { strategy: 'testId', value: 'secondary' } } });
+      .toMatchObject({ target: { primary: { strategy: 'name', value: 'a&"b' } } });
     await expect.poll(async () => (await appSnapshot(appWindow)).repickIndex).toBeUndefined();
     expect(await websiteEval('window.siteActions')).toEqual([]);
   } finally {

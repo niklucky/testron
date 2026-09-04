@@ -3,7 +3,7 @@ import { ipcRenderer } from 'electron';
 import { rankLocators, type Locator } from '@testron/domain/locators/schema';
 import type { RecorderCandidate } from '@testron/domain/recording/schema';
 import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
-import { inspectorPosition } from './inspector-position';
+import { INSPECTOR_MARGIN, inspectorPosition } from './inspector-position';
 import type { VerifyAssertion } from './verify-assertion';
 
 let testIdAttribute = 'data-testid';
@@ -120,6 +120,7 @@ let lastPointer: { x: number; y: number } | undefined;
 let inspectorFrame: number | undefined;
 let inspectorSearchOpen = false;
 let inspectorSearchQuery = '';
+let inspectorSearchSnapshot: Array<{ element: Element; searchText: string }> | undefined;
 
 const isSelecting = (): boolean =>
   repicking || (recordingActive && (captureMode !== 'record' || locatorPicking));
@@ -437,6 +438,21 @@ const pageInspectorChoices = (): InspectorChoice[] =>
     )
     .flatMap(directInspectorChoices);
 
+/** Snapshot light-DOM search text once per tab opening, not per keystroke/render. */
+const pageInspectorSearchSnapshot = (): Array<{ element: Element; searchText: string }> => {
+  const labels = new Map<Element, string[]>();
+  for (const choice of pageInspectorChoices()) {
+    const entries = labels.get(choice.element) ?? [];
+    entries.push(choice.label);
+    labels.set(choice.element, entries);
+  }
+  return [...labels].map(([element, choices]) => ({
+    element,
+    searchText:
+      `${elementLabel(element)} ${choices.join(' ')} ${accessibleName(element) ?? ''}`.toLowerCase(),
+  }));
+};
+
 const variableCandidates = (element: Element): string[] => {
   const autocomplete = clean(element.getAttribute('autocomplete'));
   const names = [
@@ -490,6 +506,7 @@ const hideInspector = (): void => {
   pickerPosition = undefined;
   inspectorSearchOpen = false;
   inspectorSearchQuery = '';
+  inspectorSearchSnapshot = undefined;
   inspector?.remove();
   inspector = undefined;
 };
@@ -529,8 +546,14 @@ const positionRenderedInspector = (
   // Pin the panel itself, not merely its target. Only clamp it when its size or
   // the viewport changes; pointer movement must never make controls move away.
   const position = {
-    left: Math.max(8, Math.min(initialPosition.left, window.innerWidth - pickerRect.width - 8)),
-    top: Math.max(8, Math.min(initialPosition.top, window.innerHeight - pickerRect.height - 8)),
+    left: Math.max(
+      INSPECTOR_MARGIN,
+      Math.min(initialPosition.left, window.innerWidth - pickerRect.width - INSPECTOR_MARGIN),
+    ),
+    top: Math.max(
+      INSPECTOR_MARGIN,
+      Math.min(initialPosition.top, window.innerHeight - pickerRect.height - INSPECTOR_MARGIN),
+    ),
   };
   if (pinnedElement) pickerPosition = position;
   picker.style.left = `${position.left}px`;
@@ -561,6 +584,16 @@ const renderInspector = (): void => {
   const element = pendingChoice?.element ?? selectedTargets.get(origin) ?? origin;
 
   const restoreFocus = inspector?.contains(document.activeElement);
+  const previousSearch = inspector?.querySelector<HTMLInputElement>(
+    '[aria-label="Search page selectors"]',
+  );
+  const searchSelection = previousSearch
+    ? {
+        start: previousSearch.selectionStart,
+        end: previousSearch.selectionEnd,
+        direction: previousSearch.selectionDirection,
+      }
+    : undefined;
   inspector?.remove();
   const root = document.createElement('div');
   root.setAttribute(INSPECTOR_ATTRIBUTE, '');
@@ -669,7 +702,8 @@ const renderInspector = (): void => {
 
   const chosen = pendingChoice?.locator ?? preferredLocators.get(element);
   const choose = (choice: InspectorChoice): void => {
-    pendingChoice = choice;
+    // A snapshot result may have been removed by the page since the tab opened.
+    if (choice.element.isConnected) pendingChoice = choice;
     renderInspector();
   };
   const choiceButton = (choice: InspectorChoice, label = choice.label): HTMLButtonElement => {
@@ -760,6 +794,7 @@ const renderInspector = (): void => {
         blockPageInteraction(event);
         if (active) return;
         inspectorSearchOpen = searchTab;
+        if (searchTab) inspectorSearchSnapshot = undefined;
         renderInspector();
       },
       true,
@@ -899,9 +934,7 @@ const renderInspector = (): void => {
       );
       for (const choice of attributes) {
         const name = attributeName(choice)!;
-        const value = (node.element.getAttribute(name) ?? '')
-          .replaceAll('&', '&amp;')
-          .replaceAll('"', '&quot;');
+        const value = node.element.getAttribute(name) ?? '';
         nodeHeader.append(' ', inlineChoice(choice, `${name}="${value}"`));
       }
       nodeHeader.append('>');
@@ -994,15 +1027,14 @@ const renderInspector = (): void => {
     attachTreeHighlight(results);
     const status = document.createElement('span');
     status.style.cssText = 'color:#7f8a85;font:11px/15px system-ui,sans-serif';
-    const allChoices = pageInspectorChoices();
+    // New/changed page content is picked up when this tab is reopened. Drop
+    // detached results on each update; do not rescan the document on selection.
+    const snapshot = (inspectorSearchSnapshot ??= pageInspectorSearchSnapshot());
     const updateResults = (): void => {
       const query = inspectorSearchQuery.trim().toLowerCase();
-      const filtered = allChoices.filter((choice) => {
-        if (!query) return true;
-        const text = `${elementLabel(choice.element)} ${choice.label} ${accessibleName(choice.element) ?? ''}`;
-        return text.toLowerCase().includes(query);
-      });
-      const matches = [...new Set(filtered.map((choice) => choice.element))];
+      const matches = snapshot
+        .filter((entry) => entry.element.isConnected && entry.searchText.includes(query))
+        .map((entry) => entry.element);
       const visible = matches.slice(0, 100);
       const included = new Set(visible);
       for (const match of visible) {
@@ -1026,9 +1058,11 @@ const renderInspector = (): void => {
       const roots = nodes.filter(
         (node) => !node.element.parentElement || !included.has(node.element.parentElement),
       );
-      roots.sort((a, b) =>
-        a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-      );
+      roots.sort((a, b) => {
+        const position = a.element.compareDocumentPosition(b.element);
+        if (position === 0 || position & Node.DOCUMENT_POSITION_DISCONNECTED) return 0;
+        return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+      });
       results.replaceChildren(...roots.map((node) => renderTreeNode(node, nodes)));
       status.textContent =
         matches.length === 0
@@ -1043,7 +1077,14 @@ const renderInspector = (): void => {
     search.append(input, status, results);
     content.append(search);
     queueMicrotask(() => {
-      if (input.isConnected) input.focus();
+      if (!input.isConnected) return;
+      input.focus();
+      if (searchSelection?.start != null && searchSelection.end != null)
+        input.setSelectionRange(
+          searchSelection.start,
+          searchSelection.end,
+          searchSelection.direction ?? undefined,
+        );
     });
   }
 
@@ -1189,8 +1230,8 @@ window.addEventListener(
     if (isInspectorElement(origin)) return;
     lastPointer = { x: event.clientX, y: event.clientY };
     // Alt/Option-click is the explicit locator editor during normal recording.
-    if (recordingActive && event.altKey) locatorPicking = true;
-    if (isSelecting()) {
+    const editLocator = recordingActive && event.altKey;
+    if (isSelecting() || editLocator) {
       blockPageInteraction(event);
       if (pinnedElement) {
         cancelSelection();
@@ -1201,6 +1242,7 @@ window.addEventListener(
           ? (collectionElementFor(origin) ?? origin)
           : (origin.closest(INTERACTIVE_SELECTOR) ?? origin);
       if (isPageShell(element)) return;
+      if (editLocator) locatorPicking = true;
       pinnedElement = element;
       inspectedElement = element;
       renderInspector();

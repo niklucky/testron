@@ -35,6 +35,11 @@ Normal recording does not open the picker on hover. Use **Alt/Option-click** to
 edit a locator (or choose a profile variable) before recording an interaction,
 or use the recorded step's Repick action afterward.
 
+Page search snapshots the light DOM when its tab opens. Reopen **Search on page**
+to include added elements or changed text/attributes; detached results are
+discarded when results update. Shadow DOM content is not currently searched,
+and the recorder's targeting/tree navigation does not cross shadow boundaries.
+
 For server-backed operation, copy `.env.example` to `.env`, start PostgreSQL with
 `pnpm server:db:up`, then
 follow [the server runbook](docs/server-operations.md). Canonical workspace data

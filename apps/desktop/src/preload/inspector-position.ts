@@ -10,6 +10,8 @@ export type ViewportSize = { width: number; height: number };
 
 export type InspectorAnchor = { x: number; y: number };
 
+export const INSPECTOR_MARGIN = 8;
+
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(Math.max(value, minimum), maximum);
 
@@ -18,7 +20,7 @@ export const inspectorPosition = (
   anchor: InspectorAnchor,
   inspector: Pick<InspectorRect, 'width' | 'height'>,
   viewport: ViewportSize,
-  margin = 8,
+  margin = INSPECTOR_MARGIN,
   gap = 12,
 ): { left: number; top: number } => {
   const maximumLeft = Math.max(margin, viewport.width - inspector.width - margin);
