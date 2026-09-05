@@ -170,6 +170,11 @@ declare global {
     testron?: TestronApi;
     testronDesktop?: {
       platform: 'desktop';
+      /** Absent on desktop builds that predate the workspace picker. */
+      workspace?: { current: string; default: string; recent: string[]; glass: boolean };
+      selectWorkspace?(url: string): void;
+      forgetWorkspace?(url: string): void;
+      setSurface?(surface: 'auth' | 'product'): void;
       setLocale(locale: 'en' | 'ru'): void;
       openLocal(request: {
         route: 'record' | 'recovery';

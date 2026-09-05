@@ -248,6 +248,14 @@ const iconPaths = {
       <circle cx="16" cy="10" r="1.1" fill="currentColor" stroke="none" />
     </>
   ),
+  server: (
+    <>
+      <rect x="3.5" y="4" width="17" height="6.5" rx="2" />
+      <rect x="3.5" y="13.5" width="17" height="6.5" rx="2" />
+      <path d="M7 7.25h.01M7 16.75h.01" />
+    </>
+  ),
+  select: <path d="m8 9.5 4-4 4 4M8 14.5l4 4 4-4" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof iconPaths;
