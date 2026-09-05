@@ -110,5 +110,32 @@ export const saveRecentWorkspaces = (recent: readonly string[]): void => {
   }
 };
 
-/** Where the sign-in page of another server lives. */
-export const workspaceSignInUrl = (url: string): string => new URL('/login', url).toString();
+const CARRY_PARAM = 'workspaces';
+
+/**
+ * Where the sign-in page of another server lives. Storage is per origin, so
+ * the remembered servers ride along in the URL and the target page merges
+ * them into its own list.
+ */
+export const workspaceSignInUrl = (url: string, carry: readonly string[] = []): string => {
+  const target = new URL('/login', url);
+  if (carry.length) target.searchParams.set(CARRY_PARAM, carry.join(','));
+  return target.toString();
+};
+
+/** The servers another origin handed over in its sign-in link, if any. */
+export const carriedWorkspaces = (search: string): string[] => {
+  const raw = new URLSearchParams(search).get(CARRY_PARAM);
+  if (!raw) return [];
+  const seen = new Set<string>();
+  return raw
+    .split(',')
+    .map((item) => normalizeWorkspaceUrl(item))
+    .filter((item): item is string => item !== undefined && !isCloudWorkspace(item))
+    .filter((item) => (seen.has(item) ? false : (seen.add(item), true)))
+    .slice(0, RECENT_LIMIT);
+};
+
+/** Fold the carried list into what this origin already remembers. */
+export const mergeWorkspaces = (recent: readonly string[], carried: readonly string[]): string[] =>
+  [...recent, ...carried.filter((item) => !recent.includes(item))].slice(0, RECENT_LIMIT);

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_WORKSPACE_URL,
+  carriedWorkspaces,
   forgetWorkspace,
+  mergeWorkspaces,
   normalizeWorkspaceUrl,
   rememberWorkspace,
   workspaceOption,
@@ -65,9 +67,25 @@ describe('workspace addresses', () => {
     expect(forgetWorkspace(remembered, 'https://a.test')).toEqual(['https://b.test']);
   });
 
-  it('points at the other server’s sign-in page', () => {
+  it('points at the other server’s sign-in page and carries the remembered servers', () => {
     expect(workspaceSignInUrl('https://qa.acme.internal:4400')).toBe(
       'https://qa.acme.internal:4400/login',
     );
+    const link = workspaceSignInUrl('https://qa.acme.internal:4400', [
+      'https://a.test',
+      'https://b.test',
+    ]);
+    expect(link).toBe(
+      'https://qa.acme.internal:4400/login?workspaces=https%3A%2F%2Fa.test%2Chttps%3A%2F%2Fb.test',
+    );
+    expect(carriedWorkspaces(new URL(link).search)).toEqual(['https://a.test', 'https://b.test']);
+    expect(
+      carriedWorkspaces('?workspaces=https://app.testron.dev,garbage%20value,https://a.test'),
+    ).toEqual(['https://a.test']);
+    expect(carriedWorkspaces('')).toEqual([]);
+    expect(mergeWorkspaces(['https://b.test'], ['https://a.test', 'https://b.test'])).toEqual([
+      'https://b.test',
+      'https://a.test',
+    ]);
   });
 });

@@ -97,6 +97,7 @@ import {
 } from './security';
 import {
   chooseServer,
+  credentialsDirectory,
   forgetServer,
   loadServerPreference,
   resolveServerEndpoints,
@@ -3398,7 +3399,7 @@ app.whenReady().then(async () => {
     serverPreference = loadServerPreference(serverPreferencePath);
     serverEndpoints = resolveServerEndpoints(serverPreference, serverDefaults());
     const serverUrl = safeUrl(serverEndpoints.serverUrl);
-    tokenStore = new SecureTokenStore(path.join(dataDirectory, 'credentials'), {
+    tokenStore = new SecureTokenStore(credentialsDirectory(dataDirectory, serverEndpoints), {
       isAvailable: () => safeStorage.isEncryptionAvailable(),
       encrypt: (value) => safeStorage.encryptString(value),
       decrypt: (value) => safeStorage.decryptString(value),

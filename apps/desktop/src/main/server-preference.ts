@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 /**
  * Which Testron server this desktop talks to. The build ships a default
@@ -111,4 +112,20 @@ export const forgetServer = (preference: ServerPreference, url: string): ServerP
       : {}),
     recentServerUrls: preference.recentServerUrls.filter((item) => item !== origin),
   };
+};
+
+/**
+ * Where this server's session token lives. Each server gets its own folder so
+ * a token issued by one server is never presented to another; the build
+ * default keeps the original location, so existing sign-ins survive.
+ */
+export const credentialsDirectory = (dataDirectory: string, endpoints: ServerEndpoints): string => {
+  const base = path.join(dataDirectory, 'credentials');
+  if (endpoints.isDefault) return base;
+  const origin = new URL(endpoints.serverUrl);
+  const folder = `${origin.protocol.replace(':', '')}_${origin.host}`.replace(
+    /[^a-z0-9._-]/gi,
+    '_',
+  );
+  return path.join(base, 'servers', folder);
 };

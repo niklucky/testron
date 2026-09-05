@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   chooseServer,
+  credentialsDirectory,
   forgetServer,
   loadServerPreference,
   normalizeServerUrl,
@@ -100,5 +101,25 @@ describe('server preference', () => {
       serverUrl: 'https://a.test',
       recentServerUrls: ['https://a.test'],
     });
+  });
+
+  it('keeps each server’s session token in its own folder', () => {
+    const shared = credentialsDirectory('/data', { ...defaults, isDefault: true });
+    expect(shared).toBe(path.join('/data', 'credentials'));
+    const custom = credentialsDirectory('/data', {
+      serverUrl: 'https://qa.acme.internal:4400',
+      webappUrl: 'https://qa.acme.internal:4400',
+      isDefault: false,
+    });
+    expect(custom).toBe(
+      path.join('/data', 'credentials', 'servers', 'https_qa.acme.internal_4400'),
+    );
+    expect(
+      credentialsDirectory('/data', {
+        serverUrl: 'http://qa.acme.internal:4400',
+        webappUrl: 'http://qa.acme.internal:4400',
+        isDefault: false,
+      }),
+    ).not.toBe(custom);
   });
 });

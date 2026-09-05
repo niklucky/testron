@@ -3,8 +3,10 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import {
   DEFAULT_WORKSPACE_URL,
+  carriedWorkspaces,
   forgetWorkspace,
   loadRecentWorkspaces,
+  mergeWorkspaces,
   normalizeWorkspaceUrl,
   rememberWorkspace,
   saveRecentWorkspaces,
@@ -34,7 +36,19 @@ export const WorkspacePicker = () => {
   const desktop = desktopWorkspace();
   const current = currentWorkspace();
   const defaultUrl = desktop?.default ?? DEFAULT_WORKSPACE_URL;
-  const [recent, setRecent] = useState<string[]>(() => desktop?.recent ?? loadRecentWorkspaces());
+  const [recent, setRecent] = useState<string[]>(() => {
+    if (desktop) return desktop.recent;
+    // Another origin's sign-in link may have handed over its remembered servers.
+    const carried = carriedWorkspaces(window.location.search);
+    const merged = mergeWorkspaces(loadRecentWorkspaces(), carried);
+    if (carried.length) {
+      saveRecentWorkspaces(merged);
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete('workspaces');
+      window.history.replaceState(window.history.state, '', clean);
+    }
+    return merged;
+  });
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [invalid, setInvalid] = useState(false);
@@ -66,8 +80,10 @@ export const WorkspacePicker = () => {
       window.testronDesktop.selectWorkspace(url);
       return;
     }
-    saveRecentWorkspaces(rememberWorkspace(recent, url));
-    window.location.assign(workspaceSignInUrl(url));
+    // Remember where we are leaving from too, so the list survives the hop.
+    const carry = rememberWorkspace(rememberWorkspace(recent, current.url), url);
+    saveRecentWorkspaces(carry);
+    window.location.assign(workspaceSignInUrl(url, carry));
   };
 
   const forget = (url: string) => {
@@ -91,7 +107,6 @@ export const WorkspacePicker = () => {
     <div ref={root} className="relative">
       <button
         type="button"
-        aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t('switch_workspace')}
         className="auth-field flex h-11 w-full items-center gap-2.5 rounded-lg border border-line pr-2.5 pl-3 text-left transition-colors hover:border-ink-3"
@@ -112,7 +127,6 @@ export const WorkspacePicker = () => {
 
       {open && (
         <div
-          role="listbox"
           aria-label={t('switch_workspace')}
           className="auth-popover absolute top-[calc(100%+6px)] right-0 left-0 z-20 overflow-hidden rounded-[10px] border border-line bg-surface"
         >
@@ -130,8 +144,7 @@ export const WorkspacePicker = () => {
               >
                 <button
                   type="button"
-                  role="option"
-                  aria-selected={on}
+                  aria-current={on || undefined}
                   className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pl-2 text-left"
                   onClick={() => choose(option.url)}
                 >
