@@ -222,6 +222,23 @@ export const replayPage = (step: Step | undefined, operation: 'prepare' | 'highl
               ? clean(element.textContent) === clean(assertion.expected)
               : clean(element.textContent).includes(clean(assertion.expected)),
         };
+      case 'number': {
+        const actual = Number(element.textContent?.trim() || NaN);
+        if (!Number.isFinite(actual)) return { ready: false };
+        switch (assertion.operator) {
+          case 'equals':
+            return { ready: actual === assertion.expected };
+          case 'greaterThan':
+            return { ready: actual > assertion.expected };
+          case 'atLeast':
+            return { ready: actual >= assertion.expected };
+          case 'lessThan':
+            return { ready: actual < assertion.expected };
+          case 'atMost':
+            return { ready: actual <= assertion.expected };
+        }
+        break;
+      }
       case 'value':
         return { ready: value === assertion.expected };
       case 'attribute':

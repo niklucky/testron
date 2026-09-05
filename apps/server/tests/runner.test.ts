@@ -23,7 +23,10 @@ const target = {
   alternatives: [],
 };
 
-const publicFixture = (redirect?: string) => {
+const publicFixture = (
+  redirect?: string,
+  body = '<label>Name<input data-testid="name"></label>',
+) => {
   const launch = chromium.launch.bind(chromium);
   vi.spyOn(chromium, 'launch').mockImplementation(async (options) => {
     const browser = await launch(options);
@@ -36,7 +39,7 @@ const publicFixture = (redirect?: string) => {
             ? { status: 302, headers: { location: redirect } }
             : {
                 contentType: 'text/html',
-                body: '<label>Name<input data-testid="name"></label>',
+                body,
               },
         ),
       );
@@ -243,4 +246,38 @@ describe('ServerPlaywrightRunner', () => {
       expect(result.error).toContain('HTTP(S)');
     },
   );
+});
+
+it('runs numeric comparisons and fails an unmet threshold', async () => {
+  publicFixture(undefined, '<div data-testid="name">69</div>');
+  const result = await new ServerPlaywrightRunner().run({
+    environmentUrl: 'https://example.test/',
+    steps: [
+      { version: 1, kind: 'navigate', url: 'https://example.test/', metadata },
+      ...(['equals', 'greaterThan', 'atLeast', 'lessThan', 'atMost'] as const).map((operator) => ({
+        version: 1 as const,
+        kind: 'assertElement' as const,
+        target,
+        metadata,
+        assertion: {
+          type: 'number' as const,
+          operator,
+          expected: operator === 'greaterThan' ? 42 : operator === 'lessThan' ? 70 : 69,
+        },
+      })),
+      {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        metadata,
+        assertion: { type: 'number', operator: 'atMost', expected: 42 },
+      },
+    ],
+    environmentVariables: {},
+    timeoutMs: 1000,
+    captureArtifacts: false,
+    artifactsDirectory: await artifacts(),
+  });
+  expect(result.steps.slice(0, 6).map((step) => step.status)).toEqual(Array(6).fill('passed'));
+  expect(result.steps[6]?.status).toBe('failed');
 });

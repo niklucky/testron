@@ -1,3 +1,8 @@
+import {
+  numberComparisons,
+  isNumberComparison,
+  numericAssertionSource,
+} from '@testron/domain/steps/numbers';
 import { session } from './data';
 import type { RecordedStep } from './types';
 
@@ -79,6 +84,8 @@ export const sentence = (step: RecordedStep, translate?: Translate): string => {
         { value1: step.value ?? '/' },
       );
     case 'assert':
+      if (isNumberComparison(step.assertion))
+        return `Expect “${step.label}” ${numberComparisons[step.assertion].label.toLowerCase()} ${step.value ?? '0'}`;
       switch (step.assertion) {
         case 'textContains':
           return translated(
@@ -204,6 +211,12 @@ const call = (step: RecordedStep): string => {
     case 'assertUrl':
       return `await expect(page).toHaveURL(${quote(step.value ?? '/')});`;
     case 'assert':
+      if (isNumberComparison(step.assertion))
+        return numericAssertionSource(
+          target,
+          numberComparisons[step.assertion].operator,
+          Number(step.value ?? 0),
+        );
       switch (step.assertion) {
         case 'textEquals':
           return `await expect(${target}).toHaveText(${quote(step.value ?? '')});`;

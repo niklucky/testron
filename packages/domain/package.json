@@ -12,6 +12,7 @@
     "./recording/schema": "./src/recording/schema.ts",
     "./scheduling/cron": "./src/scheduling/cron.ts",
     "./steps/present": "./src/steps/present.ts",
+    "./steps/numbers": "./src/steps/numbers.ts",
     "./steps/schema": "./src/steps/schema.ts"
   },
   "scripts": {

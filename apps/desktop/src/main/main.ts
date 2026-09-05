@@ -1428,6 +1428,12 @@ const createWindow = async (): Promise<void> => {
     let index = stepReplayState.selectedIndex ?? previous.steps.length - 1;
     edit();
     if (previous.source === session.snapshot().source || !websiteContents) return;
+    // Editing a live take changes the document, not the page the user is recording.
+    if (previous.recording) {
+      stepReplay.invalidate();
+      needsReplayBeforeRecording = false;
+      return;
+    }
     if (deletedIndex !== undefined && deletedIndex <= index) index--;
     index = Math.min(index, session.snapshot().steps.length - 1);
     void selectBrowserStep(index);
@@ -1600,6 +1606,8 @@ const createWindow = async (): Promise<void> => {
         applyContext();
         break;
       case 'select-step':
+        // During capture, selecting a row only opens its editor in the renderer.
+        if (session.snapshot().recording) break;
         void selectBrowserStep(command.index);
         break;
       case 'undo-step':
@@ -3728,7 +3736,9 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
+// Recorder teardown can still publish snapshots while windows are closing.
+// Keep SQLite open until those callbacks finish; before-quit can also be canceled.
+app.on('will-quit', () => {
   repository?.close();
   repository = undefined;
   tokenStore = undefined;

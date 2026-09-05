@@ -1,3 +1,4 @@
+import { numberComparisons } from '@testron/domain/steps/numbers';
 import { ipcRenderer } from 'electron';
 
 import { rankLocators, type Locator } from '@testron/domain/locators/schema';
@@ -388,6 +389,10 @@ const assertionOptions: Array<{ value: VerifyAssertion; label: string }> = [
   { value: 'visible', label: 'Visible' },
   { value: 'hidden', label: 'Hidden' },
   { value: 'textContains', label: 'Text contains' },
+  ...Object.entries(numberComparisons).map(([value, option]) => ({
+    value: value as VerifyAssertion,
+    label: option.label,
+  })),
   { value: 'textEquals', label: 'Text equals' },
   { value: 'value', label: 'Input value' },
   { value: 'enabled', label: 'Enabled' },

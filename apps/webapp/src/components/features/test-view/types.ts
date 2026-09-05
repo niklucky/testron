@@ -22,6 +22,11 @@ export type AssertionKind =
   | 'unchecked'
   | 'countExactly'
   | 'countAtLeast'
+  | 'numberEquals'
+  | 'numberGreaterThan'
+  | 'numberAtLeast'
+  | 'numberLessThan'
+  | 'numberAtMost'
   | 'attribute'
   | 'class'
   | 'urlPath';
@@ -87,6 +92,12 @@ export const assertionLabels: Record<AssertionKind, string> = {
   visible: 'is visible',
   hidden: 'is hidden',
   textEquals: 'text equals',
+  numberEquals: 'number =',
+  numberGreaterThan: 'number >',
+  numberAtLeast: 'number >=',
+  numberLessThan: 'number <',
+  numberAtMost: 'number <=',
+
   textContains: 'text contains',
   value: 'has value',
   enabled: 'is enabled',
@@ -102,6 +113,11 @@ export const assertionLabels: Record<AssertionKind, string> = {
 
 /** The assertions that need something typed next to them. */
 export const assertionNeedsValue = (kind: AssertionKind) =>
+  kind === 'numberEquals' ||
+  kind === 'numberGreaterThan' ||
+  kind === 'numberAtLeast' ||
+  kind === 'numberLessThan' ||
+  kind === 'numberAtMost' ||
   kind === 'textEquals' ||
   kind === 'textContains' ||
   kind === 'value' ||

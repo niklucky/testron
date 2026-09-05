@@ -1,3 +1,4 @@
+import { editElementAssertion, type AssertionPatch } from './assertion';
 import { useSourceDraft } from '@testron/ui/source-draft';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
@@ -306,33 +307,17 @@ export const RecordScreen = () => {
     setLog(`Locator saved · ${locator}`);
   };
 
-  const editAssertion = (id: string, patch: { attributeName?: string; expected: string }): void => {
+  const editAssertion = (id: string, patch: AssertionPatch): void => {
     const index = steps.findIndex((step) => step.id === id);
     const current = snapshot.steps[index];
     if (index < 0 || !current || current.kind !== 'assertElement') return;
-
-    if (current.assertion.type === 'attribute') {
-      const attributeName = patch.attributeName?.trim() || current.assertion.name;
-      window.testron?.command({
-        type: 'update-step',
-        index,
-        step: {
-          ...current,
-          assertion: { type: 'attribute', name: attributeName, expected: patch.expected },
-        },
-      });
-      setLog(`Assertion saved · ${attributeName}`);
+    const assertion = editElementAssertion(current.assertion, patch);
+    if (!assertion) {
+      setLog('Enter a valid expected value');
       return;
     }
-
-    if (current.assertion.type === 'class') {
-      window.testron?.command({
-        type: 'update-step',
-        index,
-        step: { ...current, assertion: { type: 'class', expected: patch.expected } },
-      });
-      setLog('Assertion saved · class');
-    }
+    window.testron?.command({ type: 'update-step', index, step: { ...current, assertion } });
+    setLog('Assertion saved');
   };
 
   const repick = (id: string) => {
@@ -564,6 +549,7 @@ export const RecordScreen = () => {
           editAssertion(event.id, {
             ...(event.attributeName ? { attributeName: event.attributeName } : {}),
             expected: event.expected,
+            assertion: event.assertion,
           });
           break;
         case 'repick':

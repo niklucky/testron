@@ -7,6 +7,11 @@ const metadataSchema = z.object({ recordedAt: z.iso.datetime() });
 export const elementAssertionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.enum(['visible', 'hidden', 'enabled', 'disabled', 'checked', 'unchecked']) }),
   z.object({
+    type: z.literal('number'),
+    operator: z.enum(['equals', 'greaterThan', 'atLeast', 'lessThan', 'atMost']),
+    expected: z.number(),
+  }),
+  z.object({
     type: z.literal('count'),
     operator: z.enum(['equals', 'atLeast']),
     expected: z.number().int().nonnegative(),

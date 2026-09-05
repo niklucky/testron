@@ -1,3 +1,4 @@
+import { numberComparisons, type NumberComparison } from '@testron/domain/steps/numbers';
 import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
 import type { Locator } from '@testron/domain/locators/schema';
 import type { Step } from '@testron/domain/steps/schema';
@@ -61,6 +62,12 @@ export const presentLocator = (locator: Locator): string => {
 const assertionFor = (
   step: Extract<Step, { kind: 'assertElement' }>,
 ): RecordedStep['assertion'] => {
+  if (step.assertion.type === 'number') {
+    const operator = step.assertion.operator;
+    return (Object.keys(numberComparisons) as NumberComparison[]).find(
+      (key) => numberComparisons[key].operator === operator,
+    )!;
+  }
   if (step.assertion.type === 'count')
     return step.assertion.operator === 'equals' ? 'countExactly' : 'countAtLeast';
   if (step.assertion.type === 'attribute') return 'attribute';
@@ -146,6 +153,7 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
             step.assertion.type === 'text' ||
             step.assertion.type === 'value' ||
             step.assertion.type === 'count' ||
+            step.assertion.type === 'number' ||
             step.assertion.type === 'class'
               ? String(step.assertion.expected)
               : step.assertion.type === 'attribute'

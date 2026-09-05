@@ -1,3 +1,4 @@
+import { isNumberComparison, numberComparisons } from '@testron/domain/steps/numbers';
 import { useSourceDraft } from '@testron/ui/source-draft';
 import { useTranslation } from '@warpunit/slang-react';
 import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
@@ -277,7 +278,20 @@ export const TestView = () => {
         setLog('Locator cannot be empty');
         return;
       }
+      if (
+        isNumberComparison(next.kind) &&
+        (!next.expected.trim() || !Number.isFinite(Number(next.expected)))
+      ) {
+        setLog('Enter a finite number for the expected value');
+        return;
+      }
       const assertion = (() => {
+        if (isNumberComparison(next.kind))
+          return {
+            type: 'number' as const,
+            operator: numberComparisons[next.kind].operator,
+            expected: Number(next.expected),
+          };
         switch (next.kind) {
           case 'textContains':
             return { type: 'text' as const, match: 'contains' as const, expected: next.expected };
@@ -816,6 +830,12 @@ export const TestView = () => {
                               'unchecked',
                               'countExactly',
                               'countAtLeast',
+                              'numberEquals',
+                              'numberGreaterThan',
+                              'numberAtLeast',
+                              'numberLessThan',
+                              'numberAtMost',
+
                               'attribute',
                               'class',
                             ];

@@ -27,6 +27,12 @@ export const recorderCandidateSchema = z.discriminatedUnion('kind', [
       'hidden',
       'textContains',
       'textEquals',
+      'numberEquals',
+      'numberGreaterThan',
+      'numberAtLeast',
+      'numberLessThan',
+      'numberAtMost',
+
       'value',
       'enabled',
       'disabled',

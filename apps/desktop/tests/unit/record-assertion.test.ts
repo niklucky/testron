@@ -63,3 +63,32 @@ describe('recorded action conversion', () => {
     });
   });
 });
+
+import { editElementAssertion } from '../../src/renderer/record/assertion';
+
+it('edits text comparison and expected substring together', () => {
+  expect(
+    editElementAssertion(
+      { type: 'text', match: 'equals', expected: 'Welcome Ada' },
+      { assertion: 'textContains', expected: 'Ada' },
+    ),
+  ).toEqual({ type: 'text', match: 'contains', expected: 'Ada' });
+  expect(editElementAssertion({ type: 'value', expected: 'Ada' }, { expected: '' })).toEqual({
+    type: 'value',
+    expected: '',
+  });
+});
+it('edits numeric thresholds and rejects invalid numeric drafts', () => {
+  const current = { type: 'number', operator: 'equals', expected: 69 } as const;
+  expect(editElementAssertion(current, { assertion: 'numberAtLeast', expected: '42' })).toEqual({
+    type: 'number',
+    operator: 'atLeast',
+    expected: 42,
+  });
+  expect(editElementAssertion(current, { expected: '-0.5' })).toMatchObject({ expected: -0.5 });
+  for (const expected of ['', ' ', '42 widgets', 'NaN', 'Infinity'])
+    expect(editElementAssertion(current, { expected })).toBeUndefined();
+  expect(
+    editElementAssertion({ type: 'count', operator: 'equals', expected: 1 }, { expected: '1.5' }),
+  ).toBeUndefined();
+});

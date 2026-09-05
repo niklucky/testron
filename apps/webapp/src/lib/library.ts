@@ -138,6 +138,11 @@ export interface AppSnapshot {
     | 'unchecked'
     | 'countExactly'
     | 'countAtLeast'
+    | 'numberEquals'
+    | 'numberGreaterThan'
+    | 'numberAtLeast'
+    | 'numberLessThan'
+    | 'numberAtMost'
     | 'attribute'
     | 'class';
   repickIndex?: number;

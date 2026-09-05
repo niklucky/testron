@@ -1,3 +1,4 @@
+import { numberMatchers } from '../steps/numbers';
 import { parse } from '@babel/parser';
 
 import type { Locator } from '../locators/schema';
@@ -202,6 +203,52 @@ const parseAction = (expression: Node, start: number): Step | undefined => {
         kind: 'assertElement',
         target: assertionTarget,
         assertion: { type: 'count', operator: 'atLeast', expected },
+        metadata: metadata(start),
+      };
+  }
+  const numberOperator = (Object.keys(numberMatchers) as (keyof typeof numberMatchers)[]).find(
+    (key) => numberMatchers[key] === access.property,
+  );
+  if (numberOperator && invocation.args.length === 1) {
+    const poll = call(access.object);
+    const pollAccess = poll && member(poll.callee);
+    const callback = poll?.args[0];
+    const block = callback?.type === 'ArrowFunctionExpression' ? node(callback.body) : undefined;
+    const declaration =
+      block?.type === 'BlockStatement' ? node((block.body as unknown[])[0]) : undefined;
+    const variable =
+      declaration?.type === 'VariableDeclaration'
+        ? node((declaration.declarations as unknown[])[0])
+        : undefined;
+    const conversion = call(variable?.init);
+    const logical = conversion?.args[0];
+    const trim = logical?.type === 'LogicalExpression' ? call(logical.left) : undefined;
+    const trimAccess = trim && member(trim.callee);
+    const awaited = trimAccess?.object;
+    const read = awaited?.type === 'AwaitExpression' ? call(awaited.argument) : undefined;
+    const readAccess = read && member(read.callee);
+    const target =
+      readAccess?.property === 'textContent' ? targetFrom(readAccess.object) : undefined;
+    const argument = invocation.args[0];
+    const operand =
+      argument?.type === 'UnaryExpression' && argument.operator === '-'
+        ? node(argument.argument)
+        : argument;
+    const expected =
+      operand?.type === 'NumericLiteral'
+        ? Number(operand.value) * (operand === argument ? 1 : -1)
+        : undefined;
+    if (
+      pollAccess?.property === 'poll' &&
+      isIdentifier(pollAccess.object, 'expect') &&
+      target &&
+      expected !== undefined
+    )
+      return {
+        version: 1,
+        kind: 'assertElement',
+        target,
+        assertion: { type: 'number', operator: numberOperator, expected },
         metadata: metadata(start),
       };
   }

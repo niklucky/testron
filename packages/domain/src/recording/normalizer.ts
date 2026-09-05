@@ -1,3 +1,4 @@
+import { numberComparisons } from '../steps/numbers';
 import type { ActionCandidate } from './schema';
 import type { ElementAssertion, Step } from '../steps/schema';
 
@@ -64,6 +65,18 @@ export class RecorderNormalizer {
                 type: 'text' as const,
                 match: 'equals' as const,
                 expected: candidate.observedText,
+              };
+            case 'numberEquals':
+            case 'numberGreaterThan':
+            case 'numberAtLeast':
+            case 'numberLessThan':
+            case 'numberAtMost':
+              return {
+                type: 'number',
+                operator: numberComparisons[candidate.assertion].operator,
+                expected: Number.isFinite(Number(candidate.observedText.trim()))
+                  ? Number(candidate.observedText.trim())
+                  : 0,
               };
             case 'value':
               return { type: 'value' as const, expected: candidate.observedValue };

@@ -117,6 +117,7 @@ export const recordPanelEventSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('edit-assertion'),
+    assertion: verifyAssertionSchema.optional(),
     id: z.string().min(1),
     attributeName: z.string().trim().min(1).max(200).optional(),
     expected: z.string().max(2_000),

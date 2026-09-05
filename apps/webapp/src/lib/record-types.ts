@@ -33,6 +33,11 @@ export type RecordedStep = {
     | 'unchecked'
     | 'countExactly'
     | 'countAtLeast'
+    | 'numberEquals'
+    | 'numberGreaterThan'
+    | 'numberAtLeast'
+    | 'numberLessThan'
+    | 'numberAtMost'
     | 'attribute'
     | 'class';
   warning?: string;

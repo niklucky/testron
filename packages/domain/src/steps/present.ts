@@ -1,3 +1,4 @@
+import { numberSymbols } from './numbers';
 import type { Locator } from '../locators/schema';
 import type { Step } from './schema';
 
@@ -53,6 +54,8 @@ export const presentStep = (step: Step): string => {
           return `Verify ${target} has ${step.assertion.name} attribute “${step.assertion.expected}”`;
         case 'class':
           return `Verify ${target} has class “${step.assertion.expected}”`;
+        case 'number':
+          return `Verify ${target} number ${numberSymbols[step.assertion.operator]} ${step.assertion.expected}`;
         case 'count':
           return `Verify ${target} has ${step.assertion.operator === 'equals' ? 'exactly' : 'at least'} ${step.assertion.expected} matches`;
         default:
