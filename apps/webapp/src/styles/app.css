@@ -60,3 +60,97 @@
   --font-sans: var(--ui-font-sans);
   --font-mono: var(--ui-font-mono);
 }
+
+/* --------------------------------------------------------------------------
+   Sign-in shell.
+
+   On the desktop the window itself is the glass: macOS paints vibrancy behind
+   a transparent page, so while the sign-in screen is up the page paints no
+   plane and only tints what shows through. On the web the same screen sits on
+   the plane with one soft glow and a faint instrument grid behind the mark.
+   -------------------------------------------------------------------------- */
+:root {
+  --auth-shadow: rgb(0 0 0 / 45%);
+  --auth-card-edge: rgb(255 255 255 / 6%);
+}
+:root[data-theme='light'] {
+  --auth-shadow: rgb(26 32 30 / 16%);
+  --auth-card-edge: rgb(255 255 255 / 70%);
+}
+
+:root[data-shell='glass'],
+:root[data-shell='glass'] body {
+  background: transparent;
+}
+
+.auth-glass {
+  background: color-mix(in srgb, var(--ui-plane) 46%, transparent);
+}
+
+.auth-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ui-ink) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ui-ink) 4%, transparent) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse 70% 60% at 38% 48%, #000 30%, transparent 100%);
+}
+
+.auth-glow {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--ui-accent) 22%, transparent) 0%,
+    color-mix(in srgb, var(--ui-accent) 6%, transparent) 40%,
+    transparent 70%
+  );
+}
+
+.auth-mark {
+  filter: drop-shadow(0 24px 40px color-mix(in srgb, var(--ui-accent) 38%, transparent));
+}
+
+.auth-card {
+  border-color: var(--ui-glass-line);
+  background: color-mix(in srgb, var(--ui-surface) 92%, transparent);
+  box-shadow:
+    0 1px 0 var(--auth-card-edge) inset,
+    0 30px 80px var(--auth-shadow);
+  backdrop-filter: blur(20px);
+}
+
+.auth-field {
+  background: color-mix(in srgb, var(--ui-plane) 55%, transparent);
+}
+.auth-field:focus,
+.auth-field:focus-within {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-wash);
+}
+
+.auth-primary {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 18%) inset,
+    0 8px 24px color-mix(in srgb, var(--ui-accent) 30%, transparent);
+}
+
+.auth-popover {
+  box-shadow: 0 24px 60px var(--auth-shadow);
+}
+
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.auth-rise {
+  animation: auth-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-rise {
+    animation: none;
+  }
+}

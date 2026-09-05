@@ -95,6 +95,17 @@ import {
   TESTED_WEBSITE_WEB_PREFERENCES,
   TESTED_WEBSITE_PARTITION,
 } from './security';
+import {
+  chooseServer,
+  credentialsDirectory,
+  forgetServer,
+  loadServerPreference,
+  resolveServerEndpoints,
+  saveServerPreference,
+  type ServerDefaults,
+  type ServerEndpoints,
+  type ServerPreference,
+} from './server-preference';
 
 const APP_ICON_PATH = path.join(
   app.getAppPath(),
@@ -104,6 +115,13 @@ const APP_ICON_PATH = path.join(
 const OFF_WINDOW = { x: 0, y: 0, width: 0, height: 0 } as const;
 const SERVER_SESSION_COOKIE = 'testron_session';
 const WINDOW_MINIMUM_SIZE = { width: 880, height: 640 } as const;
+/** Signed out, the window is a compact card rather than the full product. */
+const AUTH_WINDOW_SIZE = { width: 500, height: 660 } as const;
+const PRODUCT_WINDOW_BACKGROUND = '#dcebed';
+/** Fully transparent so macOS vibrancy shows through the sign-in page. */
+const GLASS_WINDOW_BACKGROUND = '#00000000';
+const glassSupported = process.platform === 'darwin';
+type ShellSurface = 'auth' | 'product';
 
 const authenticationRequired = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null || !('data' in error)) return false;
@@ -176,6 +194,9 @@ const remoteAppCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cancel-run') }),
   z.object({ type: z.literal('install-browser') }),
   z.object({ type: z.literal('cancel-browser-install') }),
+  z.object({ type: z.literal('select-workspace'), url: z.url().max(2048) }),
+  z.object({ type: z.literal('forget-workspace'), url: z.url().max(2048) }),
+  z.object({ type: z.literal('set-surface'), surface: z.enum(['auth', 'product']) }),
   z.object({
     type: z.literal('login'),
     email: z.email(),
@@ -210,6 +231,22 @@ let serverState: NonNullable<LibrarySnapshot['server']> = {
   status: 'idle',
   ...(localMode ? {} : { message: 'A remote server URL is required before you can sign in.' }),
 };
+const serverDefaults = (): ServerDefaults => ({
+  serverUrl: __TESTRON_DEFAULT_SERVER_URL__,
+  webappUrl:
+    process.env.TESTRON_WEBAPP_URL ??
+    (MAIN_WINDOW_VITE_DEV_SERVER_URL ? 'http://127.0.0.1:4402' : __TESTRON_WEBAPP_URL__),
+});
+let serverPreferencePath: string | undefined;
+let serverPreference: ServerPreference = { recentServerUrls: [] };
+let serverEndpoints: ServerEndpoints = { ...serverDefaults(), isDefault: true };
+/** What the sign-in page needs to offer a server choice, passed to its preload. */
+const workspaceInfo = () => ({
+  current: new URL(serverEndpoints.webappUrl).origin,
+  default: new URL(serverDefaults().webappUrl).origin,
+  recent: serverPreference.recentServerUrls,
+  glass: glassSupported,
+});
 
 const promptForDesktopUpdate = async (): Promise<void> => {
   const window = mainWindow;
@@ -341,17 +378,22 @@ const createWindow = async (): Promise<void> => {
     storedWindowState && targetDisplay
       ? fitWindowBounds(storedWindowState, targetDisplay.workArea, WINDOW_MINIMUM_SIZE)
       : undefined;
+  // Signed out, open straight into the compact sign-in card; the product
+  // geometry is restored once the webapp reports a signed-in screen.
+  const startInAuth = !localMode && serverState.authentication === 'signedOut';
+  let surface: ShellSurface = startInAuth ? 'auth' : 'product';
+  let productWindowState: { bounds: Electron.Rectangle; isMaximized: boolean } | undefined;
+  const glass = startInAuth && glassSupported;
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    ...restoredBounds,
-    minWidth: WINDOW_MINIMUM_SIZE.width,
-    minHeight: WINDOW_MINIMUM_SIZE.height,
+    ...(startInAuth ? AUTH_WINDOW_SIZE : { width: 1280, height: 900, ...restoredBounds }),
+    minWidth: startInAuth ? AUTH_WINDOW_SIZE.width : WINDOW_MINIMUM_SIZE.width,
+    minHeight: startInAuth ? AUTH_WINDOW_SIZE.height : WINDOW_MINIMUM_SIZE.height,
     show: false,
     title: 'Testron',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#dcebed',
+    backgroundColor: glass ? GLASS_WINDOW_BACKGROUND : PRODUCT_WINDOW_BACKGROUND,
+    ...(glass ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const } : {}),
     icon: existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       ...APP_RENDERER_WEB_PREFERENCES,
@@ -361,30 +403,33 @@ const createWindow = async (): Promise<void> => {
   });
   mainWindow.once('ready-to-show', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (!storedWindowState || storedWindowState.isMaximized) mainWindow.maximize();
+    if (surface === 'product' && (!storedWindowState || storedWindowState.isMaximized))
+      mainWindow.maximize();
     mainWindow.show();
   });
   mainWindow.on('close', () => {
     const window = mainWindow;
     if (!window || window.isDestroyed()) return;
-    const bounds = window.getNormalBounds();
-    const display = screen.getDisplayMatching(bounds);
+    // The compact sign-in card is never what the product should reopen at.
+    const state =
+      surface === 'auth'
+        ? productWindowState
+        : { bounds: window.getNormalBounds(), isMaximized: window.isMaximized() };
+    if (!state) return;
+    const display = screen.getDisplayMatching(state.bounds);
     try {
       saveWindowState(windowStatePath, {
-        bounds,
+        bounds: state.bounds,
         displayId: display.id,
         displayWorkArea: display.workArea,
-        isMaximized: window.isMaximized(),
+        isMaximized: state.isMaximized,
       });
     } catch (error) {
       console.warn('Could not save the main window state.', error);
     }
   });
 
-  const webappUrl = safeUrl(
-    process.env.TESTRON_WEBAPP_URL ??
-      (MAIN_WINDOW_VITE_DEV_SERVER_URL ? 'http://127.0.0.1:4402' : __TESTRON_WEBAPP_URL__),
-  );
+  const webappUrl = safeUrl(serverEndpoints.webappUrl);
   const isWebappLocation = (url: string) => {
     try {
       return new URL(url).origin === new URL(webappUrl).origin;
@@ -397,8 +442,13 @@ const createWindow = async (): Promise<void> => {
       webPreferences: {
         ...APP_RENDERER_WEB_PREFERENCES,
         preload: path.join(__dirname, 'remote.js'),
+        // The sign-in page leaves its plane unpainted so vibrancy shows through;
+        // product pages paint their own background, so nothing else changes.
+        transparent: true,
+        additionalArguments: [`--testron-workspace=${JSON.stringify(workspaceInfo())}`],
       },
     });
+    remoteView.setBackgroundColor(GLASS_WINDOW_BACKGROUND);
     const trustedOrigin = new URL(webappUrl).origin;
     remoteView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     remoteView.webContents.on('will-navigate', (event, target) => {
@@ -451,6 +501,53 @@ const createWindow = async (): Promise<void> => {
       query: Object.fromEntries(query),
       ...(route ? { hash: `/${route}` } : {}),
     });
+  };
+
+  /**
+   * Signed out, the window is a compact glass card — macOS vibrancy behind a
+   * transparent page. Signed in, it is the product window again. The remote
+   * webapp reports which one it is showing.
+   */
+  const applySurface = (next: ShellSurface): void => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed() || next === surface) return;
+    surface = next;
+    if (next === 'auth') {
+      productWindowState = { bounds: window.getNormalBounds(), isMaximized: window.isMaximized() };
+      if (window.isFullScreen()) window.setFullScreen(false);
+      if (window.isMaximized()) window.unmaximize();
+      window.setMinimumSize(AUTH_WINDOW_SIZE.width, AUTH_WINDOW_SIZE.height);
+      window.setSize(AUTH_WINDOW_SIZE.width, AUTH_WINDOW_SIZE.height, false);
+      window.center();
+      if (glassSupported) {
+        window.setBackgroundColor(GLASS_WINDOW_BACKGROUND);
+        window.setVibrancy('under-window');
+        // The local renderer sits under the remote view and would paint over the vibrancy.
+        void window.webContents.loadURL('about:blank').catch(() => undefined);
+      }
+    } else {
+      if (glassSupported) {
+        window.setVibrancy(null);
+        window.setBackgroundColor(PRODUCT_WINDOW_BACKGROUND);
+        void loadAppRenderer(window.webContents, 'recovery').catch(() => undefined);
+      }
+      window.setMinimumSize(WINDOW_MINIMUM_SIZE.width, WINDOW_MINIMUM_SIZE.height);
+      const state =
+        productWindowState ??
+        (restoredBounds
+          ? { bounds: restoredBounds, isMaximized: storedWindowState?.isMaximized ?? false }
+          : undefined);
+      productWindowState = undefined;
+      if (state) {
+        window.setBounds(state.bounds);
+        if (state.isMaximized) window.maximize();
+      } else {
+        window.setSize(1280, 900, false);
+        window.center();
+        window.maximize();
+      }
+    }
+    layout();
   };
 
   const remoteTest = (id: string | undefined) =>
@@ -695,7 +792,7 @@ const createWindow = async (): Promise<void> => {
   };
   const restoreDesktopSessionFromWeb = async (): Promise<boolean> => {
     if (!tokenStore || !remoteView || remoteView.webContents.isDestroyed()) return false;
-    const serverHost = new URL(__TESTRON_DEFAULT_SERVER_URL__).hostname;
+    const serverHost = new URL(serverEndpoints.serverUrl).hostname;
     const cookie = (
       await remoteView.webContents.session.cookies.get({ name: SERVER_SESSION_COOKIE })
     ).find(({ domain }) => domain?.replace(/^\./, '') === serverHost);
@@ -3102,6 +3199,35 @@ const createWindow = async (): Promise<void> => {
       return;
     }
 
+    if (command.type === 'set-surface') {
+      applySurface(command.surface);
+      return;
+    }
+    if (command.type === 'select-workspace') {
+      const next = chooseServer(serverPreference, command.url, serverDefaults());
+      if (!next || !serverPreferencePath) return;
+      try {
+        saveServerPreference(serverPreferencePath, next);
+      } catch (error) {
+        console.warn('Could not save the server preference.', error);
+        return;
+      }
+      // Clients, sync and the trusted origin are all built from the server
+      // address at startup, so a new server means a fresh process.
+      app.relaunch();
+      app.quit();
+      return;
+    }
+    if (command.type === 'forget-workspace') {
+      serverPreference = forgetServer(serverPreference, command.url);
+      if (serverPreferencePath)
+        try {
+          saveServerPreference(serverPreferencePath, serverPreference);
+        } catch (error) {
+          console.warn('Could not save the server preference.', error);
+        }
+      return;
+    }
     if (command.type === 'request-runtime-state') {
       sendRuntimeState();
       return;
@@ -3221,7 +3347,8 @@ const createWindow = async (): Promise<void> => {
     mainWindow = undefined;
   });
 
-  await loadAppRenderer(mainWindow.webContents, localMode ? undefined : 'recovery');
+  if (glass) await mainWindow.webContents.loadURL('about:blank');
+  else await loadAppRenderer(mainWindow.webContents, localMode ? undefined : 'recovery');
 
   if (remoteView) {
     remoteView.webContents.on('did-fail-load', (_event, _code, _description, _url, isMainFrame) => {
@@ -3268,8 +3395,11 @@ app.whenReady().then(async () => {
   );
   await authenticationStateStore.removeLegacyPlaintextDirectory(dataDirectory);
   if (!localMode) {
-    const serverUrl = safeUrl(__TESTRON_DEFAULT_SERVER_URL__);
-    tokenStore = new SecureTokenStore(path.join(dataDirectory, 'credentials'), {
+    serverPreferencePath = path.join(dataDirectory, 'server.json');
+    serverPreference = loadServerPreference(serverPreferencePath);
+    serverEndpoints = resolveServerEndpoints(serverPreference, serverDefaults());
+    const serverUrl = safeUrl(serverEndpoints.serverUrl);
+    tokenStore = new SecureTokenStore(credentialsDirectory(dataDirectory, serverEndpoints), {
       isAvailable: () => safeStorage.isEncryptionAvailable(),
       encrypt: (value) => safeStorage.encryptString(value),
       decrypt: (value) => safeStorage.decryptString(value),
