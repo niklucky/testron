@@ -1,5 +1,6 @@
 import type { Step } from '@testron/domain/steps/schema';
 import type {
+  TestAttachment,
   DesktopRunRequest,
   DesktopAuthenticationRefreshRequest,
   DesktopAuthenticationClearRequest,
@@ -47,6 +48,9 @@ export interface ProfileRecord {
 }
 
 export interface TestRecord {
+  attachments?: TestAttachment[];
+  status?: 'requested' | 'ready';
+  description?: string;
   id: string;
   projectId: string;
   environmentIds: string[];

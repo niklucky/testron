@@ -78,6 +78,8 @@ export const toCreateTestRequest = (
       title: test.title,
       environmentIds: test.environmentIds,
       prerequisites: test.prerequisites,
+      status: test.status,
+      description: test.description,
       steps: createRevisionSteps(steps, createStepId),
     },
   });
@@ -123,6 +125,8 @@ export const fromTestSnapshot = (
       testSuiteId: snapshot.test.testSuiteId,
       title: snapshot.test.title,
       prerequisites: snapshot.currentRevision.content.prerequisites,
+      status: snapshot.currentRevision.content.status,
+      description: snapshot.currentRevision.content.description,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
     },

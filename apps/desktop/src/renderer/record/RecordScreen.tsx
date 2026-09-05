@@ -850,6 +850,7 @@ export const RecordScreen = () => {
           <NewTestForm
             initialTitle={name}
             heading="Edit test title"
+            showDescription={false}
             submitLabel="Save title"
             environments={projectEnvironments}
             initialEnvironmentIds={

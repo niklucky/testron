@@ -6,6 +6,8 @@ it('preserves the target revision profile for delayed source edits and conflict 
   const target: TestRevisionContent = {
     stepSchemaVersion: 1,
     title: 'A',
+    status: 'requested',
+    description: 'Verify the checkout total.',
     environmentIds: ['environment-a'],
     prerequisites: ['setup-a'],
     steps: [],

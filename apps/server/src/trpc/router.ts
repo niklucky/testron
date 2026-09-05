@@ -24,6 +24,8 @@ import {
   createProfileProcedure,
   createProjectProcedure,
   createTestProcedure,
+  addTestAttachmentProcedure,
+  deleteTestAttachmentProcedure,
   createTestSuiteProcedure,
   createRunScheduleProcedure,
   updateRunScheduleProcedure,
@@ -101,13 +103,15 @@ const authenticatedProcedure = publicProcedure.use(({ ctx, next }) => {
 const mapRepositoryError = (error: unknown): never => {
   if (!(error instanceof RepositoryError)) throw error;
   const code =
-    error.code === 'FORBIDDEN'
-      ? 'FORBIDDEN'
-      : error.code === 'NOT_FOUND'
-        ? 'NOT_FOUND'
-        : error.code === 'GONE'
-          ? 'TIMEOUT'
-          : 'CONFLICT';
+    error.code === 'BAD_REQUEST'
+      ? 'BAD_REQUEST'
+      : error.code === 'FORBIDDEN'
+        ? 'FORBIDDEN'
+        : error.code === 'NOT_FOUND'
+          ? 'NOT_FOUND'
+          : error.code === 'GONE'
+            ? 'TIMEOUT'
+            : 'CONFLICT';
   throw new TRPCError({ code, message: error.message, cause: error });
 };
 
@@ -328,6 +332,14 @@ export const createAppRouter = ({ authentication, repository, runQueue }: Router
         ),
     }),
     test: t.router({
+      addAttachment: authenticatedProcedure
+        .input(addTestAttachmentProcedure.input)
+        .output(addTestAttachmentProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.addTestAttachment(ctx.user, input))),
+      deleteAttachment: authenticatedProcedure
+        .input(deleteTestAttachmentProcedure.input)
+        .output(deleteTestAttachmentProcedure.output)
+        .mutation(({ ctx, input }) => call(() => repository.deleteTestAttachment(ctx.user, input))),
       create: authenticatedProcedure
         .input(createTestProcedure.input)
         .output(createTestProcedure.output)

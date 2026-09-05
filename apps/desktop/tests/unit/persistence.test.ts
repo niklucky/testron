@@ -200,6 +200,8 @@ describe('TestronRepository', () => {
         content: {
           stepSchemaVersion: 1,
           title: 'works everywhere',
+          status: 'requested',
+          description: 'Verify checkout on both environments.',
           environmentIds: [development.id, production.id],
           prerequisites: [],
           steps: [],
@@ -209,6 +211,16 @@ describe('TestronRepository', () => {
       },
     });
 
+    expect(test.status).toBe('requested');
+    expect(repository.listTests().find((item) => item.id === test.id)).toMatchObject({
+      status: 'requested',
+      description: 'Verify checkout on both environments.',
+    });
+    repository.renameTest(test.id, 'Checkout request');
+    expect(repository.getDraft(test.id)?.content).toMatchObject({
+      status: 'requested',
+      description: 'Verify checkout on both environments.',
+    });
     expect(test.environmentIds).toEqual([development.id, production.id]);
     expect(repository.getDraft(test.id)?.content.environmentIds).toEqual([
       development.id,

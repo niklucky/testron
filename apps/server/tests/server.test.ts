@@ -531,6 +531,192 @@ describe('PostgreSQL tRPC vertical slice', () => {
     expect(workspace.tests).toEqual([slice.snapshot]);
   });
 
+  it('persists description-only requests, syncs them, and blocks execution until ready', async () => {
+    const { api } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const requestContent = {
+      ...content(environment.id, 'Coupon coverage'),
+      steps: [],
+      status: 'requested' as const,
+      description: 'Sign in, apply a coupon, and verify the order total.',
+    };
+    const metadata = mutationMeta();
+    const request = { meta: metadata, projectId: project.id, content: requestContent };
+    const snapshot = await api.test.create.mutate(request);
+    expect(await api.test.create.mutate(request)).toEqual(snapshot);
+    expect(snapshot.currentRevision.content).toEqual(requestContent);
+    const workspace = await api.workspace.get.query({ meta: requestMeta() });
+    expect(workspace.tests.find((item) => item.test.id === snapshot.test.id)).toEqual(snapshot);
+    const web = await api.workspace.getWeb.query({ meta: requestMeta() });
+    expect(web.projectOverviews.find((item) => item.projectId === project.id)?.testCount).toBe(1);
+    await expect(
+      api.run.start.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        environmentId: environment.id,
+        source: 'desktop-local',
+      }),
+    ).rejects.toThrow('marked ready');
+    await expect(
+      api.test.create.mutate({
+        ...request,
+        meta: mutationMeta(),
+        content: { ...requestContent, description: '   ' },
+      }),
+    ).rejects.toThrow('description');
+    await expect(
+      api.runSchedule.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Requests',
+        cron: '0 1 * * *',
+        environmentId: environment.id,
+        testIds: [snapshot.test.id],
+        enabled: false,
+      }),
+    ).rejects.toThrow('cannot be scheduled');
+    const outsider = await signIn('outsider@example.test');
+    await expect(
+      outsider.api.test.create.mutate({ ...request, meta: mutationMeta() }),
+    ).rejects.toThrow();
+    const saved = await api.test.saveRevision.mutate({
+      meta: mutationMeta(),
+      testId: snapshot.test.id,
+      baseRevision: snapshot.test.currentRevision,
+      content: { ...requestContent, status: 'ready' },
+    });
+    expect(saved.status).toBe('saved');
+    if (saved.status !== 'saved') throw new Error('Expected saved revision');
+    expect(saved.snapshot.currentRevision.content.description).toBe(requestContent.description);
+    await expect(
+      api.run.start.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        environmentId: environment.id,
+        source: 'desktop-local',
+      }),
+    ).resolves.toMatchObject({ status: 'running' });
+  });
+
+  it('attaches screenshots to requests, preserves them on readiness, and deletes their bytes', async () => {
+    const { api, token } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const screenshot = {
+      name: 'expected-checkout.png',
+      mimeType: 'image/png' as const,
+      base64:
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aEuoAAAAASUVORK5CYII=',
+    };
+    const request = {
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: {
+        ...content(environment.id, 'Screenshot request'),
+        status: 'requested' as const,
+        description: 'Match the expected checkout.',
+        steps: [],
+      },
+      screenshots: [screenshot],
+    };
+    const created = await api.test.create.mutate(request);
+    expect(await api.test.create.mutate(request)).toEqual(created);
+    expect(created.attachments).toHaveLength(1);
+    const attachment = created.attachments![0]!;
+    const url = `${server.url}/api/tests/${created.test.id}/attachments/${attachment.id}`;
+    expect((await fetch(url)).status).toBe(401);
+    const downloaded = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+    expect(downloaded.headers.get('content-type')).toBe('image/png');
+    expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(
+      Buffer.from(screenshot.base64, 'base64'),
+    );
+    const outsider = await signIn('attachment-outsider@example.test');
+    expect(
+      (await fetch(url, { headers: { authorization: `Bearer ${outsider.token}` } })).status,
+    ).toBe(403);
+    await expect(
+      outsider.api.test.addAttachment.mutate({
+        meta: mutationMeta(),
+        testId: created.test.id,
+        screenshot,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
+    await expect(
+      outsider.api.test.deleteAttachment.mutate({
+        meta: mutationMeta(),
+        testId: created.test.id,
+        attachmentId: attachment.id,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'FORBIDDEN' } });
+    const addedRequest = {
+      meta: mutationMeta(),
+      testId: created.test.id,
+      screenshot: { ...screenshot, name: 'second.png' },
+    };
+    const added = await api.test.addAttachment.mutate(addedRequest);
+    expect(await api.test.addAttachment.mutate(addedRequest)).toEqual(added);
+    expect(added.attachments).toHaveLength(2);
+    const ready = await api.test.saveRevision.mutate({
+      meta: mutationMeta(),
+      testId: created.test.id,
+      baseRevision: created.test.currentRevision,
+      content: { ...created.currentRevision.content, status: 'ready' },
+    });
+    expect(ready).toMatchObject({ status: 'saved', snapshot: { attachments: added.attachments } });
+    const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+    expect(workspace.tests.find((test) => test.test.id === created.test.id)?.attachments).toEqual(
+      added.attachments,
+    );
+    expect(JSON.stringify(workspace)).not.toContain(screenshot.base64);
+    const deleted = await api.test.deleteAttachment.mutate({
+      meta: mutationMeta(),
+      testId: created.test.id,
+      attachmentId: attachment.id,
+    });
+    expect(deleted.attachments).toHaveLength(1);
+    expect((await fetch(url, { headers: { authorization: `Bearer ${token}` } })).status).toBe(404);
+    const rows = await server.database.pool.query('select id from test_attachments where id = $1', [
+      attachment.id,
+    ]);
+    expect(rows.rowCount).toBe(0);
+  });
+
+  it('rejects invalid and oversized screenshot uploads and rolls back test creation', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const invalid = {
+      name: 'fake.png',
+      mimeType: 'image/png' as const,
+      base64: Buffer.from('<svg>not a screenshot</svg>').toString('base64'),
+    };
+    await expect(
+      api.test.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        content: content(environment.id, 'Invalid screenshot'),
+        screenshots: [invalid],
+      }),
+    ).rejects.toMatchObject({ data: { code: 'BAD_REQUEST' } });
+    expect((await api.workspace.get.query({ meta: requestMeta() })).tests).toHaveLength(1);
+    await expect(
+      api.test.addAttachment.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        screenshot: invalid,
+      }),
+    ).rejects.toMatchObject({ data: { code: 'BAD_REQUEST' } });
+    const oversized = Buffer.alloc(5 * 1024 * 1024 + 1).toString('base64');
+    await expect(
+      api.test.addAttachment.mutate({
+        meta: mutationMeta(),
+        testId: snapshot.test.id,
+        screenshot: { ...invalid, base64: oversized },
+      }),
+    ).rejects.toMatchObject({ data: { code: 'BAD_REQUEST' } });
+    expect(
+      (await api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id })).attachments,
+    ).toBeUndefined();
+  });
+
   it('reads legacy single-environment revisions while the data migration is rolling out', async () => {
     const { api } = await signIn();
     const { snapshot, environment } = await createSlice(api);

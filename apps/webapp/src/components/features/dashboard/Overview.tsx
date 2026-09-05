@@ -1,5 +1,7 @@
 import { useTranslation } from '@warpunit/slang-react';
 import { useMemo, type RefObject } from 'react';
+import type { LibrarySnapshot } from '../../../lib/library';
+import { TestRequests } from './TestRequests';
 import type { ProjectActivity } from '@testron/protocol';
 
 import {
@@ -59,6 +61,7 @@ const columns =
  * people actually act on — suites that need attention, and what changed.
  */
 export const Overview = ({
+  library,
   suites,
   totals,
   live,
@@ -85,6 +88,7 @@ export const Overview = ({
   onOpenTest,
   onLog,
 }: {
+  library?: LibrarySnapshot;
   suites: SuiteRecord[];
   totals: Totals;
   live?: LiveOverview;
@@ -237,7 +241,7 @@ export const Overview = ({
   );
 
   return (
-    <div className="min-h-0 overflow-hidden">
+    <div className="min-h-0 overflow-y-auto">
       <div className="flex h-full min-h-0 w-full flex-col p-5">
         <div className="flex shrink-0 flex-wrap items-end justify-between gap-4">
           <div>
@@ -265,6 +269,10 @@ export const Overview = ({
             </Button>
           </div>
         </div>
+
+        {library?.server?.authentication === 'signedIn' && (
+          <TestRequests key={library.selectedProjectId} library={library} />
+        )}
 
         <section className="mt-4 grid shrink-0 grid-cols-6 gap-3 max-[1150px]:grid-cols-4 max-[820px]:grid-cols-2">
           <StatCard
