@@ -10,7 +10,8 @@
     "./profile-sheet": "./src/features/ProfileSheet.tsx",
     "./source-editor": "./src/features/SourceEditor.tsx",
     "./tokens.css": "./src/design/tokens.css",
-    "./typography.css": "./typography.css"
+    "./typography.css": "./typography.css",
+    "./source-draft": "./src/features/useSourceDraft.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

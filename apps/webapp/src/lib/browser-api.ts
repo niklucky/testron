@@ -2,6 +2,7 @@ import type { WebWorkspaceSnapshot } from '@testron/protocol';
 import {
   deletePlaywrightStepSource,
   parsePlaywright,
+  reconcilePlaywrightSteps,
   renamePlaywrightTestSource,
   replacePlaywrightStepSource,
   rewritePlaywrightSteps,
@@ -136,7 +137,12 @@ const snapshotFromWorkspace = (value: WebWorkspaceSnapshot): AppSnapshot => {
     currentUrl: environment?.baseUrl ?? '',
     steps: selected?.currentRevision.content.steps.map((entry) => entry.payload) ?? [],
     descriptions: [],
-    source: selected?.currentRevision.content.source ?? '',
+    source:
+      selected?.currentRevision.content.source ??
+      generatePlaywright(
+        selected?.test.title ?? 'Untitled test',
+        selected?.currentRevision.content.steps.map(({ payload }) => payload) ?? [],
+      ),
     captureMode: 'record',
     stepWarnings: [],
     canUndo: false,
@@ -200,10 +206,14 @@ const enqueueDocumentMutation = createSerialMutationQueue(
         title = parsed.title;
         steps = reconcileRevisionSteps(
           previousSteps,
-          parsed.steps.map(({ step }) => step),
+          reconcilePlaywrightSteps(
+            previousSteps.map(({ payload }) => payload),
+            parsed.steps.map(({ step }) => step),
+          ),
         );
       } else steps = previousSteps;
     } else {
+      if (parsePlaywright(currentSource).error) return;
       const nextSteps = applyStepMutation(
         previousSteps.map((entry) => entry.payload),
         command,
@@ -338,9 +348,10 @@ const command = (input: AppCommand): void => {
       break;
     }
     case 'update-source': {
-      if (!selectedTestId) break;
+      const sourceTestId = value<string | undefined>(input, 'testId') ?? selectedTestId;
+      if (!sourceTestId) break;
       void enqueueDocumentMutation({
-        testId: selectedTestId,
+        testId: sourceTestId,
         command: { type: 'update-source', source: value<string>(input, 'source') },
         meta,
       }).catch((error: unknown) => {

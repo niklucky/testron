@@ -87,7 +87,10 @@ export const StepsPanel = ({
                 tabIndex={0}
                 aria-current={on}
                 onClick={() => onSelect(step.id)}
-                onKeyDown={(event) => event.key === 'Enter' && onSelect(step.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && event.target === event.currentTarget)
+                    onSelect(step.id);
+                }}
                 className={`group group/step relative grid cursor-default grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-2 border-l-2 px-3 py-2 ${
                   repicking
                     ? 'border-warning bg-warning/10'

@@ -1,3 +1,8 @@
+import {
+  playwrightReplayError,
+  parsePlaywright,
+  reconcilePlaywrightSteps,
+} from '@testron/domain/codegen/parse-playwright';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -46,6 +51,7 @@ export interface ReplayResult extends ReplaySnapshot {
 }
 
 export interface ReplayOptions {
+  source?: string;
   steps: readonly Step[];
   environmentVariables: Readonly<Record<string, string>>;
   secretValues?: Readonly<Record<string, string>>;
@@ -219,6 +225,17 @@ export class LocalReplayRunner {
   }
 
   async run(options: ReplayOptions): Promise<ReplayResult> {
+    if (options.source !== undefined) {
+      const parsed = parsePlaywright(options.source);
+      if (!parsed.error)
+        options = {
+          ...options,
+          steps: reconcilePlaywrightSteps(
+            options.steps,
+            parsed.steps.map(({ step }) => step),
+          ),
+        };
+    }
     this.cancelled = false;
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
@@ -240,10 +257,13 @@ export class LocalReplayRunner {
     publish();
 
     const exactCodeIndex = options.steps.findIndex((step) => step.kind === 'code');
-    if (exactCodeIndex >= 0) {
+    const sourceError = playwrightReplayError(options.source);
+    if (sourceError || exactCodeIndex >= 0) {
       const error =
+        sourceError ??
         'This test contains exact Playwright code. Complete-spec execution is not available yet.';
-      results[exactCodeIndex] = { ...results[exactCodeIndex]!, status: 'failed', error };
+      if (exactCodeIndex >= 0)
+        results[exactCodeIndex] = { ...results[exactCodeIndex]!, status: 'failed', error };
       snapshot = { ...snapshot, status: 'failed', durationMs: Date.now() - started, error };
       publish();
       return snapshot;

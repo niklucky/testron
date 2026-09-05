@@ -1,5 +1,5 @@
+import { useSourceDraft } from '@testron/ui/source-draft';
 import { useTranslation } from '@warpunit/slang-react';
-import { generatePlaywright } from '@testron/domain/codegen/playwright';
 import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
@@ -84,9 +84,6 @@ export const TestView = () => {
   const [stepViewMode, setStepViewMode] = useState<StepViewMode>('tester');
   const [desktopRuntime, setDesktopRuntime] = useState(EMPTY_DESKTOP_RUNTIME);
   const [sourceOpen, setSourceOpen] = useState(false);
-  const [sourceDraft, setSourceDraft] = useState('');
-  const [sourceDirty, setSourceDirty] = useState(false);
-  const [sourceFocused, setSourceFocused] = useState(false);
   const [newTestOpen, setNewTestOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -142,35 +139,20 @@ export const TestView = () => {
   );
   const board = useMemo(() => liveTestBoard(liveSnapshot), [liveSnapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
-  const source = useMemo(
-    () =>
-      snapshot.source.trim()
-        ? snapshot.source
-        : generatePlaywright(snapshot.title || detail.name, snapshot.steps),
-    [snapshot.source, snapshot.title, snapshot.steps, detail.name],
+  const source = snapshot.source;
+  const sourceEditor = useSourceDraft(
+    snapshot.library.selectedTestId ?? '',
+    source,
+    (value, testId) => window.testron?.command({ type: 'update-source', source: value, testId }),
   );
-  useEffect(() => {
-    if (source === sourceDraft) {
-      if (sourceDirty) setSourceDirty(false);
-      return;
-    }
-    if (!sourceDirty && !sourceFocused) setSourceDraft(source);
-  }, [source, sourceDirty, sourceDraft, sourceFocused]);
+  const sourceDraft = sourceEditor.value;
   const sourceParseError = useMemo(
     () => (sourceOpen ? parsePlaywright(sourceDraft).error : undefined),
     [sourceDraft, sourceOpen],
   );
   useEffect(() => {
-    if (sourceParseError) setLog(`Source syntax error · ${sourceParseError}`);
+    if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
   }, [sourceParseError]);
-  useEffect(() => {
-    if (!sourceDirty || sourceDraft === source) return;
-    const timeout = window.setTimeout(
-      () => window.testron?.command({ type: 'update-source', source: sourceDraft }),
-      500,
-    );
-    return () => window.clearTimeout(timeout);
-  }, [sourceDraft, source, sourceDirty]);
   const lines = useMemo(() => presentSource(source, fullSteps), [source, fullSteps]);
   const selectedTestId = snapshot.library.selectedTestId;
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
@@ -907,11 +889,8 @@ export const TestView = () => {
             source={sourceDraft}
             canDetach={false}
             onDetach={() => undefined}
-            onSource={(value) => {
-              setSourceDraft(value);
-              setSourceDirty(true);
-            }}
-            onSourceFocusChange={setSourceFocused}
+            onSource={sourceEditor.onChange}
+            onSourceFocusChange={sourceEditor.onFocusChange}
             onReattach={() => undefined}
             onCopy={() => void navigator.clipboard?.writeText(sourceDraft)}
             onClose={() => setSourceOpen(false)}

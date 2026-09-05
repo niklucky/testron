@@ -78,6 +78,40 @@ describe('ServerPlaywrightRunner', () => {
     });
   });
 
+  it('rejects an invalid draft before launching the browser', async () => {
+    const launch = vi.spyOn(chromium, 'launch');
+    const result = await new ServerPlaywrightRunner().run({
+      source: "test('incomplete',",
+      steps: [{ version: 1, kind: 'navigate', url: 'https://example.test/', metadata }],
+      environmentUrl: 'https://example.test/',
+      environmentVariables: {},
+      timeoutMs: 1_000,
+      artifactsDirectory: await artifacts(),
+    });
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('Fix the Playwright source');
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it('executes the source projection instead of stale persisted steps', async () => {
+    publicFixture();
+    const result = await new ServerPlaywrightRunner().run({
+      source: `import { test, expect } from '@playwright/test';
+        test('canonical', async ({ page }) => {
+          await page.goto('https://example.test/');
+          await page.getByTestId('name').fill('source value');
+          await expect(page.getByTestId('name')).toHaveValue('source value');
+        });`,
+      steps: [],
+      environmentUrl: 'https://example.test/',
+      environmentVariables: {},
+      timeoutMs: 5_000,
+      artifactsDirectory: await artifacts(),
+    });
+    expect(result.status).toBe('passed');
+    expect(result.steps).toHaveLength(3);
+  });
+
   it('executes structured steps and returns per-step feedback', async () => {
     publicFixture();
     const steps: Step[] = [

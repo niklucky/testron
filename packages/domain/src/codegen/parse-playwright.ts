@@ -1,7 +1,7 @@
 import { parse } from '@babel/parser';
 
 import type { Locator } from '../locators/schema';
-import type { Step } from '../steps/schema';
+import { redactStepSecrets, stepSchema, type Step } from '../steps/schema';
 import { generatePlaywright } from './playwright';
 
 type Node = { type: string; start?: number | null; end?: number | null; [key: string]: unknown };
@@ -15,6 +15,7 @@ export interface ParsedPlaywright {
   title: string;
   steps: ParsedPlaywrightStep[];
   error?: string;
+  bodyEnd?: number | undefined;
 }
 
 const node = (value: unknown): Node | undefined =>
@@ -97,10 +98,12 @@ const locatorFrom = (value: unknown): Locator | undefined => {
     }
     case 'locator': {
       if (invocation.args.length !== 1) return;
-      const attribute = first.match(/^\[([^=]+)=['"](.+)['"]\]$/);
-      if (attribute?.[1] === 'id') return { strategy: 'id', value: attribute[2]! };
-      if (attribute?.[1] === 'name') return { strategy: 'name', value: attribute[2]! };
-      if (attribute) return { strategy: 'testId', attribute: attribute[1]!, value: attribute[2]! };
+      const attribute = first.match(/^\[([\w:-]+)=(?:'([^'\\]*)'|"([^"\\]*)")\]$/);
+      const attributeValue = attribute?.[2] ?? attribute?.[3];
+      if (attribute?.[1] === 'id') return { strategy: 'id', value: attributeValue! };
+      if (attribute?.[1] === 'name') return { strategy: 'name', value: attributeValue! };
+      if (attribute)
+        return { strategy: 'testId', attribute: attribute[1]!, value: attributeValue! };
       return { strategy: 'css', selector: first, fragile: true };
     }
   }
@@ -293,12 +296,34 @@ const parseAction = (expression: Node, start: number): Step | undefined => {
     };
 };
 
+const syntaxKey = (value: unknown): string =>
+  JSON.stringify(value, (key, entry) =>
+    [
+      'start',
+      'end',
+      'loc',
+      'range',
+      'extra',
+      'leadingComments',
+      'trailingComments',
+      'innerComments',
+    ].includes(key)
+      ? undefined
+      : entry,
+  );
+const statementExpression = (source: string): unknown => {
+  const statement = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program
+    .body[0];
+  return statement?.type === 'ExpressionStatement' ? statement.expression : undefined;
+};
+
 export const parsePlaywright = (source: string): ParsedPlaywright => {
   try {
     const file = parse(source, { sourceType: 'module', plugins: ['typescript'], ranges: true });
     let title = 'Untitled test';
     let statements: Node[] = [];
     let foundTest = false;
+    let bodyEnd: number | undefined;
     for (const statement of file.program.body as unknown as Node[]) {
       if (statement.type !== 'ExpressionStatement') continue;
       const invocation = call(statement.expression);
@@ -310,19 +335,37 @@ export const parsePlaywright = (source: string): ParsedPlaywright => {
         callback && ['ArrowFunctionExpression', 'FunctionExpression'].includes(callback.type)
           ? node(callback.body)
           : undefined;
-      if (block?.type === 'BlockStatement') statements = block.body as Node[];
+      if (block?.type !== 'BlockStatement')
+        return {
+          title,
+          steps: [],
+          error: 'A Playwright test callback with a block body is required.',
+        };
+      statements = block.body as Node[];
+      bodyEnd = block.end! - 1;
       break;
     }
     if (!foundTest)
       return { title, steps: [], error: 'No Playwright test() declaration was found.' };
     return {
       title,
+      bodyEnd,
       steps: statements.map((statement) => {
         const start = statement.start ?? 0;
         const end = statement.end ?? start;
         const expression =
           statement.type === 'ExpressionStatement' ? node(statement.expression) : undefined;
-        const step = expression && parseAction(expression, start);
+        const candidate = expression && parseAction(expression, start);
+        // Only project syntax with exactly the same meaning as our generator.
+        // Options, computed/optional calls, and custom predicates stay exact code.
+        const validated = candidate && stepSchema.safeParse(candidate);
+        const step =
+          validated?.success &&
+          expression &&
+          syntaxKey(expression) ===
+            syntaxKey(statementExpression(generatedStatement(validated.data, title)))
+            ? validated.data
+            : undefined;
         return {
           start,
           end,
@@ -345,7 +388,7 @@ export const parsePlaywright = (source: string): ParsedPlaywright => {
   }
 };
 
-const generatedStatement = (step: Step, title: string): string => {
+export const generatedStatement = (step: Step, title: string): string => {
   if (step.kind === 'code') return step.code;
   return (
     generatePlaywright(title, [step])
@@ -364,7 +407,10 @@ export const replacePlaywrightStepSource = (source: string, index: number, step:
   const parsed = parsePlaywright(source);
   const current = parsed.steps[index];
   if (parsed.error || !current) return source;
-  return `${source.slice(0, current.start)}${generatedStatement(step, parsed.title)}${source.slice(current.end)}`;
+  return ensurePlaywrightDependencies(
+    `${source.slice(0, current.start)}${generatedStatement(step, parsed.title)}${source.slice(current.end)}`,
+    [step],
+  );
 };
 
 export const deletePlaywrightStepSource = (source: string, index: number): string => {
@@ -397,23 +443,198 @@ export const rewritePlaywrightSteps = (source: string, nextSteps: readonly Step[
   const parsed = parsePlaywright(source);
   if (parsed.error) return source;
   if (parsed.steps.length === 0) {
-    const closing = source.lastIndexOf('\n});');
-    if (closing < 0 || nextSteps.length === 0) return source;
+    const closing = parsed.bodyEnd;
+    if (closing === undefined || nextSteps.length === 0) return source;
     const inserted = nextSteps
       .map((step) => `  ${generatedStatement(step, parsed.title).replaceAll('\n', '\n  ')}`)
       .join('\n');
-    return `${source.slice(0, closing)}\n${inserted}${source.slice(closing)}`;
+    return ensurePlaywrightDependencies(
+      `${source.slice(0, closing)}\n${inserted}\n${source.slice(closing)}`,
+      nextSteps,
+    );
   }
   const first = parsed.steps[0]!;
   const last = parsed.steps.at(-1)!;
-  const body = nextSteps
-    .map((step, index) => {
-      const previous = parsed.steps[index];
-      const unchanged = previous && semanticStepKey(previous.step) === semanticStepKey(step);
-      return unchanged
-        ? source.slice(previous.start, previous.end)
-        : generatedStatement(step, parsed.title);
-    })
-    .join('\n  ');
-  return `${source.slice(0, first.start)}${body}${source.slice(last.end)}`;
+  const body =
+    nextSteps
+      .map((step, index) => {
+        const previous = parsed.steps[index];
+        const unchanged = previous && semanticStepKey(previous.step) === semanticStepKey(step);
+        return unchanged
+          ? source.slice(previous.start, previous.end)
+          : generatedStatement(step, parsed.title);
+      })
+      .map(
+        (text, index) =>
+          text +
+          (index < parsed.steps.length - 1
+            ? source.slice(parsed.steps[index]!.end, parsed.steps[index + 1]!.start)
+            : '\n  '),
+      )
+      .join('') +
+    parsed.steps
+      .slice(nextSteps.length, -1)
+      .map((step, index) =>
+        source.slice(step.end, parsed.steps[nextSteps.length + index + 1]!.start),
+      )
+      .join('');
+  return ensurePlaywrightDependencies(
+    `${source.slice(0, first.start)}${body}${source.slice(last.end)}`,
+    nextSteps,
+  );
+};
+
+/** Add dependencies required by newly generated statements without replacing user code. */
+export const ensurePlaywrightDependencies = (source: string, steps: readonly Step[]): string => {
+  const file = parse(source, { sourceType: 'module', plugins: ['typescript'] });
+  const needsExpect = steps.some((step) => step.kind.startsWith('assert'));
+  const needsEnv = steps.some((step) => step.kind === 'fill' && (step.variable || step.secret));
+  const hasExpect = file.program.body.some(
+    (statement) =>
+      statement.type === 'ImportDeclaration' &&
+      statement.specifiers.some((specifier) => specifier.local.name === 'expect'),
+  );
+  const hasEnv = file.program.body.some(
+    (statement) =>
+      (statement.type === 'FunctionDeclaration' && statement.id?.name === 'requiredEnv') ||
+      (statement.type === 'VariableDeclaration' &&
+        statement.declarations.some(
+          (declaration) =>
+            declaration.id.type === 'Identifier' && declaration.id.name === 'requiredEnv',
+        )),
+  );
+  let prefix = needsExpect && !hasExpect ? "import { expect } from '@playwright/test';\n" : '';
+  if (needsEnv && !hasEnv) {
+    const generated = generatePlaywright('helper', steps);
+    prefix +=
+      generated.slice(generated.indexOf('const requiredEnv'), generated.indexOf('\ntest(')) + '\n';
+  }
+  return prefix + source;
+};
+
+export const appendPlaywrightStepSource = (source: string, step: Step): string => {
+  const parsed = parsePlaywright(source);
+  if (parsed.error || parsed.bodyEnd === undefined) return source;
+  return ensurePlaywrightDependencies(
+    `${source.slice(0, parsed.bodyEnd)}\n  ${generatedStatement(step, parsed.title)}\n${source.slice(parsed.bodyEnd)}`,
+    [step],
+  );
+};
+
+/** Structured runners must never execute a stale or partial projection. */
+export const playwrightReplayError = (
+  source: string | undefined,
+  throughIndex?: number,
+): string | undefined => {
+  if (source === undefined) return;
+  const parsed = parsePlaywright(source);
+  if (parsed.error) return `Fix the Playwright source before replaying steps: ${parsed.error}`;
+  if (
+    parsed.steps
+      .slice(0, throughIndex === undefined ? undefined : throughIndex + 1)
+      .some(({ step }) => step.kind === 'code')
+  )
+    return 'This test contains exact Playwright code. Complete-spec execution is not available yet.';
+  const file = parse(source, { sourceType: 'module', plugins: ['typescript'] });
+  const generated = parse(
+    generatePlaywright(
+      parsed.title,
+      parsed.steps.map(({ step }) => step),
+    ),
+    { sourceType: 'module', plugins: ['typescript'] },
+  );
+  const helper = generated.program.body.find(
+    (statement) => statement.type === 'VariableDeclaration',
+  );
+  let tests = 0;
+  const imports = new Set<string>();
+  for (const statement of file.program.body as unknown as Node[]) {
+    if (
+      statement.type === 'ImportDeclaration' &&
+      stringValue(statement.source) === '@playwright/test'
+    ) {
+      if (statement.importKind === 'type')
+        return 'Structured replay requires runtime Playwright imports.';
+      for (const specifier of statement.specifiers as Node[]) {
+        const imported = node(specifier.imported);
+        const local = node(specifier.local);
+        if (
+          specifier.type !== 'ImportSpecifier' ||
+          specifier.importKind === 'type' ||
+          imported?.name !== local?.name ||
+          !['test', 'expect'].includes(String(local?.name))
+        )
+          return 'Custom Playwright imports require complete-spec execution.';
+        imports.add(String(local!.name));
+      }
+      continue;
+    }
+    if (helper && syntaxKey(statement) === syntaxKey(helper)) continue;
+    const invocation = statement.type === 'ExpressionStatement' && call(statement.expression);
+    if (invocation && isIdentifier(invocation.callee, 'test')) {
+      tests++;
+      const callback = invocation.args[1];
+      const expectedTest = generated.program.body.at(-1) as unknown as Node;
+      const expectedCallback = call(expectedTest.expression)!.args[1]!;
+      if (
+        invocation.args.length === 2 &&
+        callback?.async === true &&
+        syntaxKey(callback.params) === syntaxKey(expectedCallback.params)
+      )
+        continue;
+    }
+    return 'This document requires complete-spec execution because it contains additional setup, fixtures, or test declarations.';
+  }
+  if (tests !== 1) return 'Structured replay requires exactly one Playwright test.';
+  if (
+    !imports.has('test') ||
+    (parsed.steps.some(({ step }) => step.kind.startsWith('assert')) && !imports.has('expect'))
+  )
+    return 'Import test and any required expect binding from @playwright/test before replaying.';
+};
+
+/** Reserve unchanged steps before matching edits by position, preserving recorder-only data. */
+export const reconcilePlaywrightSteps = (
+  previous: readonly Step[],
+  parsed: readonly Step[],
+): Step[] => {
+  let nextTimestamp = Math.max(
+    Date.now(),
+    ...previous.map((step) => Date.parse(step.metadata.recordedAt) + 1),
+  );
+  const remaining = new Set(previous.map((_, index) => index));
+  const keys = previous.map((step) => generatedStatement(step, ''));
+  const chosen = parsed.map((step) => {
+    const key = generatedStatement(step, '');
+    const match = keys.findIndex((candidate, index) => remaining.has(index) && candidate === key);
+    if (match >= 0) remaining.delete(match);
+    return match;
+  });
+  return parsed.map((step, index) => {
+    const match = chosen[index]! >= 0 ? chosen[index]! : remaining.has(index) ? index : -1;
+    if (match >= 0) remaining.delete(match);
+    const before = previous[match];
+    if (!before || before.kind !== step.kind)
+      return redactStepSecrets({
+        ...step,
+        metadata: { recordedAt: new Date(nextTimestamp++).toISOString() },
+      });
+    const target =
+      'target' in before &&
+      'target' in step &&
+      JSON.stringify(before.target.primary) === JSON.stringify(step.target.primary)
+        ? before.target
+        : undefined;
+    return redactStepSecrets({
+      ...step,
+      metadata: before.metadata,
+      ...(target ? { target } : {}),
+      ...(step.kind === 'fill' &&
+      before.kind === 'fill' &&
+      before.secret &&
+      step.variable?.name === before.secret.environmentVariable
+        ? { secret: before.secret, variable: undefined }
+        : {}),
+    });
+  });
 };

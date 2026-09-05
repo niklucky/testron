@@ -2,9 +2,26 @@ import { ipcRenderer } from 'electron';
 
 import { rankLocators, type Locator } from '@testron/domain/locators/schema';
 import type { RecorderCandidate } from '@testron/domain/recording/schema';
-import { RECORDER_CHANNEL, RECORDER_CONFIG_CHANNEL } from '../main/security';
+import {
+  RECORDER_CHANNEL,
+  RECORDER_CONFIG_CHANNEL,
+  RECORDER_STORAGE_CHANNEL,
+} from '../main/security';
 import { INSPECTOR_MARGIN, inspectorPosition } from './inspector-position';
 import type { VerifyAssertion } from './verify-assertion';
+
+// This must be synchronous: application scripts can inspect authentication and
+// redirect before an asynchronous IPC response or dom-ready callback arrives.
+if (window === window.top && ['http:', 'https:'].includes(location.protocol)) {
+  const state = ipcRenderer.sendSync(RECORDER_STORAGE_CHANNEL) as {
+    remove: string[];
+    entries: Array<{ name: string; value: string }>;
+  } | null;
+  if (state) {
+    for (const name of state.remove) localStorage.removeItem(name);
+    for (const { name, value } of state.entries) localStorage.setItem(name, value);
+  }
+}
 
 let testIdAttribute = 'data-testid';
 let captureMode: 'record' | 'hover' | 'verify' = 'record';
@@ -1440,3 +1457,15 @@ window.addEventListener(
   },
   true,
 );
+
+// A user can change the page while recording is paused. The replay cursor is then stale.
+for (const eventName of ['pointerdown', 'keydown', 'input', 'change']) {
+  document.addEventListener(
+    eventName,
+    (event) => {
+      if (event.isTrusted && !recordingActive)
+        ipcRenderer.send(RECORDER_CHANNEL, { kind: 'browser-interaction' });
+    },
+    true,
+  );
+}

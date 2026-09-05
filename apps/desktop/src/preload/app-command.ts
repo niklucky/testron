@@ -112,6 +112,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('stop-recording') }),
   z.object({ type: z.literal('pause-recording') }),
   z.object({ type: z.literal('resume-recording') }),
+  z.object({ type: z.literal('select-step'), index: z.number().int().min(-1) }),
   z.object({ type: z.literal('undo-step') }),
   z.object({ type: z.literal('redo-step') }),
   z.object({ type: z.literal('finish-recording') }),
@@ -128,7 +129,11 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     step: stepSchema,
   }),
   z.object({ type: z.literal('replace-steps'), steps: stepsSchema }),
-  z.object({ type: z.literal('update-source'), source: z.string().max(2_000_000) }),
+  z.object({
+    type: z.literal('update-source'),
+    source: z.string().max(2_000_000),
+    testId: z.string().optional(),
+  }),
   z.object({
     type: z.literal('use-alternative-locator'),
     index: z.number().int().nonnegative(),

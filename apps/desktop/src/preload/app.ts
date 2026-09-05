@@ -30,8 +30,9 @@ const api: TestronApi = {
     ipcRenderer.on(APP_CHANNELS.sessionMenuSelection, handler);
     return () => ipcRenderer.removeListener(APP_CHANNELS.sessionMenuSelection, handler);
   },
-  onTargetUrl(listener: (url: string) => void): () => void {
-    const handler = (_event: Electron.IpcRendererEvent, url: string) => listener(url);
+  onTargetUrl(listener: (url: string, recreate?: boolean) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, url: string, recreate?: boolean) =>
+      listener(url, recreate);
     ipcRenderer.on(APP_CHANNELS.targetUrl, handler);
     return () => ipcRenderer.removeListener(APP_CHANNELS.targetUrl, handler);
   },

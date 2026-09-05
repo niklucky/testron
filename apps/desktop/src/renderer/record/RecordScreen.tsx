@@ -1,3 +1,4 @@
+import { useSourceDraft } from '@testron/ui/source-draft';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
@@ -95,6 +96,8 @@ export const RecordScreen = () => {
   // supplies a target. A fixture fallback here can finish loading after the
   // selected environment URL and incorrectly win the navigation race.
   const [url, setUrl] = useState('');
+  const [websiteSrc, setWebsiteSrc] = useState('');
+  const [websiteGeneration, setWebsiteGeneration] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [expandedId, setExpandedId] = useState<string>();
@@ -107,9 +110,6 @@ export const RecordScreen = () => {
   const [editingTitle, setEditingTitle] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
-  const [sourceDraft, setSourceDraft] = useState('');
-  const [sourceDirty, setSourceDirty] = useState(false);
-  const [sourceFocused, setSourceFocused] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
   const planeRef = useRef<HTMLDivElement>(null);
   const stepCountRef = useRef(0);
@@ -148,36 +148,31 @@ export const RecordScreen = () => {
     (profile) => profile.id === snapshot.library.selectedProfileId,
   );
   const lines = useMemo(() => presentSource(snapshot.source, steps), [snapshot.source, steps]);
-  const sourceParseError = useMemo(
-    () => (sourceDraft || sourceDirty ? parsePlaywright(sourceDraft).error : undefined),
-    [sourceDirty, sourceDraft],
+  const sourceEditor = useSourceDraft(
+    snapshot.library.selectedTestId ?? '',
+    snapshot.source,
+    (value, testId) =>
+      window.testron?.command({
+        type: 'update-source',
+        source: value,
+        ...(testId ? { testId } : {}),
+      }),
   );
+  const sourceDraft = sourceEditor.value;
+  const sourceParseError = useMemo(() => parsePlaywright(sourceDraft).error, [sourceDraft]);
   const repickingId =
     snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
-
   useEffect(() => {
-    if (snapshot.source === sourceDraft) {
-      if (sourceDirty) setSourceDirty(false);
-      return;
-    }
-    if (!sourceDirty && !sourceFocused) setSourceDraft(snapshot.source);
-  }, [snapshot.source, sourceDirty, sourceDraft, sourceFocused]);
-
-  useEffect(() => {
-    if (sourceParseError) setLog(`Source syntax error · ${sourceParseError}`);
+    if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
   }, [sourceParseError]);
 
   useEffect(() => {
-    if (!hosted || !sourceDirty) return;
-    const timeout = window.setTimeout(() => {
-      window.testron?.command({ type: 'update-source', source: sourceDraft });
-    }, 500);
-    return () => window.clearTimeout(timeout);
-  }, [hosted, sourceDraft, sourceDirty]);
-
-  useEffect(() => {
     const unsubscribe = window.testron?.onSnapshot(setSnapshot);
-    const unsubscribeTargetUrl = window.testron?.onTargetUrl(setUrl);
+    const unsubscribeTargetUrl = window.testron?.onTargetUrl((target, recreate) => {
+      if (recreate) setWebsiteGeneration((generation) => generation + 1);
+      setUrl(target);
+      setWebsiteSrc(target);
+    });
     window.testron?.command({ type: 'request-snapshot' });
     return () => {
       unsubscribe?.();
@@ -190,7 +185,10 @@ export const RecordScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (snapshot.currentUrl) setUrl(snapshot.currentUrl);
+    if (snapshot.currentUrl) {
+      setUrl(snapshot.currentUrl);
+      setWebsiteSrc((current) => current || snapshot.currentUrl);
+    }
   }, [snapshot.currentUrl]);
 
   useEffect(() => {
@@ -202,6 +200,10 @@ export const RecordScreen = () => {
   useEffect(() => {
     setName(context.title);
   }, [snapshot.library.selectedTestId, context.title]);
+
+  useEffect(() => {
+    if (snapshot.warning) setLog(snapshot.warning);
+  }, [snapshot.warning]);
 
   useEffect(() => setVerifyAssertion(snapshot.verifyAssertion), [snapshot.verifyAssertion]);
 
@@ -249,6 +251,27 @@ export const RecordScreen = () => {
     window.testron?.command({ type: 'pause-recording' });
     setLog('Paused · the page is yours again, nothing is captured');
   };
+
+  const selectStep = (id: string) => {
+    const index = steps.findIndex((step) => step.id === id);
+    if (index < 0) return;
+    setSelectedId(id);
+    window.testron?.command({ type: 'select-step', index });
+  };
+  useEffect(() => {
+    const replay = snapshot.stepReplay;
+    if (!replay || replay.status === 'idle') return;
+    if (replay.selectedIndex !== undefined) setSelectedId(steps[replay.selectedIndex]?.id);
+    if (replay.status === 'failed') setLog(`Replay stopped · ${replay.error}`);
+    else if (replay.status === 'syncing')
+      setLog(`Replaying to step ${(replay.selectedIndex ?? -1) + 1}…`);
+    else
+      setLog(
+        replay.appliedIndex < 0
+          ? 'Browser reset to the starting page'
+          : `Browser synchronized · step ${replay.appliedIndex + 1}`,
+      );
+  }, [snapshot.stepReplay, steps]);
 
   const remove = (id: string) => {
     const index = steps.findIndex((step) => step.id === id);
@@ -465,12 +488,15 @@ export const RecordScreen = () => {
         repickingId,
         steps,
         lines,
+        source: snapshot.source,
+        testId: snapshot.library.selectedTestId,
         layout: current,
       },
     });
   };
 
   const copySource = () => {
+    sourceEditor.flush();
     if (hosted) window.testron?.command({ type: 'copy-source' });
     else void navigator.clipboard?.writeText(sourceText(lines));
     setLog('Spec copied to the clipboard');
@@ -510,8 +536,16 @@ export const RecordScreen = () => {
         case 'ready':
           publish();
           break;
+        case 'update-source':
+          window.testron?.command({ type: 'pause-recording' });
+          window.testron?.command({
+            type: 'update-source',
+            source: event.source,
+            testId: event.testId,
+          });
+          break;
         case 'select':
-          setSelectedId(event.id);
+          selectStep(event.id);
           break;
         case 'expand':
           setExpandedId((current) => (current === event.id ? undefined : event.id));
@@ -647,9 +681,10 @@ export const RecordScreen = () => {
       <div ref={planeRef} data-plane className="relative min-h-0 flex-1">
         <div className="absolute inset-y-0" style={websiteInset}>
           {hosted ? (
-            url ? (
+            websiteSrc ? (
               <TestedWebsite
-                src={url}
+                key={websiteGeneration}
+                src={websiteSrc}
                 className="h-full w-full"
                 partition={TESTED_WEBSITE_PARTITION}
               />
@@ -703,7 +738,7 @@ export const RecordScreen = () => {
               repickingId={repickingId}
               viewMode={stepViewMode}
               onViewModeChange={setStepViewMode}
-              onSelect={setSelectedId}
+              onSelect={selectStep}
               onExpand={(id) => setExpandedId((current) => (current === id ? undefined : id))}
               onUseAlternative={useAlternative}
               onEditLocator={editLocator}
@@ -734,12 +769,12 @@ export const RecordScreen = () => {
             <SourceEditor
               value={hosted ? sourceDraft : sourceText(lines)}
               ariaLabel={t('test_source')}
-              onFocusChange={setSourceFocused}
+              onFocusChange={sourceEditor.onFocusChange}
               onChange={(value) => {
                 if (!hosted) return;
                 if (status === 'recording') window.testron?.command({ type: 'pause-recording' });
-                setSourceDraft(value);
-                setSourceDirty(true);
+                sourceEditor.onChange(value);
+                setLog('Source edited · select a step to synchronize the browser');
               }}
               className="h-full"
             />

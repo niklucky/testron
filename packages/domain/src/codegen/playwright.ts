@@ -38,7 +38,7 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
     (step) =>
       step.kind.startsWith('assert') || (step.kind === 'code' && /\bexpect\s*\(/.test(step.code)),
   );
-  const hasVariables = steps.some((step) => step.kind === 'fill' && step.variable);
+  const hasVariables = steps.some((step) => step.kind === 'fill' && (step.variable || step.secret));
   const body = steps.map((step) => {
     switch (step.kind) {
       case 'navigate':
@@ -49,7 +49,9 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.hover();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${
-          step.variable ? `requiredEnv(${quote(step.variable.name)})` : quote(step.value)
+          step.secret || step.variable
+            ? `requiredEnv(${quote(step.secret?.environmentVariable ?? step.variable!.name)})`
+            : quote(step.value)
         });`;
       case 'selectOption':
         return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
