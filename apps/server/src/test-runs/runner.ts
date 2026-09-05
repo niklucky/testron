@@ -1,3 +1,8 @@
+import {
+  playwrightReplayError,
+  parsePlaywright,
+  reconcilePlaywrightSteps,
+} from '@testron/domain/codegen/parse-playwright';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -36,6 +41,7 @@ export interface ServerRunResult {
 }
 
 export interface ServerRunOptions {
+  source?: string | undefined;
   environmentUrl: string;
   steps: readonly Step[];
   environmentVariables: Readonly<Record<string, string>>;
@@ -80,6 +86,8 @@ const executeStep = async (
   expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
+    case 'code':
+      throw new Error('This test contains exact Playwright code and must run as a complete spec.');
     case 'navigate': {
       runnerOrigin(step.url);
       const response = await page.goto(step.url);
@@ -163,8 +171,46 @@ export class ServerPlaywrightRunner {
   constructor(private readonly egressPolicy: RunnerEgressPolicy = {}) {}
 
   async run(options: ServerRunOptions): Promise<ServerRunResult> {
-    const { chromium, expect } = await import('@playwright/test');
+    if (options.source !== undefined) {
+      const parsed = parsePlaywright(options.source);
+      if (!parsed.error)
+        options = {
+          ...options,
+          steps: reconcilePlaywrightSteps(
+            options.steps,
+            parsed.steps.map(({ step }) => step),
+          ),
+        };
+    }
     const started = Date.now();
+    const exactCodeIndex = options.steps.findIndex((step) => step.kind === 'code');
+    const sourceError = playwrightReplayError(options.source);
+    if (sourceError || exactCodeIndex >= 0) {
+      const error =
+        sourceError ??
+        'This test contains exact Playwright code. Complete-spec execution is not available yet.';
+      return {
+        status: 'failed',
+        durationMs: Date.now() - started,
+        error,
+        screenshotPath: null,
+        videoPath: null,
+        steps:
+          exactCodeIndex < 0
+            ? []
+            : [
+                {
+                  index: exactCodeIndex,
+                  action: presentStep(options.steps[exactCodeIndex]!),
+                  status: 'failed',
+                  durationMs: 0,
+                  error,
+                  pageUrl: null,
+                },
+              ],
+      };
+    }
+    const { chromium, expect } = await import('@playwright/test');
     await mkdir(options.artifactsDirectory, { recursive: true });
     const screenshotPath = path.join(options.artifactsDirectory, 'failure.png');
     const videoPath = path.join(options.artifactsDirectory, 'failure.webm');

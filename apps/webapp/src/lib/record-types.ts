@@ -11,7 +11,8 @@ export type RecordedStep = {
     | 'uncheck'
     | 'press'
     | 'assert'
-    | 'assertUrl';
+    | 'assertUrl'
+    | 'code';
   label: string;
   locator: string;
   alternatives: string[];

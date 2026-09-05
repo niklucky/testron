@@ -87,7 +87,10 @@ export const StepsPanel = ({
                 tabIndex={0}
                 aria-current={on}
                 onClick={() => onSelect(step.id)}
-                onKeyDown={(event) => event.key === 'Enter' && onSelect(step.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && event.target === event.currentTarget)
+                    onSelect(step.id);
+                }}
                 className={`group group/step relative grid cursor-default grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-2 border-l-2 px-3 py-2 ${
                   repicking
                     ? 'border-warning bg-warning/10'
@@ -155,7 +158,11 @@ export const StepsPanel = ({
 
                   {viewMode === 'developer' && step.warning && (
                     <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
-                      {step.secret ? t('secret') : t('locator_2')}
+                      {step.kind === 'code'
+                        ? 'Exact code'
+                        : step.secret
+                          ? t('secret')
+                          : t('locator_2')}
                     </Badge>
                   )}
                 </span>
@@ -180,16 +187,18 @@ export const StepsPanel = ({
                       }}
                     />
                   )}
-                  <IconButton
-                    icon="eye"
-                    size="sm"
-                    label={t('convert_step_to_assertion', { value1: index + 1 })}
-                    className={`hidden ${step.kind.startsWith('assert') ? '' : 'group-hover:grid'}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onConvertToAssertion(step.id);
-                    }}
-                  />
+                  {step.kind !== 'code' && (
+                    <IconButton
+                      icon="eye"
+                      size="sm"
+                      label={t('convert_step_to_assertion', { value1: index + 1 })}
+                      className={`hidden ${step.kind.startsWith('assert') ? '' : 'group-hover:grid'}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onConvertToAssertion(step.id);
+                      }}
+                    />
+                  )}
                   <IconButton
                     icon="trash"
                     size="sm"

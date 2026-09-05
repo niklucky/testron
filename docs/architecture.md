@@ -72,7 +72,7 @@ The server owns synchronized:
 
 - Projects and membership.
 - Environments and their revisions.
-- Tests, structured steps, and revision history.
+- Tests, canonical Playwright source, derived steps, and revision history.
 - Supported metadata and run summaries.
 - Deletion and restoration state.
 
@@ -162,6 +162,7 @@ DOM event
   -> candidate locator extraction
   -> action normalization
   -> structured step
+  -> canonical Playwright source + derived steps
   -> recoverable desktop draft
   -> server revision
   -> desktop and web presentation
@@ -248,11 +249,9 @@ Required format properties:
 - Paths that remain understandable in Git diffs.
 - No credentials or secret material.
 
-The structured format is round-trippable. Generated `.spec.ts` files are output.
-Arbitrary edits to generated Playwright are initially export-only because a
-general code-to-steps parser would be ambiguous and unsafe. If direct code edits
-become a requirement, Testron must define a bounded syntax or AST contract before
-accepting them in `push`.
+Desktop and web accept source edits under the bounded AST contract described
+below. CLI import and push must apply the same contract before accepting source;
+the structured format and manifest remain versioned protocol boundaries.
 
 ## Web application boundary
 
@@ -319,7 +318,7 @@ rather than redefine it.
 ## Architecture guardrails
 
 - The server is authoritative for synchronized project and test data.
-- Structured steps remain the canonical test representation.
+- Playwright source is the canonical test document; structured steps are its bounded projection.
 - Recording observations and secret values are never sent as unvalidated raw
   payloads.
 - Client writes are revision-aware; test content does not use last-write-wins.
@@ -373,3 +372,42 @@ The bounded authenticated workspace query returns active projects,
 environments, and current test snapshots owned by the caller. The result lives
 only in process memory, so a fresh desktop can show canonical work without
 duplicating the server database locally.
+
+## Playwright source and step replay
+
+Playwright source is the durable test document. A bounded AST parser projects
+supported statements into structured steps only when their syntax matches the
+generated action and passes the step schema. Other statements remain exact code.
+Invalid drafts retain their last displayed steps but discard editable ranges;
+structured mutations and replay cannot silently use that stale projection.
+Source saves and acknowledgements are scoped to the edited test, including delayed
+writes after switching tests. Saves preserve the target revision's profile unless
+the edit explicitly changes it.
+
+Selecting a manual step synchronizes the embedded tested browser to the state
+**after** that step. Forward selection executes the remaining unchanged prefix.
+Backward selection, changes to an applied prefix, and an invalidated browser
+position reset browser storage, restore the selected authentication profile, load
+the starting page, and replay through the requested step. Element highlighting is
+best effort and cannot turn a completed replay into a failure. Code cursor
+movement and source edits do not execute browser actions.
+
+Replay pauses recording, validates source before browser effects, serializes
+those effects, and cancels superseded requests. Trusted interactions with a paused
+page invalidate its cached position. Resuming recording first returns the browser
+to the end of the current steps. Reopening the recorder or losing its browser
+guest requires attachment before replay starts.
+
+Authentication cookies are restored before navigation. The recorder preload
+restores only the current origin's saved local storage synchronously before page
+scripts run. Browser clearing and profile updates share a serial queue. Each
+origin is seeded once per reset so recorded logout actions remain effective.
+Reset first unloads the previous document and waits for the blank page's load
+event before restoring state.
+
+Browser reset cannot roll back remote server changes; tests that mutate server
+state need repeatable fixtures or an application reset. Exact code, custom setup
+or fixtures, and multiple tests require a future complete-spec runner. Structured
+replay supports main-frame actions; its native locator resolver does not implement
+the full Playwright selector or accessibility engines. Iframes and popups are
+outside this replay model.

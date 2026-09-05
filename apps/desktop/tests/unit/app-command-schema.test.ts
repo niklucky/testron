@@ -288,3 +288,13 @@ describe('desktop application command schema', () => {
     ).toMatchObject({ type: 'set-member-blocked', blocked: true });
   });
 });
+
+it('requires a valid test ID when scoping source edits to a document', () => {
+  expect(
+    appCommandSchema.safeParse({ type: 'update-source', source: '', testId: 'invalid' }).success,
+  ).toBe(false);
+  expect(
+    appCommandSchema.safeParse({ type: 'update-source', source: '', testId: id }).success,
+  ).toBe(true);
+  expect(appCommandSchema.safeParse({ type: 'update-source', source: '' }).success).toBe(true);
+});

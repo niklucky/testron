@@ -1,3 +1,8 @@
+import { editedTestRevisionContent } from './persistence/test-revision-content';
+import { parkPage } from './recording/park-page';
+import { playwrightReplayError } from '@testron/domain/codegen/parse-playwright';
+import { StepReplay, type StepReplaySnapshot } from './recording/step-replay';
+import { WebContentsReplay } from './recording/webcontents-replay';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -91,6 +96,7 @@ import {
   RECORD_CHANNELS,
   RECORDER_CHANNEL,
   RECORDER_CONFIG_CHANNEL,
+  RECORDER_STORAGE_CHANNEL,
   REMOTE_APP_CHANNELS,
   TESTED_WEBSITE_WEB_PREFERENCES,
   TESTED_WEBSITE_PARTITION,
@@ -143,6 +149,7 @@ const parseBrowserStorageState = (value: string | undefined): BrowserStorageStat
 };
 
 const recorderControlSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('browser-interaction') }),
   z.object({
     kind: z.literal('set-assertion'),
     assertion: verifyAssertionSchema,
@@ -488,6 +495,9 @@ const createWindow = async (): Promise<void> => {
   ): Promise<void> => {
     const query = new URLSearchParams({ locale: desktopLocale });
     if (theme) query.set('theme', theme);
+    // Reopening the same URL can be an in-page navigation. The previous guest
+    // was closed on exit, so each recorder opening needs a fresh document.
+    if (route === 'record') query.set('recordSession', randomUUID());
     if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
       await contents.loadURL(
         route
@@ -624,6 +634,10 @@ const createWindow = async (): Promise<void> => {
   const stepsFor = (testId: string): Step[] =>
     remoteTest(testId)?.currentRevision.content.steps.map(({ payload }) => payload) ??
     store.loadSteps(testId);
+  const sourceFor = (testId: string): string | undefined => {
+    const remote = remoteTest(testId);
+    return remote ? remote.currentRevision.content.source : store.getDraft(testId)?.content.source;
+  };
   const ensureLocalProject = (projectId: string) => {
     const local = store.getProject(projectId);
     if (local) return local;
@@ -832,10 +846,13 @@ const createWindow = async (): Promise<void> => {
     if (!contents || contents.isDestroyed()) return;
     contents.send(REMOTE_APP_CHANNELS.runtimeState, {
       replay: replaySnapshot,
+      stepReplay: stepReplayState,
       browserInstallation: installer.status(),
       workspaceRevision: remoteWorkspaceRevision,
     });
   };
+  let stepReplayState: StepReplaySnapshot = { status: 'idle', appliedIndex: -1 };
+  let needsReplayBeforeRecording = false;
   const sendSnapshot = (snapshot: ReturnType<RecordingSession['snapshot']>): void => {
     const window = mainWindow;
     if (window && !window.isDestroyed())
@@ -843,6 +860,7 @@ const createWindow = async (): Promise<void> => {
         ...snapshot,
         library: librarySnapshot(),
         replay: replaySnapshot,
+        stepReplay: stepReplayState,
         replayHistory: historyFor(selectedTestId),
         browserInstallation: installer.status(),
         verifyAssertion,
@@ -887,19 +905,23 @@ const createWindow = async (): Promise<void> => {
     environmentIds: string[],
     steps: readonly Step[],
     prerequisites?: readonly string[],
+    source?: string,
+    profileId?: string | null,
   ) => void = () => undefined;
-  const session = new RecordingSession(sendSnapshot, (steps) => {
+  const session = new RecordingSession(sendSnapshot, (steps, source, title) => {
     if (localMode && selectedTestId) {
-      store.replaceSteps(selectedTestId, steps);
+      store.replaceSource(selectedTestId, source, steps, title);
       return;
     }
     const test = remoteTest(selectedTestId);
     if (test)
       queueTestRevision(
         test.test.id,
-        session.snapshot().title,
+        title,
         test.currentRevision.content.environmentIds,
         steps,
+        undefined,
+        source,
       );
   });
   const runWorkspaceMutation = (
@@ -942,9 +964,8 @@ const createWindow = async (): Promise<void> => {
       });
   };
   let testSaveQueue = Promise.resolve();
-  queueTestRevision = (testId, title, environmentIds, steps, prerequisites) => {
+  queueTestRevision = (testId, title, environmentIds, steps, prerequisites, source, profileId) => {
     const queuedSteps = structuredClone(steps);
-    const queuedProfileId = selectedProfileId ?? null;
     testSaveQueue = testSaveQueue
       .then(async () => {
         if (!serverClient || serverState.authentication !== 'signedIn')
@@ -957,14 +978,14 @@ const createWindow = async (): Promise<void> => {
               meta: mutationMeta(`test-save-${testId}-${randomUUID()}`),
               testId,
               baseRevision: canonical.test.currentRevision,
-              content: {
-                stepSchemaVersion: 1,
+              content: editedTestRevisionContent(canonical.currentRevision.content, {
                 title,
-                profileId: queuedProfileId,
+                profileId,
                 environmentIds,
-                prerequisites: prerequisites ?? canonical.currentRevision.content.prerequisites,
+                prerequisites,
+                source,
                 steps: reconcileRevisionSteps(canonical.currentRevision.content.steps, queuedSteps),
-              },
+              }),
             }),
           );
           if (result.status === 'saved') {
@@ -1088,87 +1109,122 @@ const createWindow = async (): Promise<void> => {
     },
   );
   let appliedProfileCookies: Array<{ name: string; url: string }> = [];
-  let appliedProfileLocalStorage: Array<{ origin: string; name: string }> = [];
+  const appliedProfileLocalStorage = new Map<string, { key: string; names: string[] }>();
+  let recordingAuthenticationKey: string | undefined;
+  let recordingStorageState: BrowserStorageState | undefined;
   let recordingAuthenticationUpdate = Promise.resolve();
-  const applyRecordingAuthentication = (): Promise<void> => {
-    const { environment, profile, values } = selectedProfileContext();
-    const storageState =
-      profile?.authenticationType === 'storage-state'
-        ? parseBrowserStorageState(values.find(({ name }) => name === 'storageState')?.value)
-        : undefined;
-    recordingAuthenticationUpdate = recordingAuthenticationUpdate
-      .then(async () => {
-        await Promise.all(
-          appliedProfileCookies.map(({ name, url }) =>
-            testedWebsiteSession.cookies.remove(url, name),
-          ),
-        );
-        appliedProfileCookies = [];
-        const contents = websiteContents;
-        if (contents && !contents.isDestroyed() && contents.getURL()) {
-          const currentOrigin = new URL(contents.getURL()).origin;
-          const removals = appliedProfileLocalStorage
-            .filter(({ origin }) => origin === currentOrigin)
-            .map(({ name }) => name);
-          const additions =
-            storageState?.origins.find(({ origin }) => origin === currentOrigin)?.localStorage ??
-            [];
-          if (removals.length || additions.length)
-            await contents.executeJavaScript(
-              `(() => {
-                for (const name of ${JSON.stringify(removals)}) localStorage.removeItem(name);
-                for (const entry of ${JSON.stringify(additions)}) localStorage.setItem(entry.name, entry.value);
-              })()`,
-            );
-          appliedProfileLocalStorage = [
-            ...appliedProfileLocalStorage.filter(({ origin }) => origin !== currentOrigin),
-            ...additions.map(({ name }) => ({ origin: currentOrigin, name })),
-          ];
-        }
-        if (environment && profile?.authenticationType === 'cookies')
-          await Promise.all(
-            values.map(async ({ name, value }) => {
-              await testedWebsiteSession.cookies.set({ url: environment.baseUrl, name, value });
-              appliedProfileCookies.push({ url: environment.baseUrl, name });
-            }),
-          );
-        if (storageState)
-          await Promise.all(
-            storageState.cookies.map(async (cookie) => {
-              const url = `${cookie.secure ? 'https' : 'http'}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
-              await testedWebsiteSession.cookies.set({
-                url,
-                name: cookie.name,
-                value: cookie.value,
-                domain: cookie.domain,
-                path: cookie.path,
-                secure: cookie.secure,
-                httpOnly: cookie.httpOnly,
-                expirationDate: cookie.expires > 0 ? cookie.expires : undefined,
-                sameSite:
-                  cookie.sameSite === 'Strict'
-                    ? 'strict'
-                    : cookie.sameSite === 'None'
-                      ? 'no_restriction'
-                      : 'lax',
-              });
-              appliedProfileCookies.push({ url, name: cookie.name });
-            }),
-          );
-      })
-      .catch((error: unknown) => {
-        session.warn(
-          error instanceof Error
-            ? `Could not apply the recording profile: ${error.message}`
-            : 'Could not apply the recording profile.',
-        );
-        sendSnapshot(session.snapshot());
-      });
-    return recordingAuthenticationUpdate;
+  let recordingNavigationGeneration = 0;
+  const warnRecordingAuthentication = (error: unknown): void => {
+    session.warn(
+      error instanceof Error
+        ? `Could not apply the recording profile: ${error.message}`
+        : 'Could not apply the recording profile.',
+    );
   };
+  const applyRecordingAuthentication = (reset = false): Promise<void> => {
+    const update = recordingAuthenticationUpdate.then(async () => {
+      // Serialize clearing with profile writes. Otherwise an older queued
+      // update can write credentials while the new replay is clearing them.
+      if (reset) {
+        const contents = websiteContents;
+        if (contents && !contents.isDestroyed()) {
+          // stop() only stops loading; an old document can still write storage.
+          // Remove it before clearing so it cannot repopulate the new baseline.
+          await parkPage(contents);
+        }
+        await Promise.all([
+          testedWebsiteSession.clearStorageData(),
+          testedWebsiteSession.clearCache(),
+          testedWebsiteSession.clearAuthCache(),
+        ]);
+        appliedProfileCookies = [];
+        appliedProfileLocalStorage.clear();
+        recordingAuthenticationKey = undefined;
+        recordingStorageState = undefined;
+      }
+      const { environment, profile, values } = selectedProfileContext();
+      const key = JSON.stringify([
+        environment?.id,
+        profile?.id,
+        profile?.authenticationType,
+        values,
+      ]);
+      if (key === recordingAuthenticationKey) return;
+      const storageState =
+        profile?.authenticationType === 'storage-state'
+          ? parseBrowserStorageState(values.find(({ name }) => name === 'storageState')?.value)
+          : undefined;
+      await Promise.all(
+        appliedProfileCookies.map(({ name, url }) =>
+          testedWebsiteSession.cookies.remove(url, name),
+        ),
+      );
+      appliedProfileCookies = [];
+      if (environment && profile?.authenticationType === 'cookies')
+        await Promise.all(
+          values.map(async ({ name, value }) => {
+            await testedWebsiteSession.cookies.set({ url: environment.baseUrl, name, value });
+            appliedProfileCookies.push({ url: environment.baseUrl, name });
+          }),
+        );
+      if (storageState)
+        await Promise.all(
+          storageState.cookies.map(async (cookie) => {
+            const url = `${cookie.secure ? 'https' : 'http'}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
+            await testedWebsiteSession.cookies.set({
+              url,
+              name: cookie.name,
+              value: cookie.value,
+              domain: cookie.domain,
+              path: cookie.path,
+              secure: cookie.secure,
+              httpOnly: cookie.httpOnly,
+              expirationDate: cookie.expires > 0 ? cookie.expires : undefined,
+              sameSite:
+                cookie.sameSite === 'Strict'
+                  ? 'strict'
+                  : cookie.sameSite === 'None'
+                    ? 'no_restriction'
+                    : 'lax',
+            });
+            appliedProfileCookies.push({ url, name: cookie.name });
+          }),
+        );
+      recordingStorageState = storageState;
+      recordingAuthenticationKey = key;
+    });
+    // A failed update must not poison the queue, but callers that need a ready
+    // browser must see the failure and stop before navigation.
+    recordingAuthenticationUpdate = update.catch(() => undefined);
+    return update;
+  };
+  ipcMain.on(RECORDER_STORAGE_CHANNEL, (event) => {
+    if (event.sender !== websiteContents || event.senderFrame !== websiteContents.mainFrame) {
+      event.returnValue = null;
+      return;
+    }
+    const frameUrl = event.senderFrame?.url;
+    if (!frameUrl || !/^https?:/.test(frameUrl) || !recordingAuthenticationKey) {
+      event.returnValue = null;
+      return;
+    }
+    const origin = new URL(frameUrl).origin;
+    const previous = appliedProfileLocalStorage.get(origin);
+    if (previous?.key === recordingAuthenticationKey) {
+      event.returnValue = null;
+      return;
+    }
+    const entries =
+      recordingStorageState?.origins.find((entry) => entry.origin === origin)?.localStorage ?? [];
+    appliedProfileLocalStorage.set(origin, {
+      key: recordingAuthenticationKey,
+      names: entries.map(({ name }) => name),
+    });
+    event.returnValue = { remove: previous?.names ?? [], entries };
+  });
   const applyContext = (): void => {
-    const { selectedTest, environment } = selectedContext();
-    session.setGenerationContext(selectedTest?.title ?? 'recorded test');
+    const { environment } = selectedContext();
+
     if (websiteContents && !websiteContents.isDestroyed()) {
       websiteContents.send(RECORDER_CONFIG_CHANNEL, {
         testIdAttribute: environment?.testIdAttribute ?? 'data-testid',
@@ -1187,12 +1243,20 @@ const createWindow = async (): Promise<void> => {
           .map(({ name, value }) => ({ name, value })),
       });
     }
-    void applyRecordingAuthentication();
+    void applyRecordingAuthentication().catch(warnRecordingAuthentication);
   };
   const reloadWebsiteAfterProfileApplied = (): void => {
-    void applyRecordingAuthentication().then(() => {
-      if (websiteContents && !websiteContents.isDestroyed()) websiteContents.reload();
-    });
+    const generation = ++recordingNavigationGeneration;
+    void applyRecordingAuthentication()
+      .then(() => {
+        if (
+          generation === recordingNavigationGeneration &&
+          websiteContents &&
+          !websiteContents.isDestroyed()
+        )
+          websiteContents.reload();
+      })
+      .catch(warnRecordingAuthentication);
   };
   const persistSelectedProfile = (): void => {
     if (!selectedTestId) return;
@@ -1207,11 +1271,15 @@ const createWindow = async (): Promise<void> => {
         test.test.title,
         test.currentRevision.content.environmentIds,
         session.snapshot().steps,
+        undefined,
+        undefined,
+        selectedProfileId ?? null,
       );
   };
   if (selectedTestId) {
     const { selectedTest } = selectedContext();
-    if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
+    if (selectedTest)
+      session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
   }
 
   const configureWebsiteContents = (contents: WebContents): void => {
@@ -1229,6 +1297,7 @@ const createWindow = async (): Promise<void> => {
       }
     });
     const didNavigate = (target: string) => {
+      if (stepReplayState.status !== 'syncing') stepReplay.invalidate();
       session.navigated(target);
       applyContext();
       sendSnapshot(session.snapshot());
@@ -1242,28 +1311,25 @@ const createWindow = async (): Promise<void> => {
         session.warn(`Could not load ${target || 'the tested page'} (${code}): ${description}`);
     });
     contents.once('destroyed', () => {
-      if (websiteContents === contents) websiteContents = undefined;
+      if (websiteContents === contents) {
+        websiteContents = undefined;
+        stepReplay.invalidate();
+      }
     });
     applyContext();
   };
 
   const resetTestedWebsiteSession = async (reload: boolean): Promise<void> => {
+    recordingNavigationGeneration++;
     const contents = websiteContents;
     if (contents && !contents.isDestroyed()) contents.stop();
+    const initialUrl = selectedContext().environment?.baseUrl ?? contents?.getURL() ?? '';
 
-    await Promise.all([
-      testedWebsiteSession.clearStorageData(),
-      testedWebsiteSession.clearCache(),
-      testedWebsiteSession.clearAuthCache(),
-    ]);
-    appliedProfileCookies = [];
-    appliedProfileLocalStorage = [];
-    await applyRecordingAuthentication();
+    await applyRecordingAuthentication(true);
 
     // Storage clearing alone leaves both the document and recorder snapshot at
     // the previous test's URL. Seed the new renderer with the environment entry
     // point before it can mount a webview using that stale snapshot.
-    const initialUrl = selectedContext().environment?.baseUrl ?? contents?.getURL() ?? '';
     session.navigated(initialUrl);
     if (
       reload &&
@@ -1277,7 +1343,100 @@ const createWindow = async (): Promise<void> => {
     }
   };
 
+  const ensureRecorderWebsite = (url: string, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    if (websiteContents && !websiteContents.isDestroyed()) return Promise.resolve();
+    const host = mainWindow?.webContents;
+    if (!host || host.isDestroyed())
+      return Promise.reject(new Error('The recorder window is closed.'));
+    return new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timeout);
+        host.removeListener('did-attach-webview', attached);
+        signal.removeEventListener('abort', cancelled);
+        if (error) reject(error);
+        else resolve();
+      };
+      const attached = () => finish();
+      const cancelled = () => finish(new Error('Step replay cancelled.'));
+      const timeout = setTimeout(
+        () => finish(new Error('The recorder browser could not open. Try reopening the recorder.')),
+        10_000,
+      );
+      host.once('did-attach-webview', attached);
+      signal.addEventListener('abort', cancelled, { once: true });
+      // The renderer may still own a detached webview after closing the guest.
+      // A new React key recreates it even when the requested URL is unchanged.
+      host.send(APP_CHANNELS.targetUrl, safeUrl(url), true);
+    });
+  };
+
+  const browserReplay = new WebContentsReplay(
+    () => {
+      if (!websiteContents || websiteContents.isDestroyed())
+        throw new Error('Open the recorder browser before replaying a step.');
+      return websiteContents;
+    },
+    () => {
+      const environment = selectedContext().environment;
+      return Object.fromEntries(
+        allProfileVariables()
+          .filter(
+            (variable) =>
+              variable.profileId === selectedProfileId &&
+              variable.environmentId === environment?.id,
+          )
+          .map(({ name, value }) => [name, value]),
+      );
+    },
+  );
+  const stepReplay = new StepReplay(
+    {
+      reset: async (signal) => {
+        const initialUrl = selectedContext().environment?.baseUrl ?? websiteContents?.getURL();
+        if (!initialUrl)
+          throw new Error('Choose a starting environment URL before replaying steps.');
+        await ensureRecorderWebsite(initialUrl, signal);
+        await browserReplay.reset(() => resetTestedWebsiteSession(false), initialUrl, signal);
+      },
+      execute: (step, signal) => browserReplay.execute(step, signal),
+      highlight: (step) => browserReplay.highlight(step),
+    },
+    (state) => {
+      stepReplayState = state;
+      sendSnapshot(session.snapshot());
+    },
+  );
+  const selectBrowserStep = (index: number): Promise<void> => {
+    recordingNavigationGeneration++;
+    session.pause();
+    repickIndex = undefined;
+    session.setCaptureMode('record');
+    applyContext();
+    needsReplayBeforeRecording = true;
+    const snapshot = session.snapshot();
+    const error = playwrightReplayError(snapshot.source, index);
+    if (error) {
+      stepReplay.invalidate();
+      session.warn(`Fix the source before replaying steps: ${error}`);
+      return Promise.resolve();
+    }
+    return stepReplay.select(snapshot.steps, index);
+  };
+  const editBrowserSteps = (edit: () => void, deletedIndex?: number) => {
+    const previous = session.snapshot();
+    let index = stepReplayState.selectedIndex ?? previous.steps.length - 1;
+    edit();
+    if (previous.source === session.snapshot().source || !websiteContents) return;
+    if (deletedIndex !== undefined && deletedIndex <= index) index--;
+    index = Math.min(index, session.snapshot().steps.length - 1);
+    void selectBrowserStep(index);
+  };
+
   const unloadRecorderWebsite = (): void => {
+    recordingNavigationGeneration++;
+    stepReplay.invalidate();
+    needsReplayBeforeRecording = false;
     const contents = websiteContents;
     websiteContents = undefined;
     if (!contents || contents.isDestroyed()) return;
@@ -1303,8 +1462,13 @@ const createWindow = async (): Promise<void> => {
 
   ipcMain.on(RECORDER_CHANNEL, (event, payload: unknown) => {
     if (event.sender !== websiteContents || event.senderFrame !== websiteContents.mainFrame) return;
+    if (stepReplayState.status === 'syncing') return;
     const control = recorderControlSchema.safeParse(payload);
     if (control.success) {
+      if (control.data.kind === 'browser-interaction') {
+        stepReplay.invalidate();
+        return;
+      }
       if (control.data.kind === 'shortcut') {
         if (mainWindow && !mainWindow.isDestroyed())
           mainWindow.webContents.send(RECORD_CHANNELS.event, {
@@ -1340,6 +1504,20 @@ const createWindow = async (): Promise<void> => {
   });
 
   const handleAppCommand = (command: AppCommand): void => {
+    if (
+      [
+        'select-test',
+        'select-project',
+        'select-environment',
+        'select-profile',
+        'create-test',
+        'navigate',
+        'browser-navigation',
+      ].includes(command.type)
+    ) {
+      stepReplay.invalidate();
+      needsReplayBeforeRecording = false;
+    }
     switch (command.type) {
       case 'show-product':
         unloadRecorderWebsite();
@@ -1372,6 +1550,23 @@ const createWindow = async (): Promise<void> => {
         layout();
         break;
       case 'start-recording':
+        if (command.append && needsReplayBeforeRecording) {
+          const targetIndex = session.snapshot().steps.length - 1;
+          const targetSource = session.snapshot().source;
+          void selectBrowserStep(targetIndex).then(() => {
+            if (
+              stepReplayState.status !== 'synced' ||
+              stepReplayState.appliedIndex !== targetIndex ||
+              session.snapshot().source !== targetSource
+            )
+              return;
+            needsReplayBeforeRecording = false;
+            session.start(true);
+            applyContext();
+          });
+          break;
+        }
+        stepReplay.invalidate();
         replaySnapshot = { status: 'idle', steps: [] };
         session.start(command.append);
         applyContext();
@@ -1385,36 +1580,93 @@ const createWindow = async (): Promise<void> => {
         applyContext();
         break;
       case 'resume-recording':
+        if (needsReplayBeforeRecording) {
+          const targetIndex = session.snapshot().steps.length - 1;
+          const targetSource = session.snapshot().source;
+          void selectBrowserStep(targetIndex).then(() => {
+            if (
+              stepReplayState.status !== 'synced' ||
+              stepReplayState.appliedIndex !== targetIndex ||
+              session.snapshot().source !== targetSource
+            )
+              return;
+            needsReplayBeforeRecording = false;
+            session.resume();
+            applyContext();
+          });
+          break;
+        }
         session.resume();
         applyContext();
         break;
+      case 'select-step':
+        void selectBrowserStep(command.index);
+        break;
       case 'undo-step':
-        session.undo();
+        editBrowserSteps(() => session.undo());
         break;
       case 'redo-step':
-        session.redo();
+        editBrowserSteps(() => session.redo());
         break;
       case 'finish-recording':
         session.finish();
         applyContext();
         break;
       case 'delete-step':
-        session.deleteStep(command.index);
+        editBrowserSteps(() => session.deleteStep(command.index), command.index);
         break;
       case 'move-step':
-        session.moveStep(command.index, command.direction);
+        editBrowserSteps(() => session.moveStep(command.index, command.direction));
         break;
       case 'duplicate-step':
-        session.duplicateStep(command.index);
+        editBrowserSteps(() => session.duplicateStep(command.index));
         break;
       case 'update-step':
-        session.updateStep(command.index, command.step);
+        editBrowserSteps(() => session.updateStep(command.index, command.step));
         break;
       case 'replace-steps':
-        session.replaceSteps(command.steps);
+        editBrowserSteps(() => session.replaceSteps(command.steps));
         break;
+      case 'update-source': {
+        if (!command.testId || command.testId === selectedTestId) {
+          stepReplay.invalidate();
+          session.pause();
+          applyContext();
+        }
+        if (!command.testId || command.testId === selectedTestId)
+          session.updateSource(command.source);
+        else {
+          const test = remoteTest(command.testId);
+          const local = store.getDraft(command.testId);
+          if (!test && !local) break;
+          const editing = new RecordingSession(
+            () => undefined,
+            (steps, source, title) => {
+              if (localMode) store.replaceSource(command.testId!, source, steps, title);
+              else if (test)
+                queueTestRevision(
+                  test.test.id,
+                  title,
+                  test.currentRevision.content.environmentIds,
+                  steps,
+                  undefined,
+                  source,
+                );
+            },
+          );
+          editing.load(
+            test?.test.title ?? local!.content.title,
+            stepsFor(command.testId),
+            sourceFor(command.testId),
+          );
+          editing.updateSource(command.source);
+        }
+        break;
+      }
       case 'use-alternative-locator':
-        session.useAlternativeLocator(command.index, command.alternativeIndex);
+        editBrowserSteps(() =>
+          session.useAlternativeLocator(command.index, command.alternativeIndex),
+        );
         break;
       case 'set-repick-step':
         repickIndex =
@@ -1618,7 +1870,14 @@ const createWindow = async (): Promise<void> => {
       }
       case 'navigate':
         try {
-          mainWindow?.webContents.send(APP_CHANNELS.targetUrl, safeUrl(command.url));
+          const url = safeUrl(command.url);
+          const generation = ++recordingNavigationGeneration;
+          void applyRecordingAuthentication()
+            .then(() => {
+              if (generation === recordingNavigationGeneration)
+                mainWindow?.webContents.send(APP_CHANNELS.targetUrl, url);
+            })
+            .catch(warnRecordingAuthentication);
         } catch (error) {
           session.warn(error instanceof Error ? error.message : 'Invalid URL.');
         }
@@ -2125,7 +2384,8 @@ const createWindow = async (): Promise<void> => {
         replaySnapshot = historyFor(selectedTestId)[0] ?? { status: 'idle', steps: [] };
         if (selectedTestId) {
           const { selectedTest } = selectedContext();
-          if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
+          if (selectedTest)
+            session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
         } else session.load('recorded test', []);
         break;
       case 'select-test-suite':
@@ -2308,6 +2568,7 @@ const createWindow = async (): Promise<void> => {
         });
         void runner
           .run({
+            source: setup.currentRevision.content.source,
             steps: setup.currentRevision.content.steps.map(({ payload }) => payload),
             environmentVariables: {},
             secretValues: command.secretValues,
@@ -2393,7 +2654,7 @@ const createWindow = async (): Promise<void> => {
         selectedEnvironmentId = test.environmentIds[0];
         selectedProfileId = test.profileId ?? undefined;
         replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
-        session.load(test.title, stepsFor(test.id));
+        session.load(test.title, stepsFor(test.id), sourceFor(test.id));
         break;
       }
       case 'rename-test': {
@@ -2494,6 +2755,7 @@ const createWindow = async (): Promise<void> => {
             session.load(
               moved.test.title,
               moved.currentRevision.content.steps.map(({ payload }) => payload),
+              moved.currentRevision.content.source,
             );
             await reloadRemoteWorkspace();
             sendSnapshot(session.snapshot());
@@ -2535,9 +2797,9 @@ const createWindow = async (): Promise<void> => {
                 selectedTestSuiteId,
               );
             store.setTestProfile(saved.id, selectedProfileId ?? null);
-            store.replaceSteps(saved.id, steps);
+            store.replaceSource(saved.id, session.snapshot().source, steps);
             selectedTestId = saved.id;
-            session.load(command.title, steps);
+            session.load(command.title, steps, session.snapshot().source);
             replaySnapshot = { status: 'idle', steps: [] };
             applyContext();
             break;
@@ -2550,6 +2812,8 @@ const createWindow = async (): Promise<void> => {
           command.title,
           test.currentRevision.content.environmentIds,
           session.snapshot().steps,
+          undefined,
+          session.snapshot().source,
         );
         session.setGenerationContext(command.title);
         break;
@@ -2602,7 +2866,8 @@ const createWindow = async (): Promise<void> => {
           selectedTest.id,
           new Date().toISOString().replaceAll(':', '-'),
         );
-        const steps = stepsFor(selectedTest.id);
+        const steps = session.snapshot().steps;
+        const runSource = session.snapshot().source;
         const runTestId = selectedTest.id;
         const profileValues = allProfileVariables().filter(
           (variable) =>
@@ -2729,6 +2994,7 @@ const createWindow = async (): Promise<void> => {
                     `Desktop authentication refresh requires a value for ${missingSecret}.`,
                   );
                 const authenticationResult = await runner.run({
+                  source: setupTest.currentRevision.content.source,
                   steps: setupTest.currentRevision.content.steps.map(({ payload }) => payload),
                   environmentVariables: {},
                   secretValues,
@@ -2900,6 +3166,7 @@ const createWindow = async (): Promise<void> => {
 
           try {
             const result = await runner.run({
+              source: runSource,
               steps,
               environmentVariables: {
                 ...profileVariables,
@@ -3283,7 +3550,7 @@ const createWindow = async (): Promise<void> => {
           selectedTestSuiteId = selectedTest.testSuiteId ?? undefined;
           selectedProfileId = selectedTest.profileId ?? undefined;
           replaySnapshot = historyFor(selectedTest.id)[0] ?? { status: 'idle', steps: [] };
-          session.load(selectedTest.title, stepsFor(selectedTest.id));
+          session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
         }
         if (command.type === 'run-test') {
           handleAppCommand({
@@ -3339,6 +3606,7 @@ const createWindow = async (): Promise<void> => {
     loginAttempt += 1;
     if (syncRetry) clearTimeout(syncRetry);
     ipcMain.removeAllListeners(RECORDER_CHANNEL);
+    ipcMain.removeAllListeners(RECORDER_STORAGE_CHANNEL);
     ipcMain.removeAllListeners(APP_CHANNELS.command);
     ipcMain.removeAllListeners(REMOTE_APP_CHANNELS.command);
     ipcMain.removeAllListeners(RECORD_CHANNELS.event);
@@ -3347,6 +3615,7 @@ const createWindow = async (): Promise<void> => {
     mainWindow = undefined;
   });
 
+  await applyRecordingAuthentication().catch(warnRecordingAuthentication);
   if (glass) await mainWindow.webContents.loadURL('about:blank');
   else await loadAppRenderer(mainWindow.webContents, localMode ? undefined : 'recovery');
 

@@ -1,3 +1,4 @@
+import type { StepReplaySnapshot } from '../main/recording/step-replay';
 import type { RecordingSnapshot } from '../main/recording/session';
 import type { LibrarySnapshot } from '../main/persistence/repository';
 import type { ReplaySnapshot } from '../main/replay/runner';
@@ -8,6 +9,7 @@ import type { AppCommand, SessionMenuId, VerifyAssertion } from './app-command';
 export type { AppCommand, VerifyAssertion } from './app-command';
 
 export interface AppSnapshot extends RecordingSnapshot {
+  stepReplay?: StepReplaySnapshot;
   verifyAssertion: VerifyAssertion;
   repickIndex?: number;
   library: LibrarySnapshot;
@@ -23,7 +25,7 @@ export interface TestronApi {
   onSessionMenuSelect(
     listener: (selection: { menu: SessionMenuId; id: string }) => void,
   ): () => void;
-  onTargetUrl(listener: (url: string) => void): () => void;
+  onTargetUrl(listener: (url: string, recreate?: boolean) => void): () => void;
   /** Panel views: the state to draw. */
   onRecordState(listener: (state: RecordPanelState) => void): () => void;
   /** Panel views: report an interaction back to the record screen. */

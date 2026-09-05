@@ -2,7 +2,8 @@ import type { Step } from '@testron/domain/steps/schema';
 
 /** Replace a mistakenly recorded action with the assertion it most likely meant. */
 export const convertStepToAssertion = (step: Step, currentUrl: string): Step => {
-  if (step.kind === 'assertElement' || step.kind === 'assertUrlPath') return step;
+  if (step.kind === 'assertElement' || step.kind === 'assertUrlPath' || step.kind === 'code')
+    return step;
 
   if (step.kind === 'navigate') {
     let expected = '/';

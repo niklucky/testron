@@ -10,6 +10,14 @@ const quote = (value: string): string =>
     .replaceAll('\u2028', '\\u2028')
     .replaceAll('\u2029', '\\u2029')}'`;
 
+export const requiredEnvSource = [
+  'const requiredEnv = (name: string): string => {',
+  '  const value = process.env[name];',
+  '  if (!value) throw new Error(`Missing required environment variable: ${name}`);',
+  '  return value;',
+  '};',
+].join('\n');
+
 export const generateLocator = (locator: Locator): string => {
   switch (locator.strategy) {
     case 'testId':
@@ -34,8 +42,11 @@ export const generateLocator = (locator: Locator): string => {
 };
 
 export const generatePlaywright = (title: string, steps: readonly Step[]): string => {
-  const hasAssertions = steps.some((step) => step.kind.startsWith('assert'));
-  const hasVariables = steps.some((step) => step.kind === 'fill' && step.variable);
+  const hasAssertions = steps.some(
+    (step) =>
+      step.kind.startsWith('assert') || (step.kind === 'code' && /\bexpect\s*\(/.test(step.code)),
+  );
+  const hasVariables = steps.some((step) => step.kind === 'fill' && (step.variable || step.secret));
   const body = steps.map((step) => {
     switch (step.kind) {
       case 'navigate':
@@ -46,7 +57,9 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
         return `  await ${generateLocator(step.target.primary)}.hover();`;
       case 'fill':
         return `  await ${generateLocator(step.target.primary)}.fill(${
-          step.variable ? `requiredEnv(${quote(step.variable.name)})` : quote(step.value)
+          step.secret || step.variable
+            ? `requiredEnv(${quote(step.secret?.environmentVariable ?? step.variable!.name)})`
+            : quote(step.value)
         });`;
       case 'selectOption':
         return `  await ${generateLocator(step.target.primary)}.selectOption(${quote(step.value)});`;
@@ -90,21 +103,17 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
       }
       case 'assertUrlPath':
         return `  await expect(page).toHaveURL((url) => url.pathname === ${quote(step.expected)});`;
+      case 'code':
+        return step.code
+          .split('\n')
+          .map((line) => `  ${line}`)
+          .join('\n');
     }
   });
 
   return [
     `import { test${hasAssertions ? ', expect' : ''} } from '@playwright/test';`,
-    ...(hasVariables
-      ? [
-          '',
-          'const requiredEnv = (name: string): string => {',
-          '  const value = process.env[name];',
-          '  if (!value) throw new Error(`Missing required environment variable: ${name}`);',
-          '  return value;',
-          '};',
-        ]
-      : []),
+    ...(hasVariables ? ['', requiredEnvSource] : []),
     '',
     `test(${quote(title)}, async ({ page }) => {`,
     ...body,

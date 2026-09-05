@@ -1,4 +1,5 @@
 import { useTranslation } from '@warpunit/slang-react';
+import { SourceEditor } from '@testron/ui/source-editor';
 import { useState, type ReactNode } from 'react';
 
 import { Badge, Button, IconButton, Kbd } from '../../ui/design';
@@ -55,12 +56,9 @@ const Sheet = ({
 };
 
 /**
- * The generated spec.
- *
- * Read-only until you say otherwise, because the arrow only points one way:
- * steps generate source, and nothing reads source back into steps. Detaching
- * is a real decision — the board stops driving the file — so it is a button
- * with a warning next to it, not an editable textarea you can fall into.
+ * The Playwright document. Source-first tests edit it directly and parse the
+ * manual board from it. The detached branch remains for legacy callers that
+ * still explicitly separate generated source from their board.
  */
 export const SourceSheet = ({
   lines,
@@ -75,6 +73,8 @@ export const SourceSheet = ({
   canDetach = true,
   onCopy,
   layout = 'modal',
+  sourceFirst = false,
+  onSourceFocusChange,
 }: {
   lines: CodeLine[];
   file: string;
@@ -88,6 +88,8 @@ export const SourceSheet = ({
   canDetach?: boolean;
   onCopy?: () => void;
   layout?: 'modal' | 'docked';
+  sourceFirst?: boolean;
+  onSourceFocusChange?: (focused: boolean) => void;
 }) => {
   const { t } = useTranslation();
   const content = (
@@ -109,7 +111,15 @@ export const SourceSheet = ({
         />
       </header>
       <div className="ui-scroll min-h-0 flex-1 overflow-auto border-b border-line-soft bg-plane">
-        {detached ? (
+        {sourceFirst ? (
+          <SourceEditor
+            value={source}
+            onChange={onSource}
+            onFocusChange={onSourceFocusChange}
+            ariaLabel={t('test_source')}
+            className="h-[420px]"
+          />
+        ) : detached ? (
           <textarea
             aria-label={t('test_source')}
             value={source}
@@ -123,7 +133,24 @@ export const SourceSheet = ({
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 px-4 py-3">
-        {detached ? (
+        {sourceFirst ? (
+          <>
+            <Badge tone="good" icon="check">
+              Source of truth
+            </Badge>
+            <span className="text-ink-3">Manual steps are parsed from this Playwright test</span>
+            <Button
+              className="ml-auto"
+              icon="copy"
+              onClick={() => {
+                if (onCopy) onCopy();
+                else void navigator.clipboard?.writeText(source);
+              }}
+            >
+              {t('copy')}
+            </Button>
+          </>
+        ) : detached ? (
           <>
             <Badge tone="warning" icon="alert">
               {t('detached')}

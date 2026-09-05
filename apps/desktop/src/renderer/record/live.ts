@@ -1,3 +1,4 @@
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
 import type { Locator } from '@testron/domain/locators/schema';
 import type { Step } from '@testron/domain/steps/schema';
 
@@ -161,20 +162,37 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           locator: '',
           value: step.expected,
         };
+      case 'code':
+        return {
+          ...common,
+          kind: 'code',
+          label: step.reason,
+          locator: '',
+          value: step.code,
+          warning: step.reason,
+        };
     }
   });
 };
 
 /** Preserve the backend's canonical source while tagging its one action line per step. */
 export const presentSource = (source: string, steps: readonly RecordedStep[]): CodeLine[] => {
+  const parsed = parsePlaywright(source);
   let stepIndex = 0;
+  let offset = 0;
   return source
     .replace(/\n$/, '')
     .split('\n')
-    .map((text) => ({
-      text,
-      ...(/^ {2}await /.test(text) && steps[stepIndex] ? { stepId: steps[stepIndex++].id } : {}),
-    }));
+    .map((text) => {
+      const lineStart = offset;
+      offset += text.length + 1;
+      let stepId: string | undefined;
+      while (stepIndex < parsed.steps.length && parsed.steps[stepIndex]!.start < offset) {
+        if (parsed.steps[stepIndex]!.start >= lineStart) stepId ??= steps[stepIndex]?.id;
+        stepIndex++;
+      }
+      return { text, ...(stepId ? { stepId } : {}) };
+    });
 };
 
 export const recordingContext = (snapshot: AppSnapshot) => {

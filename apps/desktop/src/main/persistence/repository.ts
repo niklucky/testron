@@ -1,3 +1,4 @@
+import { renamePlaywrightTestSource } from '@testron/domain/codegen/parse-playwright';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -505,7 +506,13 @@ export class TestronRepository {
     if (draft)
       this.writeDraft(testId, {
         ...draft,
-        content: { ...draft.content, title: title.trim() },
+        content: {
+          ...draft.content,
+          title: title.trim(),
+          ...(draft.content.source === undefined
+            ? {}
+            : { source: renamePlaywrightTestSource(draft.content.source, title.trim()) }),
+        },
         localUpdatedAt: now,
         syncStatus: draft.testId ? 'pending' : 'local',
       });
@@ -544,9 +551,10 @@ export class TestronRepository {
       .map((row) => redactStepSecrets(stepSchema.parse(JSON.parse(String(row.payload)))));
   }
 
-  replaceSteps(testId: string, steps: readonly Step[]): void {
-    const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
+  replaceSource(testId: string, source: string, steps: readonly Step[], title?: string): void {
     const previous = this.getDraft(testId);
+    if (!previous) throw new Error('The test draft was not found.');
+    const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
     const now = new Date().toISOString();
     this.database.exec('BEGIN IMMEDIATE');
     try {
@@ -555,17 +563,20 @@ export class TestronRepository {
         'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
       );
       validated.forEach((step, position) => insert.run(testId, position, JSON.stringify(step)));
-      this.database.prepare('UPDATE tests SET updated_at = ? WHERE id = ?').run(now, testId);
-      if (previous)
-        this.writeDraft(testId, {
-          ...previous,
-          content: {
-            ...previous.content,
-            steps: this.reconcileRevisionSteps(previous.content.steps, validated),
-          },
-          localUpdatedAt: now,
-          syncStatus: previous.testId ? 'pending' : 'local',
-        });
+      this.database
+        .prepare('UPDATE tests SET title = COALESCE(?, title), updated_at = ? WHERE id = ?')
+        .run(title?.trim() || null, now, testId);
+      this.writeDraft(testId, {
+        ...previous,
+        content: {
+          ...previous.content,
+          ...(title?.trim() ? { title: title.trim() } : {}),
+          source,
+          steps: this.reconcileRevisionSteps(previous.content.steps, validated),
+        },
+        localUpdatedAt: now,
+        syncStatus: previous.testId ? 'pending' : 'local',
+      });
       this.database.exec('COMMIT');
     } catch (error) {
       this.database.exec('ROLLBACK');

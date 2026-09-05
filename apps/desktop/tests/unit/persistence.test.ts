@@ -1,3 +1,5 @@
+import { generatePlaywright } from '@testron/domain/codegen/playwright';
+import type { Step } from '@testron/domain/steps/schema';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,6 +9,11 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { TestronRepository } from '../../src/main/persistence/repository';
+
+const saveSource = (repository: TestronRepository, testId: string, steps: Step[]) => {
+  const title = repository.getDraft(testId)!.content.title;
+  repository.replaceSource(testId, generatePlaywright(title, steps), steps);
+};
 
 const temporaryDirectories: string[] = [];
 
@@ -29,7 +36,8 @@ describe('TestronRepository', () => {
       'data-qa',
     );
     const test = repository.createTest(project.id, [environment.id], 'submit an order');
-    repository.replaceSteps(test.id, [
+    const source = `import { test } from '@playwright/test';\n\ntest('submit an order', async ({ page }) => {\n  await page.goto('http://127.0.0.1:4174/');\n});\n`;
+    repository.replaceSource(test.id, source, [
       {
         version: 1,
         kind: 'navigate',
@@ -49,6 +57,7 @@ describe('TestronRepository', () => {
       prerequisites: ['Signed in as an administrator', 'Feature enabled'],
     });
     expect(reopened.loadSteps(test.id)).toHaveLength(1);
+    expect(reopened.getDraft(test.id)?.content.source).toBe(source);
     reopened.close();
   });
 
@@ -221,7 +230,7 @@ describe('TestronRepository', () => {
       'data-testid',
     );
     const test = repository.createTest(project.id, [environment.id], 'sign in');
-    repository.replaceSteps(test.id, [
+    saveSource(repository, test.id, [
       {
         version: 1,
         kind: 'fill',
@@ -256,7 +265,7 @@ describe('TestronRepository', () => {
       'data-testid',
     );
     const test = repository.createTest(project.id, [environment.id], 'sign in');
-    repository.replaceSteps(test.id, [
+    saveSource(repository, test.id, [
       {
         version: 1,
         kind: 'fill',
@@ -291,7 +300,7 @@ describe('TestronRepository', () => {
       'data-testid',
     );
     const test = repository.createTest(project.id, [environment.id], 'legacy test');
-    repository.replaceSteps(test.id, [
+    saveSource(repository, test.id, [
       {
         version: 1,
         kind: 'navigate',

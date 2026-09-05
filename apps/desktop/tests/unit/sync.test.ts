@@ -1,3 +1,5 @@
+import { generatePlaywright } from '@testron/domain/codegen/playwright';
+import type { Step } from '@testron/domain/steps/schema';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -9,6 +11,11 @@ import type { TestSnapshot, WorkspaceSnapshot } from '@testron/protocol';
 import { TestronRepository } from '../../src/main/persistence/repository';
 import { DesktopSyncCoordinator } from '../../src/main/sync/coordinator';
 import type { DesktopServerClient } from '../../src/main/sync/server-client';
+
+const saveSource = (repository: TestronRepository, testId: string, steps: Step[]) => {
+  const title = repository.getDraft(testId)!.content.title;
+  repository.replaceSource(testId, generatePlaywright(title, steps), steps);
+};
 
 const directories: string[] = [];
 const repositories: TestronRepository[] = [];
@@ -154,7 +161,7 @@ describe('online-first desktop synchronization', () => {
       'data-testid',
     );
     const test = local.createTest(project.id, [environment.id], 'checkout');
-    local.replaceSteps(test.id, [step()]);
+    saveSource(local, test.id, [step()]);
     const remote = fakeServer();
     const coordinator = new DesktopSyncCoordinator(local, remote.client, '0.0.1');
 
@@ -188,11 +195,11 @@ describe('online-first desktop synchronization', () => {
       'data-testid',
     );
     const test = local.createTest(project.id, [environment.id], 'checkout');
-    local.replaceSteps(test.id, [step()]);
+    saveSource(local, test.id, [step()]);
     const remote = fakeServer();
     const coordinator = new DesktopSyncCoordinator(local, remote.client, '0.0.1');
     await coordinator.flush();
-    local.replaceSteps(test.id, [step('https://example.test/cart')]);
+    saveSource(local, test.id, [step('https://example.test/cart')]);
     remote.client.saveTestRevision = async (request) => ({
       status: 'conflict',
       testId: request.testId,
@@ -215,12 +222,12 @@ describe('online-first desktop synchronization', () => {
       'data-testid',
     );
     const test = local.createTest(project.id, [environment.id], 'checkout');
-    local.replaceSteps(test.id, [
+    saveSource(local, test.id, [
       step('https://example.test/one'),
       step('https://example.test/two'),
     ]);
     const before = local.getDraft(test.id)!.content.steps;
-    local.replaceSteps(test.id, [
+    saveSource(local, test.id, [
       step('https://example.test/two'),
       step('https://example.test/edited'),
     ]);
@@ -239,7 +246,7 @@ describe('online-first desktop synchronization', () => {
       'data-testid',
     );
     const test = local.createTest(project.id, [environment.id], 'checkout');
-    local.replaceSteps(test.id, [step()]);
+    saveSource(local, test.id, [step()]);
     const remote = fakeServer();
     remote.client.createProject = async () => Promise.reject(new Error('network unavailable'));
 

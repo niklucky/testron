@@ -111,6 +111,7 @@ export interface LibrarySnapshot {
 }
 
 export interface AppSnapshot {
+  documentMutationError?: string;
   title: string;
   recording: boolean;
   status: 'idle' | 'recording' | 'paused' | 'finished';

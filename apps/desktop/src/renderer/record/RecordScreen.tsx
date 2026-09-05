@@ -1,6 +1,9 @@
+import { useSourceDraft } from '@testron/ui/source-draft';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
+import { SourceEditor } from '@testron/ui/source-editor';
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
@@ -10,7 +13,6 @@ import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
 import { convertStepToAssertion } from './assertion';
 import { clock, sourceText } from './codegen';
-import { CodePanel } from './CodePanel';
 import { GlassPanel } from './GlassPanel';
 import {
   createRecordHotkeyDefinitions,
@@ -75,9 +77,8 @@ const TestedWebsite = 'webview' as unknown as ComponentType<{
  * readings of the take docked at its edges. Opening a panel gives it real
  * space and resizes the tested page instead of covering its forms and text.
  *
- * Both panels are generated from one step list, so the manual steps and the
- * spec can never drift. Selecting in either lights up the other and points at
- * the element on the page.
+ * Playwright source is the recording's canonical document. Browser actions
+ * patch that document and the manual panel is parsed back from it.
  *
  * In Electron the tested site is an isolated webview inside this renderer's
  * DOM. In a plain browser, where webview is unavailable, a stand-in page is
@@ -95,6 +96,8 @@ export const RecordScreen = () => {
   // supplies a target. A fixture fallback here can finish loading after the
   // selected environment URL and incorrectly win the navigation race.
   const [url, setUrl] = useState('');
+  const [websiteSrc, setWebsiteSrc] = useState('');
+  const [websiteGeneration, setWebsiteGeneration] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [expandedId, setExpandedId] = useState<string>();
@@ -145,12 +148,35 @@ export const RecordScreen = () => {
     (profile) => profile.id === snapshot.library.selectedProfileId,
   );
   const lines = useMemo(() => presentSource(snapshot.source, steps), [snapshot.source, steps]);
+  const sourceEditor = useSourceDraft(
+    snapshot.library.selectedTestId ?? '',
+    snapshot.source,
+    (value, testId) =>
+      window.testron?.command({
+        type: 'update-source',
+        source: value,
+        ...(testId ? { testId } : {}),
+      }),
+  );
+  const sourceDraft = sourceEditor.value;
+  const [sourceParseError, setSourceParseError] = useState<string>();
+  useEffect(() => {
+    const timeout = setTimeout(() => setSourceParseError(parsePlaywright(sourceDraft).error), 500);
+    return () => clearTimeout(timeout);
+  }, [sourceDraft]);
   const repickingId =
     snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
+  useEffect(() => {
+    if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
+  }, [sourceParseError]);
 
   useEffect(() => {
     const unsubscribe = window.testron?.onSnapshot(setSnapshot);
-    const unsubscribeTargetUrl = window.testron?.onTargetUrl(setUrl);
+    const unsubscribeTargetUrl = window.testron?.onTargetUrl((target, recreate) => {
+      if (recreate) setWebsiteGeneration((generation) => generation + 1);
+      setUrl(target);
+      setWebsiteSrc(target);
+    });
     window.testron?.command({ type: 'request-snapshot' });
     return () => {
       unsubscribe?.();
@@ -163,7 +189,10 @@ export const RecordScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (snapshot.currentUrl) setUrl(snapshot.currentUrl);
+    if (snapshot.currentUrl) {
+      setUrl(snapshot.currentUrl);
+      setWebsiteSrc((current) => current || snapshot.currentUrl);
+    }
   }, [snapshot.currentUrl]);
 
   useEffect(() => {
@@ -175,6 +204,10 @@ export const RecordScreen = () => {
   useEffect(() => {
     setName(context.title);
   }, [snapshot.library.selectedTestId, context.title]);
+
+  useEffect(() => {
+    if (snapshot.warning) setLog(snapshot.warning);
+  }, [snapshot.warning]);
 
   useEffect(() => setVerifyAssertion(snapshot.verifyAssertion), [snapshot.verifyAssertion]);
 
@@ -222,6 +255,27 @@ export const RecordScreen = () => {
     window.testron?.command({ type: 'pause-recording' });
     setLog('Paused · the page is yours again, nothing is captured');
   };
+
+  const selectStep = (id: string) => {
+    const index = steps.findIndex((step) => step.id === id);
+    if (index < 0) return;
+    setSelectedId(id);
+    window.testron?.command({ type: 'select-step', index });
+  };
+  useEffect(() => {
+    const replay = snapshot.stepReplay;
+    if (!replay || replay.status === 'idle') return;
+    if (replay.selectedIndex !== undefined) setSelectedId(steps[replay.selectedIndex]?.id);
+    if (replay.status === 'failed') setLog(`Replay stopped · ${replay.error}`);
+    else if (replay.status === 'syncing')
+      setLog(`Replaying to step ${(replay.selectedIndex ?? -1) + 1}…`);
+    else
+      setLog(
+        replay.appliedIndex < 0
+          ? 'Browser reset to the starting page'
+          : `Browser synchronized · step ${replay.appliedIndex + 1}`,
+      );
+  }, [snapshot.stepReplay, steps]);
 
   const remove = (id: string) => {
     const index = steps.findIndex((step) => step.id === id);
@@ -438,12 +492,15 @@ export const RecordScreen = () => {
         repickingId,
         steps,
         lines,
+        source: snapshot.source,
+        testId: snapshot.library.selectedTestId,
         layout: current,
       },
     });
   };
 
   const copySource = () => {
+    sourceEditor.flush();
     if (hosted) window.testron?.command({ type: 'copy-source' });
     else void navigator.clipboard?.writeText(sourceText(lines));
     setLog('Spec copied to the clipboard');
@@ -483,8 +540,16 @@ export const RecordScreen = () => {
         case 'ready':
           publish();
           break;
+        case 'update-source':
+          window.testron?.command({ type: 'pause-recording' });
+          window.testron?.command({
+            type: 'update-source',
+            source: event.source,
+            testId: event.testId,
+          });
+          break;
         case 'select':
-          setSelectedId(event.id);
+          selectStep(event.id);
           break;
         case 'expand':
           setExpandedId((current) => (current === event.id ? undefined : event.id));
@@ -620,9 +685,10 @@ export const RecordScreen = () => {
       <div ref={planeRef} data-plane className="relative min-h-0 flex-1">
         <div className="absolute inset-y-0" style={websiteInset}>
           {hosted ? (
-            url ? (
+            websiteSrc ? (
               <TestedWebsite
-                src={url}
+                key={websiteGeneration}
+                src={websiteSrc}
                 className="h-full w-full"
                 partition={TESTED_WEBSITE_PARTITION}
               />
@@ -676,7 +742,7 @@ export const RecordScreen = () => {
               repickingId={repickingId}
               viewMode={stepViewMode}
               onViewModeChange={setStepViewMode}
-              onSelect={setSelectedId}
+              onSelect={selectStep}
               onExpand={(id) => setExpandedId((current) => (current === id ? undefined : id))}
               onUseAlternative={useAlternative}
               onEditLocator={editLocator}
@@ -704,7 +770,18 @@ export const RecordScreen = () => {
               <IconButton icon="copy" size="sm" label={t('copy_the_spec')} onClick={copySource} />
             }
           >
-            <CodePanel lines={lines} selectedId={selectedId} onSelectStep={setSelectedId} />
+            <SourceEditor
+              value={hosted ? sourceDraft : sourceText(lines)}
+              ariaLabel={t('test_source')}
+              onFocusChange={sourceEditor.onFocusChange}
+              onChange={(value) => {
+                if (!hosted) return;
+                if (status === 'recording') window.testron?.command({ type: 'pause-recording' });
+                sourceEditor.onChange(value);
+                setLog('Source edited · select a step to synchronize the browser');
+              }}
+              className="h-full"
+            />
           </GlassPanel>
         )}
 

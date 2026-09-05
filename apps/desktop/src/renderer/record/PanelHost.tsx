@@ -10,7 +10,8 @@ import type {
 } from '../../preload/record';
 import { Badge, IconButton } from '../design';
 import { clock } from './codegen';
-import { CodePanel } from './CodePanel';
+import { SourceEditor } from '@testron/ui/source-editor';
+import { useSourceDraft } from '@testron/ui/source-draft';
 import { GlassPanel } from './GlassPanel';
 import { recordPanelShortcutIds, recordShortcuts } from './hotkeys';
 import { StepsPanel } from './StepsPanel';
@@ -68,6 +69,10 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
         },
       },
     })),
+  );
+
+  const editor = useSourceDraft(state?.testId ?? '', state?.source ?? '', (source, testId) =>
+    send({ type: 'update-source', source, ...(testId ? { testId } : {}) }),
   );
 
   const resizing = state?.layout.resizing === panel;
@@ -129,11 +134,7 @@ export const PanelHost = ({ panel }: { panel: PanelId }) => {
             onDelete={(id) => send({ type: 'delete', id })}
           />
         ) : (
-          <CodePanel
-            lines={state?.lines ?? []}
-            selectedId={state?.selectedId}
-            onSelectStep={(id) => send({ type: 'select', id })}
-          />
+          <SourceEditor {...editor} ariaLabel={t('test_source')} className="h-full" />
         )}
       </GlassPanel>
     </main>

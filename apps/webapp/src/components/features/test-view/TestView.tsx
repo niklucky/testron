@@ -1,5 +1,6 @@
+import { useSourceDraft } from '@testron/ui/source-draft';
 import { useTranslation } from '@warpunit/slang-react';
-import { generatePlaywright } from '@testron/domain/codegen/playwright';
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from '@tanstack/react-hotkeys';
 
@@ -138,13 +139,21 @@ export const TestView = () => {
   );
   const board = useMemo(() => liveTestBoard(liveSnapshot), [liveSnapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
-  const source = useMemo(
-    () =>
-      snapshot.source.trim()
-        ? snapshot.source
-        : generatePlaywright(snapshot.title || detail.name, snapshot.steps),
-    [snapshot.source, snapshot.title, snapshot.steps, detail.name],
+  const source = snapshot.source;
+  const sourceEditor = useSourceDraft(
+    snapshot.library.selectedTestId ?? '',
+    source,
+    (value, testId) => window.testron?.command({ type: 'update-source', source: value, testId }),
   );
+  const sourceDraft = sourceEditor.value;
+  const [sourceParseError, setSourceParseError] = useState<string>();
+  useEffect(() => {
+    const timeout = setTimeout(() => setSourceParseError(parsePlaywright(sourceDraft).error), 500);
+    return () => clearTimeout(timeout);
+  }, [sourceDraft]);
+  useEffect(() => {
+    if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
+  }, [sourceParseError]);
   const lines = useMemo(() => presentSource(source, fullSteps), [source, fullSteps]);
   const selectedTestId = snapshot.library.selectedTestId;
   const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
@@ -205,6 +214,10 @@ export const TestView = () => {
       );
     else setLog(`${detail.name} · ${snapshot.steps.length} persisted steps`);
   }, [loaded, selectedTestId, replay, snapshot.steps.length, detail]);
+
+  useEffect(() => {
+    if (snapshot.documentMutationError) setLog(snapshot.documentMutationError);
+  }, [snapshot]);
 
   const originalIndex = (id: string): number => fullSteps.findIndex((step) => step.id === id);
 
@@ -878,15 +891,17 @@ export const TestView = () => {
             lines={lines}
             file={detail.file}
             detached={false}
-            source={source}
+            source={sourceDraft}
             canDetach={false}
             onDetach={() => undefined}
-            onSource={() => undefined}
+            onSource={sourceEditor.onChange}
+            onSourceFocusChange={sourceEditor.onFocusChange}
             onReattach={() => undefined}
-            onCopy={() => void navigator.clipboard?.writeText(source)}
+            onCopy={() => void navigator.clipboard?.writeText(sourceDraft)}
             onClose={() => setSourceOpen(false)}
             onLog={setLog}
             layout={wideSourceLayout ? 'docked' : 'modal'}
+            sourceFirst
           />
         )}
       </div>
