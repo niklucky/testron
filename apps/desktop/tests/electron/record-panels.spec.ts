@@ -1934,3 +1934,104 @@ test('records live website interactions and saves the new test', async () => {
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('edits numeric thresholds and text comparisons in the recorder panel', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  try {
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    await appWindow.evaluate(() =>
+      window.testron.command({
+        type: 'replace-steps',
+        steps: [
+          {
+            version: 1,
+            kind: 'assertElement',
+            target: { primary: { strategy: 'id', value: 'score' }, alternatives: [] },
+            metadata: { recordedAt: new Date(0).toISOString() },
+            assertion: { type: 'number', operator: 'equals', expected: 69 },
+          },
+          {
+            version: 1,
+            kind: 'assertElement',
+            target: { primary: { strategy: 'id', value: 'message' }, alternatives: [] },
+            metadata: { recordedAt: new Date(1).toISOString() },
+            assertion: { type: 'text', match: 'equals', expected: 'Welcome Ada' },
+          },
+        ],
+      }),
+    );
+    await appWindow.getByText('Expect “score” number = 69', { exact: true }).click();
+    await appWindow.getByLabel('Assertion comparison').selectOption('numberAtLeast');
+    await appWindow.getByLabel('Expected value', { exact: true }).fill('42');
+    await appWindow.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps[0])
+      .toMatchObject({
+        assertion: { type: 'number', operator: 'atLeast', expected: 42 },
+      });
+    await appWindow.getByText('Expect “message” to read “Welcome Ada”', { exact: true }).click();
+    await appWindow.getByLabel('Assertion comparison').selectOption('textContains');
+    await appWindow.getByLabel('Expected value', { exact: true }).fill('Ada');
+    await appWindow.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps[1])
+      .toMatchObject({
+        assertion: { type: 'text', match: 'contains', expected: 'Ada' },
+      });
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('deleting and selecting steps during recording preserves the live page and capture', async () => {
+  const { electronApp, appWindow, dataDirectory } = await openRecordScreen();
+  const websiteEval = (script: string) =>
+    electronApp.evaluate(async ({ webContents }, script) => {
+      const website = webContents
+        .getAllWebContents()
+        .find((contents) => contents.getType() === 'webview');
+      if (!website) throw new Error('Recorder website is missing');
+      return website.executeJavaScript(script);
+    }, script);
+  const fill = (value: string) =>
+    websiteEval(`(() => {
+    const input = document.querySelector('#email');
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+  })()`);
+  try {
+    await expect.poll(() => websiteEval("Boolean(document.querySelector('#email'))")).toBe(true);
+    await appWindow.getByRole('button', { name: /^Record ?R$/ }).click();
+    await expect.poll(async () => (await appSnapshot(appWindow)).recording).toBe(true);
+    await fill('first@example.test');
+    await expect.poll(async () => (await appSnapshot(appWindow)).steps.length).toBe(2);
+    await fill('second@example.test');
+    await expect.poll(async () => (await appSnapshot(appWindow)).steps.length).toBe(3);
+    await websiteEval(`document.body.dataset.liveRecording = 'preserved'`);
+
+    await appWindow.locator('ol > li > [role="button"]').nth(2).hover();
+    await appWindow.getByLabel('Delete step 3', { exact: true }).click();
+    await expect.poll(async () => (await appSnapshot(appWindow)).steps.length).toBe(2);
+    await appWindow.locator('ol > li > [role="button"]').first().click();
+    const state = await appSnapshot(appWindow);
+    expect(state.recording).toBe(true);
+    expect(state.status).toBe('recording');
+    expect(state.stepReplay?.status).toBe('idle');
+    expect(
+      await websiteEval(
+        `({ marker: document.body.dataset.liveRecording, email: document.querySelector('#email').value })`,
+      ),
+    ).toEqual({ marker: 'preserved', email: 'second@example.test' });
+
+    await fill('third@example.test');
+    await expect
+      .poll(async () => (await appSnapshot(appWindow)).steps.at(-1))
+      .toMatchObject({ kind: 'fill', value: 'third@example.test' });
+    expect((await appSnapshot(appWindow)).recording).toBe(true);
+  } finally {
+    await closeElectron(electronApp);
+    rmSync(dataDirectory, { recursive: true, force: true });
+  }
+});

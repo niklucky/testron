@@ -5,6 +5,12 @@ export const verifyAssertionSchema = z.enum([
   'hidden',
   'textContains',
   'textEquals',
+  'numberEquals',
+  'numberGreaterThan',
+  'numberAtLeast',
+  'numberLessThan',
+  'numberAtMost',
+
   'value',
   'enabled',
   'disabled',

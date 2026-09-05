@@ -1,3 +1,4 @@
+import { numberComparisons } from '@testron/domain/steps/numbers';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
@@ -415,6 +416,11 @@ export const BrowserBar = ({
         >
           <option value="visible">{t('visible')}</option>
           <option value="hidden">{t('hidden')}</option>
+          {Object.entries(numberComparisons).map(([value, option]) => (
+            <option key={value} value={value}>
+              {option.label}
+            </option>
+          ))}
           <option value="textContains">{t('text_contains')}</option>
           <option value="textEquals">{t('text_equals')}</option>
           <option value="value">{t('input_value')}</option>

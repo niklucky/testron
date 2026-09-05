@@ -1,3 +1,4 @@
+import { numericAssertionSource } from '../steps/numbers';
 import type { Locator } from '../locators/schema';
 import type { Step } from '../steps/schema';
 
@@ -94,6 +95,8 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
             return `  await expect(${locator}).toHaveAttribute(${quote(step.assertion.name)}, ${quote(step.assertion.expected)});`;
           case 'class':
             return `  await expect(${locator}).toHaveClass(${quote(step.assertion.expected)});`;
+          case 'number':
+            return `  ${numericAssertionSource(locator, step.assertion.operator, step.assertion.expected)}`;
           case 'count':
             return step.assertion.operator === 'equals'
               ? `  await expect(${locator}).toHaveCount(${step.assertion.expected});`

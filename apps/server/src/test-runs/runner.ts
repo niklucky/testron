@@ -1,3 +1,4 @@
+import { numberMatchers } from '@testron/domain/steps/numbers';
 import {
   playwrightReplayError,
   parsePlaywright,
@@ -150,6 +151,14 @@ const executeStep = async (
         case 'value':
           await expect(locator).toHaveValue(step.assertion.expected);
           break;
+        case 'number': {
+          const comparison = expect.poll(async () => {
+            const value = Number((await locator.textContent())?.trim() || NaN);
+            return Number.isFinite(value) ? value : NaN;
+          });
+          await comparison[numberMatchers[step.assertion.operator]](step.assertion.expected);
+          break;
+        }
         case 'count':
           if (step.assertion.operator === 'equals')
             await expect(locator).toHaveCount(step.assertion.expected);

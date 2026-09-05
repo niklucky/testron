@@ -1,3 +1,6 @@
+import { isNumberComparison, numberComparisons } from '@testron/domain/steps/numbers';
+import type { AssertionPatch } from './assertion';
+import type { VerifyAssertion } from '../../preload/verify-assertion';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useState } from 'react';
 
@@ -43,7 +46,7 @@ export const StepsPanel = ({
   onExpand: (id: string) => void;
   onUseAlternative: (id: string, locator: string) => void;
   onEditLocator: (id: string, locator: string) => void;
-  onEditAssertion: (id: string, patch: { attributeName?: string; expected: string }) => void;
+  onEditAssertion: (id: string, patch: AssertionPatch) => void;
   onRepick: (id: string) => void;
   onCancelRepick: () => void;
   onConvertToAssertion: (id: string) => void;
@@ -151,10 +154,9 @@ export const StepsPanel = ({
                     <LocatorEditor id={step.id} locator={step.locator} onSave={onEditLocator} />
                   )}
 
-                  {viewMode === 'developer' &&
-                    (step.assertion === 'attribute' || step.assertion === 'class') && (
-                      <AssertionEditor step={step} onSave={onEditAssertion} />
-                    )}
+                  {(open || on) && step.kind === 'assert' && (
+                    <AssertionEditor step={step} onSave={onEditAssertion} />
+                  )}
 
                   {viewMode === 'developer' && step.warning && (
                     <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
@@ -253,22 +255,37 @@ const AssertionEditor = ({
   onSave,
 }: {
   step: RecordedStep;
-  onSave: (id: string, patch: { attributeName?: string; expected: string }) => void;
+  onSave: (id: string, patch: AssertionPatch) => void;
 }) => {
   const { t } = useTranslation();
   const [attributeName, setAttributeName] = useState(step.assertionAttributeName ?? '');
   const [expected, setExpected] = useState(step.value ?? '');
+  const [comparison, setComparison] = useState(step.assertion);
   useEffect(() => {
     setAttributeName(step.assertionAttributeName ?? '');
     setExpected(step.value ?? '');
-  }, [step.assertionAttributeName, step.value]);
+    setComparison(step.assertion);
+  }, [step.assertionAttributeName, step.value, step.assertion]);
 
-  if (step.assertion !== 'attribute' && step.assertion !== 'class') return null;
+  const numeric = isNumberComparison(step.assertion);
+  const text = step.assertion === 'textContains' || step.assertion === 'textEquals';
+  const count = step.assertion === 'countExactly' || step.assertion === 'countAtLeast';
+  if (
+    !numeric &&
+    !text &&
+    !count &&
+    !['attribute', 'class', 'value'].includes(step.assertion ?? '')
+  )
+    return null;
 
   const changed =
+    comparison !== step.assertion ||
     expected !== (step.value ?? '') ||
     (step.assertion === 'attribute' && attributeName !== (step.assertionAttributeName ?? ''));
-  const valid = step.assertion === 'class' || attributeName.trim().length > 0;
+  const valid =
+    (step.assertion !== 'attribute' || attributeName.trim().length > 0) &&
+    (!(numeric || count) || (expected.trim().length > 0 && Number.isFinite(Number(expected)))) &&
+    (!count || (Number.isInteger(Number(expected)) && Number(expected) >= 0));
 
   return (
     <form
@@ -280,9 +297,34 @@ const AssertionEditor = ({
         onSave(step.id, {
           ...(step.assertion === 'attribute' ? { attributeName: attributeName.trim() } : {}),
           expected,
+          ...(text || numeric ? { assertion: comparison } : {}),
         });
       }}
     >
+      {(text || numeric) && (
+        <label className="grid gap-1 text-ink-3">
+          Comparison
+          <select
+            aria-label="Assertion comparison"
+            value={comparison}
+            onChange={(event) => setComparison(event.target.value as VerifyAssertion)}
+            className="rounded border border-line bg-plane px-1 py-1 text-ink"
+          >
+            {text ? (
+              <>
+                <option value="textEquals">Text equals</option>
+                <option value="textContains">Text contains</option>
+              </>
+            ) : (
+              Object.entries(numberComparisons).map(([value, option]) => (
+                <option key={value} value={value}>
+                  {option.label}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+      )}
       {step.assertion === 'attribute' && (
         <label className="grid grid-cols-[76px_minmax(0,1fr)] items-center gap-1 text-ink-3">
           <span>{t('attribute')}</span>
@@ -297,7 +339,14 @@ const AssertionEditor = ({
       <label className="grid grid-cols-[76px_minmax(0,1fr)_auto] items-center gap-1 text-ink-3">
         <span>{step.assertion === 'class' ? t('class') : t('Expected')}</span>
         <input
-          aria-label={step.assertion === 'class' ? 'Expected class' : 'Expected attribute value'}
+          aria-label={
+            step.assertion === 'class'
+              ? 'Expected class'
+              : step.assertion === 'attribute'
+                ? 'Expected attribute value'
+                : 'Expected value'
+          }
+          inputMode={numeric || count ? 'decimal' : undefined}
           value={expected}
           onChange={(event) => setExpected(event.target.value)}
           className="ui-mono min-w-0 rounded border border-line bg-plane px-1 py-1 text-ink outline-none focus:border-accent"

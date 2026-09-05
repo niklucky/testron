@@ -635,6 +635,7 @@
   "step_expect_target_min_count": "Expect “{{value1}}” to have at least {{value2}} matches",
   "step_expect_target_attribute": "Expect “{{value1}}” to have attribute “{{value2}}”",
   "step_expect_target_class": "Expect “{{value1}}” to have class “{{value2}}”",
+  "step_expect_target_number": "Expect “{{value1}}” number {{value2}} {{value3}}",
   "step_expect_target_to_contain": "Expect “{{value1}}” to contain “{{value2}}”",
   "step_expect_target_to_hold": "Expect “{{value1}}” to hold “{{value2}}”",
   "step_expect_target_to_read": "Expect “{{value1}}” to read “{{value2}}”",

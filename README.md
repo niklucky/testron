@@ -31,6 +31,13 @@ choose a nearby element in **Current selection**, or search a DOM tree in
 **Search on page**. Use **Confirm** to commit. **Cancel**, **Escape**, or clicking
 outside exits without committing; activate Hover, Assert, or Repick again to
 target another element.
+Choose **Text equals** or **Text contains** for string assertions, or **Number =**,
+**Number >**, **Number >=**, **Number <**, or **Number <=** to compare numeric text.
+Select the recorded assertion to edit its comparison and expected value, then **Save**.
+For example, change a recorded `69` to **Number >=** with an expected value of `42`.
+Numeric assertions trim surrounding whitespace and accept signed decimals; empty text,
+nonfinite values, and text containing units or currency symbols do not pass.
+
 Normal recording does not open the picker on hover. Use **Alt/Option-click** to
 edit a locator (or choose a profile variable) before recording an interaction,
 or use the recorded step's Repick action afterward.
