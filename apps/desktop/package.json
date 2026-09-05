@@ -1,7 +1,7 @@
 {
   "name": "@testron/desktop",
   "productName": "Testron",
-  "version": "0.0.1",
+  "version": "0.6.0",
   "description": "The Testron Electron desktop application",
   "main": ".vite/build/main.js",
   "private": true,
