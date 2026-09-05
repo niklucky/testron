@@ -1,6 +1,8 @@
 import { useHotkeys } from '@tanstack/react-hotkeys';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
+import { SourceEditor } from '@testron/ui/source-editor';
 
 import type { AppSnapshot, VerifyAssertion } from '../../preload/api';
 import type { RecordLayout, RecordPanelEvent } from '../../preload/record';
@@ -10,7 +12,6 @@ import { Badge, Button, Icon, IconButton, Kbd, useTheme } from '../design';
 import { ProfileSheet } from '../profiles/ProfileSheet';
 import { convertStepToAssertion } from './assertion';
 import { clock, sourceText } from './codegen';
-import { CodePanel } from './CodePanel';
 import { GlassPanel } from './GlassPanel';
 import {
   createRecordHotkeyDefinitions,
@@ -75,9 +76,8 @@ const TestedWebsite = 'webview' as unknown as ComponentType<{
  * readings of the take docked at its edges. Opening a panel gives it real
  * space and resizes the tested page instead of covering its forms and text.
  *
- * Both panels are generated from one step list, so the manual steps and the
- * spec can never drift. Selecting in either lights up the other and points at
- * the element on the page.
+ * Playwright source is the recording's canonical document. Browser actions
+ * patch that document and the manual panel is parsed back from it.
  *
  * In Electron the tested site is an isolated webview inside this renderer's
  * DOM. In a plain browser, where webview is unavailable, a stand-in page is
@@ -107,6 +107,9 @@ export const RecordScreen = () => {
   const [editingTitle, setEditingTitle] = useState(false);
   const [name, setName] = useState('Untitled test');
   const [log, setLog] = useState('Ready · press Record and drive the page');
+  const [sourceDraft, setSourceDraft] = useState('');
+  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceFocused, setSourceFocused] = useState(false);
   const addressRef = useRef<HTMLInputElement>(null);
   const planeRef = useRef<HTMLDivElement>(null);
   const stepCountRef = useRef(0);
@@ -145,8 +148,32 @@ export const RecordScreen = () => {
     (profile) => profile.id === snapshot.library.selectedProfileId,
   );
   const lines = useMemo(() => presentSource(snapshot.source, steps), [snapshot.source, steps]);
+  const sourceParseError = useMemo(
+    () => (sourceDraft || sourceDirty ? parsePlaywright(sourceDraft).error : undefined),
+    [sourceDirty, sourceDraft],
+  );
   const repickingId =
     snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
+
+  useEffect(() => {
+    if (snapshot.source === sourceDraft) {
+      if (sourceDirty) setSourceDirty(false);
+      return;
+    }
+    if (!sourceDirty && !sourceFocused) setSourceDraft(snapshot.source);
+  }, [snapshot.source, sourceDirty, sourceDraft, sourceFocused]);
+
+  useEffect(() => {
+    if (sourceParseError) setLog(`Source syntax error · ${sourceParseError}`);
+  }, [sourceParseError]);
+
+  useEffect(() => {
+    if (!hosted || !sourceDirty) return;
+    const timeout = window.setTimeout(() => {
+      window.testron?.command({ type: 'update-source', source: sourceDraft });
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [hosted, sourceDraft, sourceDirty]);
 
   useEffect(() => {
     const unsubscribe = window.testron?.onSnapshot(setSnapshot);
@@ -704,7 +731,18 @@ export const RecordScreen = () => {
               <IconButton icon="copy" size="sm" label={t('copy_the_spec')} onClick={copySource} />
             }
           >
-            <CodePanel lines={lines} selectedId={selectedId} onSelectStep={setSelectedId} />
+            <SourceEditor
+              value={hosted ? sourceDraft : sourceText(lines)}
+              ariaLabel={t('test_source')}
+              onFocusChange={setSourceFocused}
+              onChange={(value) => {
+                if (!hosted) return;
+                if (status === 'recording') window.testron?.command({ type: 'pause-recording' });
+                setSourceDraft(value);
+                setSourceDirty(true);
+              }}
+              className="h-full"
+            />
           </GlassPanel>
         )}
 

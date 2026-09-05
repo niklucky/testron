@@ -128,6 +128,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
     step: stepSchema,
   }),
   z.object({ type: z.literal('replace-steps'), steps: stepsSchema }),
+  z.object({ type: z.literal('update-source'), source: z.string().max(2_000_000) }),
   z.object({
     type: z.literal('use-alternative-locator'),
     index: z.number().int().nonnegative(),

@@ -29,7 +29,8 @@ describe('TestronRepository', () => {
       'data-qa',
     );
     const test = repository.createTest(project.id, [environment.id], 'submit an order');
-    repository.replaceSteps(test.id, [
+    const source = `import { test } from '@playwright/test';\n\ntest('submit an order', async ({ page }) => {\n  await page.goto('http://127.0.0.1:4174/');\n});\n`;
+    repository.replaceSource(test.id, source, [
       {
         version: 1,
         kind: 'navigate',
@@ -49,6 +50,7 @@ describe('TestronRepository', () => {
       prerequisites: ['Signed in as an administrator', 'Feature enabled'],
     });
     expect(reopened.loadSteps(test.id)).toHaveLength(1);
+    expect(reopened.getDraft(test.id)?.content.source).toBe(source);
     reopened.close();
   });
 

@@ -1,4 +1,12 @@
 import type { WebWorkspaceSnapshot } from '@testron/protocol';
+import {
+  deletePlaywrightStepSource,
+  parsePlaywright,
+  renamePlaywrightTestSource,
+  replacePlaywrightStepSource,
+  rewritePlaywrightSteps,
+} from '@testron/domain/codegen/parse-playwright';
+import { generatePlaywright } from '@testron/domain/codegen/playwright';
 
 import type { AuthenticationRequest } from '../components/features/auth/authentication';
 import { mutationMeta, requestMeta } from './meta';
@@ -128,7 +136,7 @@ const snapshotFromWorkspace = (value: WebWorkspaceSnapshot): AppSnapshot => {
     currentUrl: environment?.baseUrl ?? '',
     steps: selected?.currentRevision.content.steps.map((entry) => entry.payload) ?? [],
     descriptions: [],
-    source: '',
+    source: selected?.currentRevision.content.source ?? '',
     captureMode: 'record',
     stepWarnings: [],
     canUndo: false,
@@ -161,30 +169,63 @@ const mutate = async (operation: Promise<unknown>) => {
   await refresh();
 };
 
-const enqueueStepMutation = createSerialMutationQueue(
+type DocumentMutation = StepMutationCommand | { type: 'update-source'; source: string };
+
+const enqueueDocumentMutation = createSerialMutationQueue(
   async ({
     testId,
     command,
     meta,
   }: {
     testId: string;
-    command: StepMutationCommand;
+    command: DocumentMutation;
     meta: ReturnType<typeof mutationMeta>;
   }) => {
     const current = workspace?.tests.find((item) => item.test.id === testId);
     if (!current) return;
-    const steps = applyStepMutation(
-      current.currentRevision.content.steps.map((entry) => entry.payload),
-      command,
-    );
-    if (!steps) return;
+    const previousSteps = current.currentRevision.content.steps;
+    const currentSource =
+      current.currentRevision.content.source ??
+      generatePlaywright(
+        current.currentRevision.content.title,
+        current.currentRevision.content.steps.map(({ payload }) => payload),
+      );
+    let source: string;
+    let steps;
+    let title = current.currentRevision.content.title;
+    if (command.type === 'update-source') {
+      source = command.source;
+      const parsed = parsePlaywright(source);
+      if (!parsed.error) {
+        title = parsed.title;
+        steps = reconcileRevisionSteps(
+          previousSteps,
+          parsed.steps.map(({ step }) => step),
+        );
+      } else steps = previousSteps;
+    } else {
+      const nextSteps = applyStepMutation(
+        previousSteps.map((entry) => entry.payload),
+        command,
+      );
+      if (!nextSteps) return;
+      source =
+        command.type === 'update-step'
+          ? replacePlaywrightStepSource(currentSource, command.index, command.step)
+          : command.type === 'delete-step'
+            ? deletePlaywrightStepSource(currentSource, command.index)
+            : rewritePlaywrightSteps(currentSource, nextSteps);
+      steps = reconcileRevisionSteps(previousSteps, nextSteps);
+    }
     const result = await trpcClient.test.saveRevision.mutate({
       meta,
       testId: current.test.id,
       baseRevision: current.test.currentRevision,
       content: {
         ...current.currentRevision.content,
-        steps: reconcileRevisionSteps(current.currentRevision.content.steps, steps),
+        title,
+        source,
+        steps,
       },
     });
     if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
@@ -286,12 +327,24 @@ const command = (input: AppCommand): void => {
     case 'update-step':
     case 'replace-steps': {
       if (!selectedTestId) break;
-      void enqueueStepMutation({
+      void enqueueDocumentMutation({
         testId: selectedTestId,
         command: input as StepMutationCommand,
         meta,
       }).catch((error: unknown) => {
         console.error('Could not save test steps.', error);
+        void refresh();
+      });
+      break;
+    }
+    case 'update-source': {
+      if (!selectedTestId) break;
+      void enqueueDocumentMutation({
+        testId: selectedTestId,
+        command: { type: 'update-source', source: value<string>(input, 'source') },
+        meta,
+      }).catch((error: unknown) => {
+        console.error('Could not save test source.', error);
         void refresh();
       });
       break;
@@ -490,6 +543,10 @@ const command = (input: AppCommand): void => {
       const environmentIds =
         value<string[] | undefined>(input, 'environmentIds') ??
         current.currentRevision.content.environmentIds;
+      const title = value<string>(input, 'title');
+      const source = current.currentRevision.content.source
+        ? renamePlaywrightTestSource(current.currentRevision.content.source, title)
+        : undefined;
       void trpcClient.test.saveRevision
         .mutate({
           meta,
@@ -497,7 +554,8 @@ const command = (input: AppCommand): void => {
           baseRevision: current.test.currentRevision,
           content: {
             ...current.currentRevision.content,
-            title: value(input, 'title'),
+            title,
+            ...(source ? { source } : {}),
             environmentIds,
           },
         })

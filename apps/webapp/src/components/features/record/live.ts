@@ -161,6 +161,15 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
           locator: '',
           value: step.expected,
         };
+      case 'code':
+        return {
+          ...common,
+          kind: 'code',
+          label: step.reason,
+          locator: '',
+          value: step.code,
+          warning: step.reason,
+        };
     }
   });
 };
@@ -171,10 +180,17 @@ export const presentSource = (source: string, steps: readonly RecordedStep[]): C
   return source
     .replace(/\n$/, '')
     .split('\n')
-    .map((text) => ({
-      text,
-      ...(/^ {2}await /.test(text) && steps[stepIndex] ? { stepId: steps[stepIndex++].id } : {}),
-    }));
+    .map((text) => {
+      const step = steps[stepIndex];
+      const beginsStep =
+        step?.kind === 'code'
+          ? text.trim() === step.value?.split('\n')[0]?.trim()
+          : /^ {2}await /.test(text);
+      return {
+        text,
+        ...(beginsStep && step ? { stepId: steps[stepIndex++]!.id } : {}),
+      };
+    });
 };
 
 export const recordingContext = (snapshot: AppSnapshot) => {

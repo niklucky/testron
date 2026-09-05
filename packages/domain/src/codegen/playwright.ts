@@ -34,7 +34,10 @@ export const generateLocator = (locator: Locator): string => {
 };
 
 export const generatePlaywright = (title: string, steps: readonly Step[]): string => {
-  const hasAssertions = steps.some((step) => step.kind.startsWith('assert'));
+  const hasAssertions = steps.some(
+    (step) =>
+      step.kind.startsWith('assert') || (step.kind === 'code' && /\bexpect\s*\(/.test(step.code)),
+  );
   const hasVariables = steps.some((step) => step.kind === 'fill' && step.variable);
   const body = steps.map((step) => {
     switch (step.kind) {
@@ -90,6 +93,11 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
       }
       case 'assertUrlPath':
         return `  await expect(page).toHaveURL((url) => url.pathname === ${quote(step.expected)});`;
+      case 'code':
+        return step.code
+          .split('\n')
+          .map((line) => `  ${line}`)
+          .join('\n');
     }
   });
 

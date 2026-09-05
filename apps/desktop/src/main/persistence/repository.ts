@@ -573,6 +573,39 @@ export class TestronRepository {
     }
   }
 
+  replaceSource(testId: string, source: string, steps: readonly Step[], title?: string): void {
+    const previous = this.getDraft(testId);
+    if (!previous) throw new Error('The test draft was not found.');
+    const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
+    const now = new Date().toISOString();
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.prepare('DELETE FROM test_steps WHERE test_id = ?').run(testId);
+      const insert = this.database.prepare(
+        'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
+      );
+      validated.forEach((step, position) => insert.run(testId, position, JSON.stringify(step)));
+      this.database
+        .prepare('UPDATE tests SET title = COALESCE(?, title), updated_at = ? WHERE id = ?')
+        .run(title?.trim() || null, now, testId);
+      this.writeDraft(testId, {
+        ...previous,
+        content: {
+          ...previous.content,
+          ...(title?.trim() ? { title: title.trim() } : {}),
+          source,
+          steps: this.reconcileRevisionSteps(previous.content.steps, validated),
+        },
+        localUpdatedAt: now,
+        syncStatus: previous.testId ? 'pending' : 'local',
+      });
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   getServerId(kind: 'project' | 'environment' | 'test', localId: string): string | undefined {
     const row = this.database
       .prepare(

@@ -527,6 +527,8 @@ const createWindow = async (): Promise<void> => {
   const stepsFor = (testId: string): Step[] =>
     remoteTest(testId)?.currentRevision.content.steps.map(({ payload }) => payload) ??
     store.loadSteps(testId);
+  const sourceFor = (testId: string): string | undefined =>
+    remoteTest(testId)?.currentRevision.content.source ?? store.getDraft(testId)?.content.source;
   const ensureLocalProject = (projectId: string) => {
     const local = store.getProject(projectId);
     if (local) return local;
@@ -790,19 +792,22 @@ const createWindow = async (): Promise<void> => {
     environmentIds: string[],
     steps: readonly Step[],
     prerequisites?: readonly string[],
+    source?: string,
   ) => void = () => undefined;
-  const session = new RecordingSession(sendSnapshot, (steps) => {
+  const session = new RecordingSession(sendSnapshot, (steps, source, title) => {
     if (localMode && selectedTestId) {
-      store.replaceSteps(selectedTestId, steps);
+      store.replaceSource(selectedTestId, source, steps, title);
       return;
     }
     const test = remoteTest(selectedTestId);
     if (test)
       queueTestRevision(
         test.test.id,
-        session.snapshot().title,
+        title,
         test.currentRevision.content.environmentIds,
         steps,
+        undefined,
+        source,
       );
   });
   const runWorkspaceMutation = (
@@ -845,7 +850,7 @@ const createWindow = async (): Promise<void> => {
       });
   };
   let testSaveQueue = Promise.resolve();
-  queueTestRevision = (testId, title, environmentIds, steps, prerequisites) => {
+  queueTestRevision = (testId, title, environmentIds, steps, prerequisites, source) => {
     const queuedSteps = structuredClone(steps);
     const queuedProfileId = selectedProfileId ?? null;
     testSaveQueue = testSaveQueue
@@ -866,6 +871,7 @@ const createWindow = async (): Promise<void> => {
                 profileId: queuedProfileId,
                 environmentIds,
                 prerequisites: prerequisites ?? canonical.currentRevision.content.prerequisites,
+                source: source ?? canonical.currentRevision.content.source,
                 steps: reconcileRevisionSteps(canonical.currentRevision.content.steps, queuedSteps),
               },
             }),
@@ -1114,7 +1120,8 @@ const createWindow = async (): Promise<void> => {
   };
   if (selectedTestId) {
     const { selectedTest } = selectedContext();
-    if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
+    if (selectedTest)
+      session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
   }
 
   const configureWebsiteContents = (contents: WebContents): void => {
@@ -1315,6 +1322,9 @@ const createWindow = async (): Promise<void> => {
         break;
       case 'replace-steps':
         session.replaceSteps(command.steps);
+        break;
+      case 'update-source':
+        session.updateSource(command.source);
         break;
       case 'use-alternative-locator':
         session.useAlternativeLocator(command.index, command.alternativeIndex);
@@ -2028,7 +2038,8 @@ const createWindow = async (): Promise<void> => {
         replaySnapshot = historyFor(selectedTestId)[0] ?? { status: 'idle', steps: [] };
         if (selectedTestId) {
           const { selectedTest } = selectedContext();
-          if (selectedTest) session.load(selectedTest.title, stepsFor(selectedTest.id));
+          if (selectedTest)
+            session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
         } else session.load('recorded test', []);
         break;
       case 'select-test-suite':
@@ -2296,7 +2307,7 @@ const createWindow = async (): Promise<void> => {
         selectedEnvironmentId = test.environmentIds[0];
         selectedProfileId = test.profileId ?? undefined;
         replaySnapshot = historyFor(test.id)[0] ?? { status: 'idle', steps: [] };
-        session.load(test.title, stepsFor(test.id));
+        session.load(test.title, stepsFor(test.id), sourceFor(test.id));
         break;
       }
       case 'rename-test': {
@@ -2397,6 +2408,7 @@ const createWindow = async (): Promise<void> => {
             session.load(
               moved.test.title,
               moved.currentRevision.content.steps.map(({ payload }) => payload),
+              moved.currentRevision.content.source,
             );
             await reloadRemoteWorkspace();
             sendSnapshot(session.snapshot());
@@ -2438,9 +2450,9 @@ const createWindow = async (): Promise<void> => {
                 selectedTestSuiteId,
               );
             store.setTestProfile(saved.id, selectedProfileId ?? null);
-            store.replaceSteps(saved.id, steps);
+            store.replaceSource(saved.id, session.snapshot().source, steps);
             selectedTestId = saved.id;
-            session.load(command.title, steps);
+            session.load(command.title, steps, session.snapshot().source);
             replaySnapshot = { status: 'idle', steps: [] };
             applyContext();
             break;
@@ -2453,6 +2465,8 @@ const createWindow = async (): Promise<void> => {
           command.title,
           test.currentRevision.content.environmentIds,
           session.snapshot().steps,
+          undefined,
+          session.snapshot().source,
         );
         session.setGenerationContext(command.title);
         break;
@@ -3157,7 +3171,7 @@ const createWindow = async (): Promise<void> => {
           selectedTestSuiteId = selectedTest.testSuiteId ?? undefined;
           selectedProfileId = selectedTest.profileId ?? undefined;
           replaySnapshot = historyFor(selectedTest.id)[0] ?? { status: 'idle', steps: [] };
-          session.load(selectedTest.title, stepsFor(selectedTest.id));
+          session.load(selectedTest.title, stepsFor(selectedTest.id), sourceFor(selectedTest.id));
         }
         if (command.type === 'run-test') {
           handleAppCommand({

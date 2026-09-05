@@ -251,18 +251,21 @@ export const StepCard = ({
 
           {/* The two parts a person actually edits: what it types, and what it
               aims at. Everything else about a step is generated. */}
-          {viewMode === 'developer' && step.value !== undefined && !step.secret && (
-            <span className="mt-1 flex items-center gap-1 text-ink-3">
-              {t('value_2')}
-              <InlineText
-                label={t('step_value_2', { value1: index + 1 })}
-                mono
-                value={step.value}
-                onChange={(value) => onStep({ ...step, value })}
-                className="text-ink-2"
-              />
-            </span>
-          )}
+          {viewMode === 'developer' &&
+            step.kind !== 'code' &&
+            step.value !== undefined &&
+            !step.secret && (
+              <span className="mt-1 flex items-center gap-1 text-ink-3">
+                {t('value_2')}
+                <InlineText
+                  label={t('step_value_2', { value1: index + 1 })}
+                  mono
+                  value={step.value}
+                  onChange={(value) => onStep({ ...step, value })}
+                  className="text-ink-2"
+                />
+              </span>
+            )}
           {viewMode === 'developer' && step.locator && locatorEditable && (
             <>
               <InlineText
@@ -300,6 +303,11 @@ export const StepCard = ({
               {step.secret}
             </Badge>
           )}
+          {viewMode === 'developer' && step.kind === 'code' && (
+            <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
+              Exact code · edit in Playwright source
+            </Badge>
+          )}
           {failed && (
             <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">
               <Badge tone="critical" icon="alert" size="sm">
@@ -332,12 +340,14 @@ export const StepCard = ({
           )}
           {/* An assertion is added where it belongs — under the step that
               earns it — rather than at the bottom of a separate list. */}
-          <IconButton
-            icon="eye"
-            size="sm"
-            label={t('assert_something_after_step', { value1: index + 1 })}
-            onClick={onAddAssertion}
-          />
+          {step.kind !== 'code' && (
+            <IconButton
+              icon="eye"
+              size="sm"
+              label={t('assert_something_after_step', { value1: index + 1 })}
+              onClick={onAddAssertion}
+            />
+          )}
           <IconButton
             icon="trash"
             size="sm"

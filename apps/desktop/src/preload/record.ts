@@ -62,6 +62,7 @@ export const recordedStepSchema = z.object({
     'press',
     'assert',
     'assertUrl',
+    'code',
   ]),
   label: z.string(),
   locator: z.string(),

@@ -114,6 +114,8 @@ const executeStep = async (
   expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
+    case 'code':
+      throw new Error('This test contains exact Playwright code and must run as a complete spec.');
     case 'navigate':
       await page.goto(step.url);
       break;
@@ -217,9 +219,6 @@ export class LocalReplayRunner {
   }
 
   async run(options: ReplayOptions): Promise<ReplayResult> {
-    // Loaded only after main.ts configures PLAYWRIGHT_BROWSERS_PATH. A static
-    // import makes Playwright cache its default browser directory too early.
-    const { chromium, expect } = await import('@playwright/test');
     this.cancelled = false;
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
@@ -239,6 +238,20 @@ export class LocalReplayRunner {
     let snapshot: ReplaySnapshot = { status: 'running', steps: results, startedAt };
     const publish = (): void => options.onProgress(structuredClone(snapshot));
     publish();
+
+    const exactCodeIndex = options.steps.findIndex((step) => step.kind === 'code');
+    if (exactCodeIndex >= 0) {
+      const error =
+        'This test contains exact Playwright code. Complete-spec execution is not available yet.';
+      results[exactCodeIndex] = { ...results[exactCodeIndex]!, status: 'failed', error };
+      snapshot = { ...snapshot, status: 'failed', durationMs: Date.now() - started, error };
+      publish();
+      return snapshot;
+    }
+
+    // Loaded only after main.ts configures PLAYWRIGHT_BROWSERS_PATH. A static
+    // import makes Playwright cache its default browser directory too early.
+    const { chromium, expect } = await import('@playwright/test');
 
     await mkdir(options.artifactsDirectory, { recursive: true });
     const tracePath = path.join(options.artifactsDirectory, 'trace.zip');

@@ -54,6 +54,30 @@ afterEach(async () => {
 });
 
 describe('ServerPlaywrightRunner', () => {
+  it('rejects exact code before starting a partial structured run', async () => {
+    const result = await new ServerPlaywrightRunner().run({
+      environmentUrl: 'https://example.test/',
+      steps: [
+        {
+          version: 1,
+          kind: 'code',
+          code: "if (ready) await page.getByText('Continue').click();",
+          reason: 'Conditional execution',
+          metadata,
+        },
+      ],
+      environmentVariables: {},
+      timeoutMs: 5_000,
+      artifactsDirectory: '/unused',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: expect.stringContaining('Complete-spec execution'),
+      steps: [{ index: 0, status: 'failed' }],
+    });
+  });
+
   it('executes structured steps and returns per-step feedback', async () => {
     publicFixture();
     const steps: Step[] = [

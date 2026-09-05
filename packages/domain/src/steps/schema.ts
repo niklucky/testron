@@ -84,6 +84,13 @@ export const stepSchema = z.discriminatedUnion('kind', [
     expected: z.string().startsWith('/'),
     metadata: metadataSchema,
   }),
+  z.object({
+    version: z.literal(1),
+    kind: z.literal('code'),
+    code: z.string().min(1).max(2_000_000),
+    reason: z.string().min(1),
+    metadata: metadataSchema,
+  }),
 ]);
 
 export const stepsSchema = z.array(stepSchema);

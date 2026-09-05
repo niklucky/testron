@@ -8,6 +8,7 @@
     "./base.css": "./src/design/base.css",
     "./new-test-form": "./src/features/NewTestForm.tsx",
     "./profile-sheet": "./src/features/ProfileSheet.tsx",
+    "./source-editor": "./src/features/SourceEditor.tsx",
     "./tokens.css": "./src/design/tokens.css",
     "./typography.css": "./typography.css"
   },

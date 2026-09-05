@@ -429,6 +429,8 @@ export const testRevisionContentSchema = z
         message: 'Test environment assignments must be unique.',
       }),
     prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
+    /** Canonical Playwright document. Older revisions are generated from their steps on load. */
+    source: z.string().max(2_000_000).optional(),
     steps: z.array(revisionStepSchema).max(10_000),
   })
   .strict()

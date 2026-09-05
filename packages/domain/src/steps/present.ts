@@ -61,5 +61,7 @@ export const presentStep = (step: Step): string => {
     }
     case 'assertUrlPath':
       return `Verify URL path equals “${step.expected}”`;
+    case 'code':
+      return `Run Playwright code: ${step.code.replace(/\s+/g, ' ').trim()}`;
   }
 };

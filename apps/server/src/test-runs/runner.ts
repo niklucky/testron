@@ -80,6 +80,8 @@ const executeStep = async (
   expect: typeof PlaywrightExpect,
 ): Promise<void> => {
   switch (step.kind) {
+    case 'code':
+      throw new Error('This test contains exact Playwright code and must run as a complete spec.');
     case 'navigate': {
       runnerOrigin(step.url);
       const response = await page.goto(step.url);
@@ -163,8 +165,30 @@ export class ServerPlaywrightRunner {
   constructor(private readonly egressPolicy: RunnerEgressPolicy = {}) {}
 
   async run(options: ServerRunOptions): Promise<ServerRunResult> {
-    const { chromium, expect } = await import('@playwright/test');
     const started = Date.now();
+    const exactCodeIndex = options.steps.findIndex((step) => step.kind === 'code');
+    if (exactCodeIndex >= 0) {
+      const error =
+        'This test contains exact Playwright code. Complete-spec execution is not available yet.';
+      return {
+        status: 'failed',
+        durationMs: Date.now() - started,
+        error,
+        screenshotPath: null,
+        videoPath: null,
+        steps: [
+          {
+            index: exactCodeIndex,
+            action: presentStep(options.steps[exactCodeIndex]!),
+            status: 'failed',
+            durationMs: 0,
+            error,
+            pageUrl: null,
+          },
+        ],
+      };
+    }
+    const { chromium, expect } = await import('@playwright/test');
     await mkdir(options.artifactsDirectory, { recursive: true });
     const screenshotPath = path.join(options.artifactsDirectory, 'failure.png');
     const videoPath = path.join(options.artifactsDirectory, 'failure.webm');

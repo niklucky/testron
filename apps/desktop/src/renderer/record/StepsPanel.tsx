@@ -155,7 +155,11 @@ export const StepsPanel = ({
 
                   {viewMode === 'developer' && step.warning && (
                     <Badge tone="warning" icon="alert" size="sm" className="mt-1.5">
-                      {step.secret ? t('secret') : t('locator_2')}
+                      {step.kind === 'code'
+                        ? 'Exact code'
+                        : step.secret
+                          ? t('secret')
+                          : t('locator_2')}
                     </Badge>
                   )}
                 </span>
@@ -180,16 +184,18 @@ export const StepsPanel = ({
                       }}
                     />
                   )}
-                  <IconButton
-                    icon="eye"
-                    size="sm"
-                    label={t('convert_step_to_assertion', { value1: index + 1 })}
-                    className={`hidden ${step.kind.startsWith('assert') ? '' : 'group-hover:grid'}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onConvertToAssertion(step.id);
-                    }}
-                  />
+                  {step.kind !== 'code' && (
+                    <IconButton
+                      icon="eye"
+                      size="sm"
+                      label={t('convert_step_to_assertion', { value1: index + 1 })}
+                      className={`hidden ${step.kind.startsWith('assert') ? '' : 'group-hover:grid'}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onConvertToAssertion(step.id);
+                      }}
+                    />
+                  )}
                   <IconButton
                     icon="trash"
                     size="sm"

@@ -2,9 +2,8 @@ import { session } from './data';
 import type { RecordedStep } from './types';
 
 /**
- * One take, two readings. Both panels are generated from the same step list —
- * the left one for a human who has to run this by hand, the right one for
- * Playwright — so a step can never say two different things.
+ * Presentation helpers for fixture mode and manual descriptions. Hosted
+ * recordings use the canonical Playwright source from the main process.
  */
 
 const quote = (value: string) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -24,6 +23,8 @@ const translated = (
 /** The manual-test line: verb, quoted subject, and the value if there is one. */
 export const sentence = (step: RecordedStep, translate?: Translate): string => {
   switch (step.kind) {
+    case 'code':
+      return `Run this Playwright code manually: ${step.value ?? ''}`;
     case 'navigate':
       return translated(translate, 'step_open_url', `Open ${step.url}`, { value1: step.url ?? '' });
     case 'click':
@@ -180,6 +181,8 @@ export const sentence = (step: RecordedStep, translate?: Translate): string => {
 const call = (step: RecordedStep): string => {
   const target = `page.${step.locator}`;
   switch (step.kind) {
+    case 'code':
+      return step.value ?? '';
     case 'navigate':
       return `await page.goto(${quote(step.url ?? '/')});`;
     case 'click':

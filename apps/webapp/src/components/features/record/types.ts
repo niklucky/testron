@@ -41,4 +41,5 @@ export const stepStyle: Record<StepKind, StepStyle> = {
   press: { icon: 'keyboard', verb: 'Press' },
   assert: { icon: 'eye', verb: 'Expect' },
   assertUrl: { icon: 'eye', verb: 'Expect' },
+  code: { icon: 'test', verb: 'Code' },
 };
