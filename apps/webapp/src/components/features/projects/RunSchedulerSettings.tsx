@@ -98,7 +98,8 @@ const RunScheduleForm = ({
     [library.environments, projectId],
   );
   const tests = useMemo(
-    () => library.tests.filter((test) => test.projectId === projectId),
+    () =>
+      library.tests.filter((test) => test.projectId === projectId && test.status !== 'requested'),
     [library.tests, projectId],
   );
   const [name, setName] = useState(selected?.name ?? 'Scheduled test run');

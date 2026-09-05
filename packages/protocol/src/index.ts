@@ -1,3 +1,4 @@
+export * from './attachments';
 export * from './common';
 export * from './compatibility';
 export * from './desktop';

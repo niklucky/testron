@@ -1,3 +1,4 @@
+import { testAttachmentSchema } from './attachments';
 import { z } from 'zod';
 
 import { stepSchema } from '@testron/domain/steps/schema';
@@ -419,6 +420,9 @@ export const testRevisionContentSchema = z
   .object({
     stepSchemaVersion: stepSchemaVersionSchema,
     title: testTitleSchema,
+    /** Missing status identifies a ready test created by an older client. */
+    status: z.enum(['requested', 'ready']).optional(),
+    description: z.string().trim().max(20_000).optional(),
     /** Authentication profile used while recording and replaying this test. */
     profileId: entityIdSchema.nullable().optional(),
     environmentIds: z
@@ -435,6 +439,12 @@ export const testRevisionContentSchema = z
   })
   .strict()
   .superRefine((content, context) => {
+    if (content.status === 'requested' && !content.description?.trim())
+      context.addIssue({
+        code: 'custom',
+        path: ['description'],
+        message: 'A test request requires a description.',
+      });
     const ids = new Set<string>();
     content.steps.forEach((entry, index) => {
       if (ids.has(entry.id))
@@ -503,6 +513,7 @@ export const testRevisionSchema = z
 
 export const testSnapshotSchema = z
   .object({
+    attachments: z.array(testAttachmentSchema).optional(),
     test: testSchema,
     currentRevision: testRevisionSchema,
   })

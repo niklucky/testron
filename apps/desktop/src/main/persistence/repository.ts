@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { redactStepSecrets, stepSchema, type Step } from '@testron/domain/steps/schema';
 import {
   testSnapshotSchema,
+  type TestAttachment,
   type RevisionStep,
   type ProjectInvitation,
   type ProjectMember,
@@ -58,6 +59,9 @@ export interface ProfileVariableRecord {
 }
 
 export interface TestRecord {
+  attachments?: TestAttachment[];
+  status?: 'requested' | 'ready';
+  description?: string;
   id: string;
   projectId: string;
   environmentIds: string[];
@@ -324,6 +328,8 @@ export class TestronRepository {
           profileId: draft?.content.profileId ?? null,
           title: String(row.title),
           prerequisites: draft?.content.prerequisites ?? [],
+          status: draft?.content.status,
+          description: draft?.content.description,
           createdAt: String(row.created_at),
           updatedAt: String(row.updated_at),
         };
@@ -445,6 +451,7 @@ export class TestronRepository {
     environmentIds: string[],
     title: string,
     testSuiteId?: string,
+    description?: string,
   ): TestRecord {
     const now = new Date().toISOString();
     const test = {
@@ -454,6 +461,7 @@ export class TestronRepository {
       testSuiteId: testSuiteId ?? null,
       profileId: null,
       title: title.trim(),
+      ...(description ? { description: description.trim() } : {}),
       prerequisites: [],
       createdAt: now,
       updatedAt: now,
@@ -483,7 +491,13 @@ export class TestronRepository {
           projectId,
           testSuiteId: test.testSuiteId,
           baseRevision: null,
-          content: { stepSchemaVersion: 1, title: test.title, environmentIds, steps: [] },
+          content: {
+            stepSchemaVersion: 1,
+            title: test.title,
+            description: test.description,
+            environmentIds,
+            steps: [],
+          },
           localCreatedAt: now,
           localUpdatedAt: now,
           syncStatus: 'local',
@@ -763,6 +777,8 @@ export class TestronRepository {
         profileId: revision.content.profileId ?? null,
         title: revision.content.title,
         prerequisites: revision.content.prerequisites,
+        status: revision.content.status,
+        description: revision.content.description,
         createdAt: snapshot.test.createdAt,
         updatedAt: revision.createdAt,
       };
@@ -816,6 +832,8 @@ export class TestronRepository {
           title: test.title,
           environmentIds: test.environmentIds,
           prerequisites: test.prerequisites,
+          status: test.status,
+          description: test.description,
           steps: this.loadSteps(test.id).map((payload) => ({ id: randomUUID(), payload })),
         },
         localCreatedAt: test.createdAt,

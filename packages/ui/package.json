@@ -11,7 +11,8 @@
     "./source-editor": "./src/features/SourceEditor.tsx",
     "./tokens.css": "./src/design/tokens.css",
     "./typography.css": "./typography.css",
-    "./source-draft": "./src/features/useSourceDraft.ts"
+    "./source-draft": "./src/features/useSourceDraft.ts",
+    "./screenshot-picker": "./src/features/ScreenshotPicker.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
