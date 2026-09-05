@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { locatorSchema } from '../locators/schema';
+import { isNumberComparison } from '../steps/numbers';
 
 export const targetObservationSchema = z.object({
   locators: z.array(locatorSchema).min(1),
@@ -19,38 +20,45 @@ export const recorderCandidateSchema = z.discriminatedUnion('kind', [
     value: z.string(),
     url: z.url(),
   }),
-  z.object({
-    kind: z.literal('assertion'),
-    target: targetObservationSchema,
-    assertion: z.enum([
-      'visible',
-      'hidden',
-      'textContains',
-      'textEquals',
-      'numberEquals',
-      'numberGreaterThan',
-      'numberAtLeast',
-      'numberLessThan',
-      'numberAtMost',
+  z
+    .object({
+      kind: z.literal('assertion'),
+      target: targetObservationSchema,
+      assertion: z.enum([
+        'visible',
+        'hidden',
+        'textContains',
+        'textEquals',
+        'numberEquals',
+        'numberGreaterThan',
+        'numberAtLeast',
+        'numberLessThan',
+        'numberAtMost',
 
-      'value',
-      'enabled',
-      'disabled',
-      'checked',
-      'unchecked',
-      'countExactly',
-      'countAtLeast',
-      'attribute',
-      'class',
-    ]),
-    observedText: z.string(),
-    observedValue: z.string(),
-    observedAttributeName: z.string().optional(),
-    observedAttributeValue: z.string().optional(),
-    observedClass: z.string().optional(),
-    observedCount: z.number().int().nonnegative().optional(),
-    url: z.url(),
-  }),
+        'value',
+        'enabled',
+        'disabled',
+        'checked',
+        'unchecked',
+        'countExactly',
+        'countAtLeast',
+        'attribute',
+        'class',
+      ]),
+      observedText: z.string(),
+      observedValue: z.string(),
+      observedAttributeName: z.string().optional(),
+      observedAttributeValue: z.string().optional(),
+      observedClass: z.string().optional(),
+      observedCount: z.number().int().nonnegative().optional(),
+      url: z.url(),
+    })
+    .refine(
+      (candidate) =>
+        !isNumberComparison(candidate.assertion) ||
+        Number.isFinite(Number(candidate.observedText.trim() || NaN)),
+      { path: ['observedText'], message: 'Numeric assertions require finite numeric text.' },
+    ),
   z.object({
     kind: z.literal('check'),
     target: targetObservationSchema,

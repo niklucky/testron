@@ -70,14 +70,15 @@ export class RecorderNormalizer {
             case 'numberGreaterThan':
             case 'numberAtLeast':
             case 'numberLessThan':
-            case 'numberAtMost':
+            case 'numberAtMost': {
+              const expected = Number(candidate.observedText.trim() || NaN);
+              if (!Number.isFinite(expected)) return undefined;
               return {
                 type: 'number',
                 operator: numberComparisons[candidate.assertion].operator,
-                expected: Number.isFinite(Number(candidate.observedText.trim()))
-                  ? Number(candidate.observedText.trim())
-                  : 0,
+                expected,
               };
+            }
             case 'value':
               return { type: 'value' as const, expected: candidate.observedValue };
             case 'countExactly':

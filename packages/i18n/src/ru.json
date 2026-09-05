@@ -635,6 +635,7 @@
   "step_expect_target_min_count": "Проверить, что «{{value1}}» найден не менее {{value2}} раз",
   "step_expect_target_attribute": "Проверить, что «{{value1}}» имеет атрибут «{{value2}}»",
   "step_expect_target_class": "Проверить, что «{{value1}}» имеет класс «{{value2}}»",
+  "step_expect_target_number": "Проверить, что число в «{{value1}}» {{value2}} {{value3}}",
   "step_expect_target_to_contain": "Проверить, что «{{value1}}» содержит «{{value2}}»",
   "step_expect_target_to_hold": "Проверить, что «{{value1}}» имеет значение «{{value2}}»",
   "step_expect_target_to_read": "Проверить, что «{{value1}}» содержит текст «{{value2}}»",
