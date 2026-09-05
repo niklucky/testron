@@ -85,6 +85,8 @@ export const recordPanelStateSchema = z.object({
   elapsed: z.number().nonnegative(),
   file: z.string(),
   selectedId: z.string().optional(),
+  source: z.string().max(2_000_000).default(''),
+  testId: z.string().optional(),
   expandedId: z.string().optional(),
   repickingId: z.string().optional(),
   steps: z.array(recordedStepSchema).max(2_000),
@@ -99,6 +101,11 @@ export type RecordShortcutKey = z.infer<typeof recordShortcutKeySchema>;
 export const recordPanelEventSchema = z.discriminatedUnion('type', [
   /** A panel finished loading and has nothing to show yet. */
   z.object({ type: z.literal('ready'), panel: panelIdSchema }),
+  z.object({
+    type: z.literal('update-source'),
+    source: z.string().max(2_000_000),
+    testId: z.string().optional(),
+  }),
   z.object({ type: z.literal('select'), id: z.string().min(1) }),
   z.object({ type: z.literal('expand'), id: z.string().min(1) }),
   z.object({ type: z.literal('use-alternative'), id: z.string().min(1), locator: z.string() }),

@@ -1,6 +1,9 @@
 import { generatePlaywright } from '@testron/domain/codegen/playwright';
 import {
   parsePlaywright,
+  reconcilePlaywrightSteps,
+  appendPlaywrightStepSource,
+  replacePlaywrightStepSource,
   renamePlaywrightTestSource,
   rewritePlaywrightSteps,
   type ParsedPlaywrightStep,
@@ -37,8 +40,8 @@ export class RecordingSession {
   private steps: Step[] = [];
   private source = generatePlaywright('Untitled test', []);
   private parsedSteps: ParsedPlaywrightStep[] = [];
-  private pastSources: string[] = [];
-  private futureSources: string[] = [];
+  private pastSources: Array<{ source: string; steps: Step[] }> = [];
+  private futureSources: Array<{ source: string; steps: Step[] }> = [];
   private title = 'Untitled test';
   private captureMode: RecordingSnapshot['captureMode'] = 'record';
   private lastNavigationActionAt = 0;
@@ -61,6 +64,10 @@ export class RecordingSession {
   }
 
   start(append = false): void {
+    if (append && parsePlaywright(this.source).error) {
+      this.warn('Fix the source before continuing the recording.');
+      return;
+    }
     this.normalizer.dispose();
     if (!append)
       this.steps = this.currentUrl
@@ -73,7 +80,10 @@ export class RecordingSession {
             },
           ]
         : [];
-    if (!append) this.setCanonicalSource(generatePlaywright(this.title, this.steps), false);
+    if (!append) {
+      this.setCanonicalSource(generatePlaywright(this.title, this.steps), false);
+      this.pastSources = [];
+    }
     this.futureSources = [];
     this.status = 'recording';
     this.captureMode = 'record';
@@ -92,6 +102,10 @@ export class RecordingSession {
   }
 
   resume(): void {
+    if (parsePlaywright(this.source).error) {
+      this.warn('Fix the source before continuing the recording.');
+      return;
+    }
     this.status = 'recording';
     this.notify();
   }
@@ -123,8 +137,8 @@ export class RecordingSession {
     this.normalizer.flush();
     const previous = this.pastSources.pop();
     if (previous === undefined) return;
-    this.futureSources.push(this.source);
-    this.setCanonicalSource(previous, true);
+    this.futureSources.push({ source: this.source, steps: structuredClone(this.steps) });
+    this.setCanonicalSource(previous.source, true, previous.steps);
     this.notify();
   }
 
@@ -132,8 +146,8 @@ export class RecordingSession {
     this.normalizer.flush();
     const next = this.futureSources.pop();
     if (next === undefined) return;
-    this.pastSources.push(this.source);
-    this.setCanonicalSource(next, true);
+    this.pastSources.push({ source: this.source, steps: structuredClone(this.steps) });
+    this.setCanonicalSource(next.source, true, next.steps);
     this.notify();
   }
 
@@ -181,8 +195,10 @@ export class RecordingSession {
     if (!this.steps[index]) return;
     const parsed = this.parsedSteps[index];
     if (!parsed) return;
-    const replacement = this.stepStatement(redactStepSecrets(stepSchema.parse(step)));
-    this.replaceRange(parsed.start, parsed.end, replacement);
+    const replacement = redactStepSecrets(stepSchema.parse(step));
+    const next = [...this.steps];
+    next[index] = replacement;
+    this.pushSource(replacePlaywrightStepSource(this.source, index, replacement), next);
     this.notify();
   }
 
@@ -190,6 +206,7 @@ export class RecordingSession {
     this.normalizer.flush();
     this.pushSource(
       rewritePlaywrightSteps(this.source, stepsSchema.parse(steps).map(redactStepSecrets)),
+      stepsSchema.parse(steps).map(redactStepSecrets),
     );
     this.notify();
   }
@@ -221,7 +238,7 @@ export class RecordingSession {
     this.normalizer.dispose();
     this.title = title;
     this.steps = stepsSchema.parse(steps).map(redactStepSecrets);
-    this.setCanonicalSource(source?.trim() ? source : generatePlaywright(title, this.steps), false);
+    this.setCanonicalSource(source ?? generatePlaywright(title, this.steps), false);
     this.pastSources = [];
     this.futureSources = [];
     this.status = 'idle';
@@ -238,6 +255,7 @@ export class RecordingSession {
   updateSource(source: string): void {
     this.normalizer.flush();
     this.pushSource(source);
+    this.notify();
   }
 
   accept(candidate: RecorderCandidate): void {
@@ -304,76 +322,37 @@ export class RecordingSession {
     this.changed(this.snapshot(warning));
   }
 
-  private stepStatement(step: Step): string {
-    if (step.kind === 'code') return step.code;
-    const generated = generatePlaywright(this.title, [step]);
-    return (
-      generated
-        .split('\n')
-        .find((line) => /^ {2}await /.test(line))
-        ?.trim() ?? step.kind
-    );
-  }
-
   private insertStep(step: Step): void {
-    const closing = this.source.lastIndexOf('\n});');
-    if (closing < 0) {
-      this.pushSource(generatePlaywright(this.title, [...this.steps, step]));
-      return;
-    }
-    this.replaceRange(closing, closing, `\n  ${this.stepStatement(step)}`);
+    this.pushSource(appendPlaywrightStepSource(this.source, step), [...this.steps, step]);
   }
 
   private replaceRange(start: number, end: number, replacement: string): void {
     this.pushSource(`${this.source.slice(0, start)}${replacement}${this.source.slice(end)}`);
   }
 
-  private pushSource(source: string): void {
-    this.pastSources.push(this.source);
+  private pushSource(source: string, candidates = this.steps): void {
+    if (source === this.source) return;
+    this.pastSources.push({ source: this.source, steps: structuredClone(this.steps) });
+    // Bound history for large source documents and long recording sessions.
+    let characters = this.pastSources.reduce((total, entry) => total + entry.source.length, 0);
+    while (this.pastSources.length > 1 && (this.pastSources.length > 100 || characters > 4_000_000))
+      characters -= this.pastSources.shift()!.source.length;
     this.futureSources = [];
-    this.setCanonicalSource(source, true);
+    this.setCanonicalSource(source, true, candidates);
   }
 
-  private setCanonicalSource(source: string, persist: boolean): void {
+  private setCanonicalSource(source: string, persist: boolean, candidates = this.steps): void {
     this.source = source;
     const parsed = parsePlaywright(source);
     if (!parsed.error) {
       this.title = parsed.title;
       this.parsedSteps = parsed.steps;
-      const previousSteps = this.steps;
-      const unused = new Set(previousSteps.map((_, index) => index));
-      const semanticKey = (step: Step): string =>
-        JSON.stringify(step, (key, value) =>
-          ['metadata', 'alternatives', 'warnings'].includes(key) ? undefined : value,
-        );
-      this.steps = parsed.steps.map(({ step }, index) => {
-        const exactIndex = previousSteps.findIndex(
-          (candidate, candidateIndex) =>
-            unused.has(candidateIndex) && semanticKey(candidate) === semanticKey(step),
-        );
-        const previousIndex = exactIndex >= 0 ? exactIndex : unused.has(index) ? index : -1;
-        const previous = previousIndex >= 0 ? previousSteps[previousIndex] : undefined;
-        if (previousIndex >= 0) unused.delete(previousIndex);
-        const target =
-          previous &&
-          'target' in previous &&
-          'target' in step &&
-          JSON.stringify(previous.target.primary) === JSON.stringify(step.target.primary)
-            ? {
-                ...step.target,
-                alternatives: previous.target.alternatives,
-                warnings: previous.target.warnings,
-              }
-            : 'target' in step
-              ? step.target
-              : undefined;
-        return redactStepSecrets(
-          previous && previous.kind === step.kind
-            ? { ...step, ...(target ? { target } : {}), metadata: previous.metadata }
-            : step,
-        );
-      });
+      this.steps = reconcilePlaywrightSteps(
+        candidates,
+        parsed.steps.map(({ step }) => step),
+      );
     } else {
+      this.parsedSteps = [];
       this.notify(
         `Source has a syntax error; showing the last valid manual steps. ${parsed.error}`,
       );

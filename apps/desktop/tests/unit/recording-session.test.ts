@@ -93,3 +93,76 @@ test('Conditional', async ({ page }) => {
     });
   });
 });
+
+describe('source editing regressions', () => {
+  const source = "test('small', async ({ page }) => { await page.goto('https://example.com'); });";
+  it('publishes a source acknowledgement after a valid edit', () => {
+    const changed = vi.fn();
+    const session = new RecordingSession(changed);
+    session.updateSource(source);
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ source }));
+  });
+  it('never patches stale offsets in an invalid source draft', () => {
+    const session = new RecordingSession(vi.fn());
+    session.updateSource(source);
+    const invalid = '// shifted offsets\n' + source.slice(0, -1) + '{';
+    session.updateSource(invalid);
+    session.deleteStep(0);
+    session.duplicateStep(0);
+    session.addUrlAssertion('/done');
+    expect(session.snapshot().source).toBe(invalid);
+    expect(session.snapshot().steps[0]?.kind).toBe('navigate');
+  });
+  it('keeps an empty draft on reload and clears undo history for a new recording', () => {
+    const session = new RecordingSession(vi.fn());
+    session.updateSource(source);
+    session.load('empty', [], '');
+    expect(session.snapshot().source).toBe('');
+    session.updateSource(source);
+    session.start(false);
+    expect(session.snapshot().canUndo).toBe(false);
+  });
+  it('preserves new locator alternatives, warnings, and recording timestamps', () => {
+    const session = new RecordingSession(vi.fn());
+    session.updateSource(source);
+    const metadata = { recordedAt: '2026-08-17T02:00:00.000Z' };
+    session.replaceSteps([
+      {
+        version: 1,
+        kind: 'fill',
+        value: 'hello',
+        metadata,
+        target: {
+          primary: { strategy: 'id', value: 'name' },
+          alternatives: [{ strategy: 'label', text: 'Name' }],
+          warnings: ['custom warning'],
+        },
+      },
+    ]);
+    expect(session.snapshot().steps[0]).toMatchObject({
+      metadata,
+      target: { alternatives: [{ strategy: 'label', text: 'Name' }], warnings: ['custom warning'] },
+    });
+  });
+});
+
+it('keeps secret bindings and locator alternatives across undo and redo', () => {
+  const session = new RecordingSession(vi.fn());
+  const step = {
+    version: 1 as const,
+    kind: 'fill' as const,
+    value: '',
+    secret: { environmentVariable: 'PASSWORD' },
+    metadata: { recordedAt: '2026-08-17T02:00:00.000Z' },
+    target: {
+      primary: { strategy: 'id' as const, value: 'password' },
+      alternatives: [{ strategy: 'label' as const, text: 'Password' }],
+    },
+  };
+  session.replaceSteps([step]);
+  session.deleteStep(0);
+  session.undo();
+  expect(session.snapshot().steps[0]).toMatchObject(step);
+  session.redo();
+  expect(session.snapshot().steps).toEqual([]);
+});

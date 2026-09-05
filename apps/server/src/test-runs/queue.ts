@@ -307,6 +307,7 @@ export class ServerRunQueue {
           async (input) => {
             const authResult = await this.runner.run({
               environmentUrl: claimed.environment.baseUrl,
+              source: input.setupTest.source,
               steps: input.setupTest.steps.map(({ payload }) => payload),
               environmentVariables: input.secrets,
               timeoutMs: this.timeoutMs,
@@ -326,6 +327,7 @@ export class ServerRunQueue {
       }
       const result = await this.runner.run({
         environmentUrl: claimed.environment.baseUrl,
+        source: claimed.content.source,
         steps: claimed.content.steps.map(({ payload }) => payload),
         environmentVariables: claimed.profile?.authenticationType === 'credentials' ? values : {},
         timeoutMs: this.timeoutMs,

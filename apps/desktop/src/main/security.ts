@@ -13,6 +13,7 @@ export const RECORD_CHANNELS = {
 } as const;
 
 export const RECORDER_CHANNEL = 'testron:recorder-candidate' as const;
+export const RECORDER_STORAGE_CHANNEL = 'testron:recorder-storage' as const;
 export const RECORDER_CONFIG_CHANNEL = 'testron:recorder-config' as const;
 
 /** In-memory browser session used only by websites under test. */

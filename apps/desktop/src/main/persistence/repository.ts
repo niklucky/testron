@@ -1,3 +1,8 @@
+import {
+  parsePlaywright,
+  renamePlaywrightTestSource,
+  rewritePlaywrightSteps,
+} from '@testron/domain/codegen/parse-playwright';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -505,7 +510,13 @@ export class TestronRepository {
     if (draft)
       this.writeDraft(testId, {
         ...draft,
-        content: { ...draft.content, title: title.trim() },
+        content: {
+          ...draft.content,
+          title: title.trim(),
+          ...(draft.content.source === undefined
+            ? {}
+            : { source: renamePlaywrightTestSource(draft.content.source, title.trim()) }),
+        },
         localUpdatedAt: now,
         syncStatus: draft.testId ? 'pending' : 'local',
       });
@@ -547,6 +558,16 @@ export class TestronRepository {
   replaceSteps(testId: string, steps: readonly Step[]): void {
     const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
     const previous = this.getDraft(testId);
+    if (previous?.content.source !== undefined) {
+      if (parsePlaywright(previous.content.source).error)
+        throw new Error('Fix the source before editing manual steps.');
+      this.replaceSource(
+        testId,
+        rewritePlaywrightSteps(previous.content.source, validated),
+        validated,
+      );
+      return;
+    }
     const now = new Date().toISOString();
     this.database.exec('BEGIN IMMEDIATE');
     try {
