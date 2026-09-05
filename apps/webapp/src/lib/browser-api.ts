@@ -287,6 +287,10 @@ const command = (input: AppCommand): void => {
         password: value(input, 'password'),
       }).catch(() => undefined);
       break;
+    case 'set-shell-route':
+      // A product screen is up: the desktop can leave the compact sign-in window.
+      window.testronDesktop?.setSurface?.('product');
+      break;
     case 'request-snapshot':
     case 'refresh-workspace':
     case 'sync-now':

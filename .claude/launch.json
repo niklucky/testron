@@ -9,6 +9,12 @@
       "port": 5199
     },
     {
+      "name": "webapp",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@testron/webapp", "exec", "vite", "--port", "4412"],
+      "port": 4412
+    },
+    {
       "name": "web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@testron/web", "dev"],
