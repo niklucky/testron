@@ -1,8 +1,4 @@
-import {
-  parsePlaywright,
-  renamePlaywrightTestSource,
-  rewritePlaywrightSteps,
-} from '@testron/domain/codegen/parse-playwright';
+import { renamePlaywrightTestSource } from '@testron/domain/codegen/parse-playwright';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -553,45 +549,6 @@ export class TestronRepository {
       .prepare('SELECT payload FROM test_steps WHERE test_id = ? ORDER BY position')
       .all(testId)
       .map((row) => redactStepSecrets(stepSchema.parse(JSON.parse(String(row.payload)))));
-  }
-
-  replaceSteps(testId: string, steps: readonly Step[]): void {
-    const validated = steps.map((step) => redactStepSecrets(stepSchema.parse(step)));
-    const previous = this.getDraft(testId);
-    if (previous?.content.source !== undefined) {
-      if (parsePlaywright(previous.content.source).error)
-        throw new Error('Fix the source before editing manual steps.');
-      this.replaceSource(
-        testId,
-        rewritePlaywrightSteps(previous.content.source, validated),
-        validated,
-      );
-      return;
-    }
-    const now = new Date().toISOString();
-    this.database.exec('BEGIN IMMEDIATE');
-    try {
-      this.database.prepare('DELETE FROM test_steps WHERE test_id = ?').run(testId);
-      const insert = this.database.prepare(
-        'INSERT INTO test_steps (test_id, position, payload) VALUES (?, ?, ?)',
-      );
-      validated.forEach((step, position) => insert.run(testId, position, JSON.stringify(step)));
-      this.database.prepare('UPDATE tests SET updated_at = ? WHERE id = ?').run(now, testId);
-      if (previous)
-        this.writeDraft(testId, {
-          ...previous,
-          content: {
-            ...previous.content,
-            steps: this.reconcileRevisionSteps(previous.content.steps, validated),
-          },
-          localUpdatedAt: now,
-          syncStatus: previous.testId ? 'pending' : 'local',
-        });
-      this.database.exec('COMMIT');
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
-    }
   }
 
   replaceSource(testId: string, source: string, steps: readonly Step[], title?: string): void {

@@ -10,6 +10,14 @@ const quote = (value: string): string =>
     .replaceAll('\u2028', '\\u2028')
     .replaceAll('\u2029', '\\u2029')}'`;
 
+export const requiredEnvSource = [
+  'const requiredEnv = (name: string): string => {',
+  '  const value = process.env[name];',
+  '  if (!value) throw new Error(`Missing required environment variable: ${name}`);',
+  '  return value;',
+  '};',
+].join('\n');
+
 export const generateLocator = (locator: Locator): string => {
   switch (locator.strategy) {
     case 'testId':
@@ -105,16 +113,7 @@ export const generatePlaywright = (title: string, steps: readonly Step[]): strin
 
   return [
     `import { test${hasAssertions ? ', expect' : ''} } from '@playwright/test';`,
-    ...(hasVariables
-      ? [
-          '',
-          'const requiredEnv = (name: string): string => {',
-          '  const value = process.env[name];',
-          '  if (!value) throw new Error(`Missing required environment variable: ${name}`);',
-          '  return value;',
-          '};',
-        ]
-      : []),
+    ...(hasVariables ? ['', requiredEnvSource] : []),
     '',
     `test(${quote(title)}, async ({ page }) => {`,
     ...body,

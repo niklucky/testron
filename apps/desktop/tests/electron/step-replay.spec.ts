@@ -1,3 +1,4 @@
+import { closeElectron } from './helpers/close-electron';
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -181,7 +182,7 @@ test('step selection, deletion and code editing keep the tested browser at the r
     await select(0);
     expect((await browser())?.email).toBe('');
   } finally {
-    await app.close();
+    await closeElectron(app);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });
@@ -284,7 +285,7 @@ test('reopening the recorder reattaches its tested browser before replay', async
       }),
     ).toBe('reopened@example.com');
   } finally {
-    await app.close();
+    await closeElectron(app);
     rmSync(dataDirectory, { recursive: true, force: true });
   }
 });

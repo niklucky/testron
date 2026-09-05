@@ -1,3 +1,4 @@
+import { closeElectron } from './helpers/close-electron';
 import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -16,22 +17,6 @@ const snapshot = (page: Page) =>
         window.testron.command({ type: 'request-snapshot' });
       }),
   );
-
-const closeElectron = async (app: Awaited<ReturnType<typeof electron.launch>>) => {
-  const child = app.process();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      app.close().catch(() => undefined),
-      new Promise<void>((resolve) => {
-        timeout = setTimeout(resolve, 5_000);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-    if (child.exitCode === null) child.kill('SIGTERM');
-  }
-};
 
 test('saved browser state authenticates the first document and every replay reset', async () => {
   test.setTimeout(90_000);

@@ -2,7 +2,7 @@ import { parse } from '@babel/parser';
 
 import type { Locator } from '../locators/schema';
 import { redactStepSecrets, stepSchema, type Step } from '../steps/schema';
-import { generatePlaywright } from './playwright';
+import { generatePlaywright, requiredEnvSource } from './playwright';
 
 type Node = { type: string; start?: number | null; end?: number | null; [key: string]: unknown };
 
@@ -413,11 +413,21 @@ export const replacePlaywrightStepSource = (source: string, index: number, step:
   );
 };
 
+/** Remove a standalone statement's line, while preserving adjacent code and comments. */
+const removeStatement = (source: string, start: number, end: number): string => {
+  const lineStart = source.lastIndexOf('\n', start - 1) + 1;
+  const newline = source.indexOf('\n', end);
+  const lineEnd = newline < 0 ? source.length : newline;
+  if (!source.slice(lineStart, start).trim() && !source.slice(end, lineEnd).trim())
+    return source.slice(0, lineStart) + source.slice(newline < 0 ? lineEnd : lineEnd + 1);
+  return source.slice(0, start) + source.slice(end);
+};
+
 export const deletePlaywrightStepSource = (source: string, index: number): string => {
   const parsed = parsePlaywright(source);
   const current = parsed.steps[index];
   if (parsed.error || !current) return source;
-  return `${source.slice(0, current.start)}${source.slice(current.end)}`;
+  return removeStatement(source, current.start, current.end);
 };
 
 export const renamePlaywrightTestSource = (source: string, title: string): string => {
@@ -448,40 +458,33 @@ export const rewritePlaywrightSteps = (source: string, nextSteps: readonly Step[
     const inserted = nextSteps
       .map((step) => `  ${generatedStatement(step, parsed.title).replaceAll('\n', '\n  ')}`)
       .join('\n');
+    const prefix = source.slice(0, closing).replace(/[\t ]+$/, '');
     return ensurePlaywrightDependencies(
-      `${source.slice(0, closing)}\n${inserted}\n${source.slice(closing)}`,
+      `${prefix}${prefix.endsWith('\n') ? '' : '\n'}${inserted}\n${source.slice(closing)}`,
       nextSteps,
     );
   }
-  const first = parsed.steps[0]!;
-  const last = parsed.steps.at(-1)!;
-  const body =
-    nextSteps
-      .map((step, index) => {
-        const previous = parsed.steps[index];
-        const unchanged = previous && semanticStepKey(previous.step) === semanticStepKey(step);
-        return unchanged
-          ? source.slice(previous.start, previous.end)
-          : generatedStatement(step, parsed.title);
-      })
-      .map(
-        (text, index) =>
-          text +
-          (index < parsed.steps.length - 1
-            ? source.slice(parsed.steps[index]!.end, parsed.steps[index + 1]!.start)
-            : '\n  '),
-      )
-      .join('') +
-    parsed.steps
-      .slice(nextSteps.length, -1)
-      .map((step, index) =>
-        source.slice(step.end, parsed.steps[nextSteps.length + index + 1]!.start),
-      )
-      .join('');
-  return ensurePlaywrightDependencies(
-    `${source.slice(0, first.start)}${body}${source.slice(last.end)}`,
-    nextSteps,
-  );
+  let result = source;
+  // Work backwards so earlier statement offsets remain valid after every edit.
+  for (let index = parsed.steps.length - 1; index >= 0; index--) {
+    const previous = parsed.steps[index]!;
+    const step = nextSteps[index];
+    if (!step) {
+      result = removeStatement(result, previous.start, previous.end);
+      continue;
+    }
+    let replacement =
+      semanticStepKey(previous.step) === semanticStepKey(step)
+        ? source.slice(previous.start, previous.end)
+        : generatedStatement(step, parsed.title);
+    if (index === parsed.steps.length - 1)
+      replacement += nextSteps
+        .slice(parsed.steps.length)
+        .map((extra) => `\n  ${generatedStatement(extra, parsed.title).replaceAll('\n', '\n  ')}`)
+        .join('');
+    result = result.slice(0, previous.start) + replacement + result.slice(previous.end);
+  }
+  return ensurePlaywrightDependencies(result, nextSteps);
 };
 
 /** Add dependencies required by newly generated statements without replacing user code. */
@@ -507,21 +510,14 @@ export const ensurePlaywrightDependencies = (source: string, steps: readonly Ste
         )),
   );
   let prefix = needsExpect && !hasExpect ? "import { expect } from '@playwright/test';\n" : '';
-  if (needsEnv && !hasEnv) {
-    const generated = generatePlaywright('helper', steps);
-    prefix +=
-      generated.slice(generated.indexOf('const requiredEnv'), generated.indexOf('\ntest(')) + '\n';
-  }
+  if (needsEnv && !hasEnv) prefix += requiredEnvSource + '\n';
   return prefix + source;
 };
 
 export const appendPlaywrightStepSource = (source: string, step: Step): string => {
   const parsed = parsePlaywright(source);
   if (parsed.error || parsed.bodyEnd === undefined) return source;
-  return ensurePlaywrightDependencies(
-    `${source.slice(0, parsed.bodyEnd)}\n  ${generatedStatement(step, parsed.title)}\n${source.slice(parsed.bodyEnd)}`,
-    [step],
-  );
+  return rewritePlaywrightSteps(source, [...parsed.steps.map(({ step }) => step), step]);
 };
 
 /** Structured runners must never execute a stale or partial projection. */
@@ -546,9 +542,8 @@ export const playwrightReplayError = (
     ),
     { sourceType: 'module', plugins: ['typescript'] },
   );
-  const helper = generated.program.body.find(
-    (statement) => statement.type === 'VariableDeclaration',
-  );
+  const helper = parse(requiredEnvSource, { sourceType: 'module', plugins: ['typescript'] }).program
+    .body[0]!;
   let tests = 0;
   const imports = new Set<string>();
   for (const statement of file.program.body as unknown as Node[]) {

@@ -166,3 +166,18 @@ it('keeps secret bindings and locator alternatives across undo and redo', () => 
   session.redo();
   expect(session.snapshot().steps).toEqual([]);
 });
+
+it('duplicates and deletes statements without leaving malformed indentation', () => {
+  const session = new RecordingSession(vi.fn());
+  const statement = "    await page.getByTestId('go').click();";
+  const source = `import { test } from '@playwright/test';\n\ntest('indent', async ({ page }) => {\n${statement}\n});\n`;
+  session.updateSource(source);
+  session.duplicateStep(0);
+  expect(session.snapshot().source).toBe(source.replace(statement, `${statement}\n${statement}`));
+  session.deleteStep(0);
+  expect(session.snapshot().source).toBe(source);
+  session.undo();
+  expect(session.snapshot().steps).toHaveLength(2);
+  session.redo();
+  expect(session.snapshot().source).toBe(source);
+});

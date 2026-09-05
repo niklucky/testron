@@ -1,3 +1,4 @@
+import { editedTestRevisionContent } from './persistence/test-revision-content';
 import { parkPage } from './recording/park-page';
 import { playwrightReplayError } from '@testron/domain/codegen/parse-playwright';
 import { StepReplay, type StepReplaySnapshot } from './recording/step-replay';
@@ -905,6 +906,7 @@ const createWindow = async (): Promise<void> => {
     steps: readonly Step[],
     prerequisites?: readonly string[],
     source?: string,
+    profileId?: string | null,
   ) => void = () => undefined;
   const session = new RecordingSession(sendSnapshot, (steps, source, title) => {
     if (localMode && selectedTestId) {
@@ -962,9 +964,8 @@ const createWindow = async (): Promise<void> => {
       });
   };
   let testSaveQueue = Promise.resolve();
-  queueTestRevision = (testId, title, environmentIds, steps, prerequisites, source) => {
+  queueTestRevision = (testId, title, environmentIds, steps, prerequisites, source, profileId) => {
     const queuedSteps = structuredClone(steps);
-    const queuedProfileId = selectedProfileId ?? null;
     testSaveQueue = testSaveQueue
       .then(async () => {
         if (!serverClient || serverState.authentication !== 'signedIn')
@@ -977,15 +978,14 @@ const createWindow = async (): Promise<void> => {
               meta: mutationMeta(`test-save-${testId}-${randomUUID()}`),
               testId,
               baseRevision: canonical.test.currentRevision,
-              content: {
-                stepSchemaVersion: 1,
+              content: editedTestRevisionContent(canonical.currentRevision.content, {
                 title,
-                profileId: queuedProfileId,
+                profileId,
                 environmentIds,
-                prerequisites: prerequisites ?? canonical.currentRevision.content.prerequisites,
-                source: source ?? canonical.currentRevision.content.source,
+                prerequisites,
+                source,
                 steps: reconcileRevisionSteps(canonical.currentRevision.content.steps, queuedSteps),
-              },
+              }),
             }),
           );
           if (result.status === 'saved') {
@@ -1271,6 +1271,9 @@ const createWindow = async (): Promise<void> => {
         test.test.title,
         test.currentRevision.content.environmentIds,
         session.snapshot().steps,
+        undefined,
+        undefined,
+        selectedProfileId ?? null,
       );
   };
   if (selectedTestId) {

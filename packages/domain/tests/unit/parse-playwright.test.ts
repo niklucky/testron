@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   parsePlaywright,
+  deletePlaywrightStepSource,
   appendPlaywrightStepSource,
   playwrightReplayError,
   renamePlaywrightTestSource,
@@ -235,4 +236,71 @@ it('imports expect when appending a manual assertion', () => {
   expect(updated).toContain("import { expect } from '@playwright/test';");
   expect(updated).toContain(step.code);
   expect(appendPlaywrightStepSource(updated, step).match(/import \{ expect \}/g)).toHaveLength(1);
+});
+
+describe('source mutation stability', () => {
+  const navigate: Step = { version: 1, kind: 'navigate', url: 'https://example.test', metadata };
+  const click: Step = { version: 1, kind: 'click', target, metadata };
+
+  it.each(['variable', 'secret'] as const)(
+    'allows an unused generated helper after removing the last %s fill',
+    (binding) => {
+      const fill: Step = {
+        version: 1,
+        kind: 'fill',
+        target,
+        value: '',
+        metadata,
+        ...(binding === 'variable'
+          ? { variable: { name: 'USER' } }
+          : { secret: { environmentVariable: 'PASSWORD' } }),
+      };
+      const source = generatePlaywright('helper', [navigate, fill, click]);
+      for (const edited of [
+        rewritePlaywrightSteps(source, [navigate, click]),
+        deletePlaywrightStepSource(source, 1),
+      ]) {
+        expect(edited).toContain('const requiredEnv');
+        expect(playwrightReplayError(edited)).toBeUndefined();
+        expect(
+          playwrightReplayError(edited.replace('return value;', "return 'changed';")),
+        ).toContain('complete-spec');
+      }
+    },
+  );
+
+  it('keeps repeated no-op rewrites byte-for-byte stable', () => {
+    const source = generatePlaywright('stable', [navigate, click]);
+    let edited = source;
+    for (let index = 0; index < 4; index++)
+      edited = rewritePlaywrightSteps(edited, [navigate, click]);
+    expect(edited).toBe(source);
+    const appended = appendPlaywrightStepSource(
+      appendPlaywrightStepSource(generatePlaywright('stable', []), navigate),
+      click,
+    );
+    expect(appended).toBe(source);
+    expect(rewritePlaywrightSteps(edited, [navigate, click, navigate])).toBe(
+      generatePlaywright('stable', [navigate, click, navigate]),
+    );
+  });
+
+  it('removes standalone deleted lines without losing neighboring comments or compact code', () => {
+    const source = generatePlaywright('remove', [navigate, click]);
+    expect(deletePlaywrightStepSource(source, 0)).toBe(generatePlaywright('remove', [click]));
+    expect(rewritePlaywrightSteps(source, [navigate])).toBe(
+      generatePlaywright('remove', [navigate]),
+    );
+    expect(rewritePlaywrightSteps(source, [])).toBe(generatePlaywright('remove', []));
+    const commented = source
+      .replace('  await page.goto', '  // keep before\n  await page.goto')
+      .replace('  await page.getByTestId', '  // keep after\n  await page.getByTestId');
+    expect(deletePlaywrightStepSource(commented, 0)).toContain('// keep before\n  // keep after');
+    expect(rewritePlaywrightSteps(commented, [])).toContain('// keep before\n  // keep after');
+    const compact =
+      "test('compact', async ({ page }) => { await page.goto('https://example.test'); await page.getByTestId('control').click(); });";
+    const edited = deletePlaywrightStepSource(compact, 0);
+    expect(parsePlaywright(edited).error).toBeUndefined();
+    expect(parsePlaywright(edited).steps.map(({ step }) => step.kind)).toEqual(['click']);
+  });
 });

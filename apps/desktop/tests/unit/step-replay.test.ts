@@ -120,3 +120,13 @@ describe('StepReplay', () => {
     expect(replay.snapshot().status).toBe('idle');
   });
 });
+
+it('keeps a completed prefix cached when decorative highlighting fails', async () => {
+  const { driver, replay } = setup();
+  driver.highlight.mockRejectedValueOnce(new Error('Page changed before highlighting'));
+  await replay.select(steps, 1);
+  expect(replay.snapshot()).toMatchObject({ status: 'synced', appliedIndex: 1 });
+  await replay.select(steps, 2);
+  expect(driver.reset).toHaveBeenCalledTimes(1);
+  expect(driver.execute.mock.calls.map(([step]) => step)).toEqual(steps);
+});

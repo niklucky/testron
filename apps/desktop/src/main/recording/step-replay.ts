@@ -81,7 +81,8 @@ export class StepReplay {
           this.applied!.push(keys[position]!);
           this.publish({ status: 'syncing', selectedIndex: index, appliedIndex: position });
         }
-        await this.driver.highlight(prefix.at(-1));
+        // Highlighting is decorative; a DOM change must not discard a completed replay.
+        await this.driver.highlight(prefix.at(-1)).catch(() => undefined);
         if (!current()) {
           this.applied = undefined;
           return;

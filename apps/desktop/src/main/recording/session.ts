@@ -1,6 +1,7 @@
 import { generatePlaywright } from '@testron/domain/codegen/playwright';
 import {
   parsePlaywright,
+  deletePlaywrightStepSource,
   reconcilePlaywrightSteps,
   appendPlaywrightStepSource,
   replacePlaywrightStepSource,
@@ -155,7 +156,7 @@ export class RecordingSession {
     this.normalizer.flush();
     const parsed = this.parsedSteps[index];
     if (!parsed) return;
-    this.replaceRange(parsed.start, parsed.end, '');
+    this.pushSource(deletePlaywrightStepSource(this.source, index));
     this.notify();
   }
 
@@ -186,7 +187,13 @@ export class RecordingSession {
     if (!this.steps[index]) return;
     const parsed = this.parsedSteps[index];
     if (!parsed) return;
-    this.replaceRange(parsed.end, parsed.end, `\n${this.source.slice(parsed.start, parsed.end)}`);
+    const lineStart = this.source.lastIndexOf('\n', parsed.start - 1) + 1;
+    const indentation = /^[\t ]*/.exec(this.source.slice(lineStart, parsed.start))![0];
+    this.replaceRange(
+      parsed.end,
+      parsed.end,
+      `\n${indentation}${this.source.slice(parsed.start, parsed.end)}`,
+    );
     this.notify();
   }
 

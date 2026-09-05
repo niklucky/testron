@@ -167,6 +167,7 @@ export const replayPage = (step: Step | undefined, operation: 'prepare' | 'highl
     matches.length === 0
   )
     return { ready: true };
+  if (operation === 'highlight' && matches.length > 1) return { ready: true };
   if (matches.length > 1)
     throw new Error(`Step locator is ambiguous (${matches.length} elements).`);
   const element = matches[0];
