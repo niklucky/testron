@@ -487,7 +487,10 @@ export const rewritePlaywrightSteps = (source: string, nextSteps: readonly Step[
 /** Add dependencies required by newly generated statements without replacing user code. */
 export const ensurePlaywrightDependencies = (source: string, steps: readonly Step[]): string => {
   const file = parse(source, { sourceType: 'module', plugins: ['typescript'] });
-  const needsExpect = steps.some((step) => step.kind.startsWith('assert'));
+  const needsExpect = steps.some(
+    (step) =>
+      step.kind.startsWith('assert') || (step.kind === 'code' && /\bexpect\s*\(/.test(step.code)),
+  );
   const needsEnv = steps.some((step) => step.kind === 'fill' && (step.variable || step.secret));
   const hasExpect = file.program.body.some(
     (statement) =>

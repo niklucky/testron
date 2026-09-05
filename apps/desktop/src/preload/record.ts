@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { entityIdSchema } from '@testron/protocol';
 
 import { verifyAssertionSchema } from './verify-assertion';
 
@@ -86,7 +87,7 @@ export const recordPanelStateSchema = z.object({
   file: z.string(),
   selectedId: z.string().optional(),
   source: z.string().max(2_000_000).default(''),
-  testId: z.string().optional(),
+  testId: entityIdSchema.optional(),
   expandedId: z.string().optional(),
   repickingId: z.string().optional(),
   steps: z.array(recordedStepSchema).max(2_000),
@@ -104,7 +105,7 @@ export const recordPanelEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update-source'),
     source: z.string().max(2_000_000),
-    testId: z.string().optional(),
+    testId: entityIdSchema.optional(),
   }),
   z.object({ type: z.literal('select'), id: z.string().min(1) }),
   z.object({ type: z.literal('expand'), id: z.string().min(1) }),

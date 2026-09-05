@@ -22,6 +22,7 @@ import {
   type StepMutationCommand,
 } from './browser-step-mutations';
 
+const documentMutationErrors = new Map<string, string>();
 const listeners = new Set<(snapshot: AppSnapshot) => void>();
 let workspace: WebWorkspaceSnapshot | undefined;
 let selectedProjectId: string | undefined;
@@ -143,6 +144,7 @@ const snapshotFromWorkspace = (value: WebWorkspaceSnapshot): AppSnapshot => {
         selected?.test.title ?? 'Untitled test',
         selected?.currentRevision.content.steps.map(({ payload }) => payload) ?? [],
       ),
+    documentMutationError: documentMutationErrors.get(library.selectedTestId ?? ''),
     captureMode: 'record',
     stepWarnings: [],
     canUndo: false,
@@ -213,7 +215,8 @@ const enqueueDocumentMutation = createSerialMutationQueue(
         );
       } else steps = previousSteps;
     } else {
-      if (parsePlaywright(currentSource).error) return;
+      if (parsePlaywright(currentSource).error)
+        throw new Error('Fix the Playwright source before editing steps.');
       const nextSteps = applyStepMutation(
         previousSteps.map((entry) => entry.payload),
         command,
@@ -239,6 +242,7 @@ const enqueueDocumentMutation = createSerialMutationQueue(
       },
     });
     if (result.status !== 'saved') throw new Error('The test changed. Please retry.');
+    documentMutationErrors.delete(testId);
     await refresh();
   },
 );
@@ -341,13 +345,18 @@ const command = (input: AppCommand): void => {
     case 'update-step':
     case 'replace-steps': {
       if (!selectedTestId) break;
+      const mutationTestId = selectedTestId;
       void enqueueDocumentMutation({
-        testId: selectedTestId,
+        testId: mutationTestId,
         command: input as StepMutationCommand,
         meta,
       }).catch((error: unknown) => {
-        console.error('Could not save test steps.', error);
-        void refresh();
+        documentMutationErrors.set(
+          mutationTestId,
+          error instanceof Error ? error.message : 'Could not save test steps.',
+        );
+        publish();
+        void refresh().catch(() => undefined);
       });
       break;
     }
@@ -359,8 +368,12 @@ const command = (input: AppCommand): void => {
         command: { type: 'update-source', source: value<string>(input, 'source') },
         meta,
       }).catch((error: unknown) => {
-        console.error('Could not save test source.', error);
-        void refresh();
+        documentMutationErrors.set(
+          sourceTestId,
+          error instanceof Error ? error.message : 'Could not save test source.',
+        );
+        publish();
+        void refresh().catch(() => undefined);
       });
       break;
     }

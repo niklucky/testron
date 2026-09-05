@@ -221,3 +221,18 @@ describe('source review regressions', () => {
     expect(playwrightReplayError(source.replace('{ page }', '{ page = customPage }'))).toBeTruthy();
   });
 });
+
+it('imports expect when appending a manual assertion', () => {
+  const source = generatePlaywright('manual assertion', []);
+  const step: Step = {
+    version: 1,
+    kind: 'code',
+    code: 'expect(1 + 1).toBe(2);',
+    reason: 'Manual assertion',
+    metadata,
+  };
+  const updated = appendPlaywrightStepSource(source, step);
+  expect(updated).toContain("import { expect } from '@playwright/test';");
+  expect(updated).toContain(step.code);
+  expect(appendPlaywrightStepSource(updated, step).match(/import \{ expect \}/g)).toHaveLength(1);
+});

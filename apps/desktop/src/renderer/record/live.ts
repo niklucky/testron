@@ -1,3 +1,4 @@
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
 import type { Locator } from '@testron/domain/locators/schema';
 import type { Step } from '@testron/domain/steps/schema';
 
@@ -176,20 +177,21 @@ export const presentRecordedSteps = (steps: readonly Step[]): RecordedStep[] => 
 
 /** Preserve the backend's canonical source while tagging its one action line per step. */
 export const presentSource = (source: string, steps: readonly RecordedStep[]): CodeLine[] => {
+  const parsed = parsePlaywright(source);
   let stepIndex = 0;
+  let offset = 0;
   return source
     .replace(/\n$/, '')
     .split('\n')
     .map((text) => {
-      const step = steps[stepIndex];
-      const beginsStep =
-        step?.kind === 'code'
-          ? text.trim() === step.value?.split('\n')[0]?.trim()
-          : /^ {2}await /.test(text);
-      return {
-        text,
-        ...(beginsStep && step ? { stepId: steps[stepIndex++]!.id } : {}),
-      };
+      const lineStart = offset;
+      offset += text.length + 1;
+      let stepId: string | undefined;
+      while (stepIndex < parsed.steps.length && parsed.steps[stepIndex]!.start < offset) {
+        if (parsed.steps[stepIndex]!.start >= lineStart) stepId ??= steps[stepIndex]?.id;
+        stepIndex++;
+      }
+      return { text, ...(stepId ? { stepId } : {}) };
     });
 };
 

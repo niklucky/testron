@@ -162,7 +162,9 @@ test('step selection, deletion and code editing keep the tested browser at the r
 
     await page.evaluate(() => window.testron.command({ type: 'resume-recording' }));
     await expect.poll(async () => (await snapshot(page)).recording).toBe(true);
-    expect((await snapshot(page)).stepReplay).toMatchObject({ status: 'synced', appliedIndex: 5 });
+    await expect
+      .poll(async () => (await snapshot(page)).stepReplay, { timeout: 15_000 })
+      .toMatchObject({ status: 'synced', appliedIndex: 5 });
     expect((await snapshot(page)).steps).toHaveLength(6);
     await page.evaluate(() => window.testron.command({ type: 'pause-recording' }));
 

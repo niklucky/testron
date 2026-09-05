@@ -3612,7 +3612,7 @@ const createWindow = async (): Promise<void> => {
     mainWindow = undefined;
   });
 
-  await applyRecordingAuthentication();
+  await applyRecordingAuthentication().catch(warnRecordingAuthentication);
   if (glass) await mainWindow.webContents.loadURL('about:blank');
   else await loadAppRenderer(mainWindow.webContents, localMode ? undefined : 'recovery');
 

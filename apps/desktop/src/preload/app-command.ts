@@ -132,7 +132,7 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('update-source'),
     source: z.string().max(2_000_000),
-    testId: z.string().optional(),
+    testId: entityIdSchema.optional(),
   }),
   z.object({
     type: z.literal('use-alternative-locator'),

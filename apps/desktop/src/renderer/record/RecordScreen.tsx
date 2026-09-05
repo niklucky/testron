@@ -159,7 +159,11 @@ export const RecordScreen = () => {
       }),
   );
   const sourceDraft = sourceEditor.value;
-  const sourceParseError = useMemo(() => parsePlaywright(sourceDraft).error, [sourceDraft]);
+  const [sourceParseError, setSourceParseError] = useState<string>();
+  useEffect(() => {
+    const timeout = setTimeout(() => setSourceParseError(parsePlaywright(sourceDraft).error), 500);
+    return () => clearTimeout(timeout);
+  }, [sourceDraft]);
   const repickingId =
     snapshot.repickIndex === undefined ? undefined : steps[snapshot.repickIndex]?.id;
   useEffect(() => {

@@ -18,8 +18,13 @@ if (window === window.top && ['http:', 'https:'].includes(location.protocol)) {
     entries: Array<{ name: string; value: string }>;
   } | null;
   if (state) {
-    for (const name of state.remove) localStorage.removeItem(name);
-    for (const { name, value } of state.entries) localStorage.setItem(name, value);
+    try {
+      for (const name of state.remove) localStorage.removeItem(name);
+      for (const { name, value } of state.entries) localStorage.setItem(name, value);
+    } catch {
+      // Blocked or full storage must not prevent recorder instrumentation.
+      console.warn('Could not restore the profile local storage.');
+    }
   }
 }
 

@@ -24,6 +24,9 @@ const tokenStyles = [
 ];
 
 const highlight = (source: string): ReactNode => {
+  // Malformed, large drafts can make the regex scanner quadratic. Keep their
+  // text editable without synchronously tokenizing the whole document.
+  if (source.length > 20_000) return source;
   const output: ReactNode[] = [];
   let last = 0;
   let key = 0;

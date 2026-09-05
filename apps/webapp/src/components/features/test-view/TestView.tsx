@@ -146,10 +146,11 @@ export const TestView = () => {
     (value, testId) => window.testron?.command({ type: 'update-source', source: value, testId }),
   );
   const sourceDraft = sourceEditor.value;
-  const sourceParseError = useMemo(
-    () => (sourceOpen ? parsePlaywright(sourceDraft).error : undefined),
-    [sourceDraft, sourceOpen],
-  );
+  const [sourceParseError, setSourceParseError] = useState<string>();
+  useEffect(() => {
+    const timeout = setTimeout(() => setSourceParseError(parsePlaywright(sourceDraft).error), 500);
+    return () => clearTimeout(timeout);
+  }, [sourceDraft]);
   useEffect(() => {
     if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
   }, [sourceParseError]);
@@ -213,6 +214,10 @@ export const TestView = () => {
       );
     else setLog(`${detail.name} · ${snapshot.steps.length} persisted steps`);
   }, [loaded, selectedTestId, replay, snapshot.steps.length, detail]);
+
+  useEffect(() => {
+    if (snapshot.documentMutationError) setLog(snapshot.documentMutationError);
+  }, [snapshot]);
 
   const originalIndex = (id: string): number => fullSteps.findIndex((step) => step.id === id);
 

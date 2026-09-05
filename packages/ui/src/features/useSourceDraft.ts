@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useRef, useReducer } from 'react';
 
 /** Keep acknowledgements and pending writes scoped to the document being edited. */
 export const useSourceDraft = (
@@ -7,16 +7,18 @@ export const useSourceDraft = (
   save: (source: string, documentKey: string) => void,
 ) => {
   const [, render] = useReducer((value: number) => value + 1, 0);
-  const draft = useMemo(
-    () => ({
-      value: source,
-      dirty: false,
-      focused: false,
-      pending: undefined as string | undefined,
-      save,
-    }),
-    [documentKey],
-  );
+  const createDraft = () => ({
+    documentKey,
+    value: source,
+    dirty: false,
+    focused: false,
+    pending: undefined as string | undefined,
+    save,
+  });
+  const draftRef = useRef<ReturnType<typeof createDraft> | null>(null);
+  if (!draftRef.current || draftRef.current.documentKey !== documentKey)
+    draftRef.current = createDraft();
+  const draft = draftRef.current;
   draft.save = save;
   useEffect(() => {
     if (source === draft.value) draft.dirty = false;
