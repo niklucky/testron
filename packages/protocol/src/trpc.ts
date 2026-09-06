@@ -1,3 +1,4 @@
+import { addTestAttachmentRequestSchema, deleteTestAttachmentRequestSchema } from './attachments';
 import { z } from 'zod';
 
 import {
@@ -281,3 +282,12 @@ export type AuthRequestPasswordResetInput = z.infer<typeof authRequestPasswordRe
 export type AuthResetPasswordInput = z.infer<typeof authResetPasswordInputSchema>;
 export type AuthSessionOutput = z.infer<typeof authSessionOutputSchema>;
 export type SaveTestRevisionOutput = z.infer<typeof saveTestRevisionOutputSchema>;
+
+export const addTestAttachmentProcedure = {
+  input: addTestAttachmentRequestSchema,
+  output: testSnapshotSchema,
+} as const;
+export const deleteTestAttachmentProcedure = {
+  input: deleteTestAttachmentRequestSchema,
+  output: testSnapshotSchema,
+} as const;

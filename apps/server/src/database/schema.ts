@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -556,4 +557,24 @@ export const idempotencyRecords = pgTable(
     expiresAt: instant('expires_at').notNull(),
   },
   (table) => [primaryKey({ columns: [table.principalId, table.operation, table.idempotencyKey] })],
+);
+
+const binary = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+export const testAttachments = pgTable(
+  'test_attachments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    testId: uuid('test_id')
+      .notNull()
+      .references(() => tests.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    size: integer('size').notNull(),
+    data: binary('data').notNull(),
+    createdAt: instant('created_at').defaultNow().notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+  },
+  (table) => [index('test_attachments_test_id_idx').on(table.testId)],
 );

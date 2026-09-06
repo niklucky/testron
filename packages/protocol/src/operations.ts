@@ -1,3 +1,4 @@
+import { screenshotUploadsSchema } from './attachments';
 import { z } from 'zod';
 import { parseCronExpression } from '@testron/domain/scheduling/cron';
 
@@ -360,6 +361,7 @@ export const deleteTestSuiteRequestSchema = z
 
 export const createTestRequestSchema = z
   .object({
+    screenshots: screenshotUploadsSchema.optional(),
     meta: mutationMetadataSchema,
     projectId: entityIdSchema,
     testSuiteId: entityIdSchema.nullable().optional(),

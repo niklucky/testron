@@ -3,6 +3,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import {
+  MAX_SCREENSHOT_BYTES,
+  MAX_TEST_SCREENSHOT_BYTES,
+  MAX_TEST_SCREENSHOTS,
+  type ScreenshotUpload,
+  type AddTestAttachmentRequest,
+  type DeleteTestAttachmentRequest,
   environmentSchema,
   browserAuthenticationFlowSchema,
   profileEnvironmentAuthenticationSchema,
@@ -79,6 +85,7 @@ import type { AuthenticationEncryption } from '../authentication-state/encryptio
 import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
+  testAttachments,
   environments,
   authenticationStates,
   browserAuthenticationFlows,
@@ -104,10 +111,11 @@ import {
 } from './schema.js';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+type AttachmentMetadata = Omit<typeof testAttachments.$inferSelect, 'data'>;
 
 export class RepositoryError extends Error {
   constructor(
-    readonly code: 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'GONE',
+    readonly code: 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'GONE' | 'BAD_REQUEST',
     message: string,
   ) {
     super(message);
@@ -757,6 +765,8 @@ export class CanonicalRepository {
         })
         .returning();
       if (!test) throw new Error('Could not create the test.');
+      for (const screenshot of request.screenshots ?? [])
+        await this.insertAttachment(tx, user, test.id, screenshot);
       const [revision] = await tx
         .insert(testRevisions)
         .values({
@@ -780,6 +790,98 @@ export class CanonicalRepository {
         entityLabel: test.title,
       });
       return this.snapshot(tx, test.id);
+    });
+  }
+
+  addTestAttachment(
+    user: AuthenticatedUser,
+    request: AddTestAttachmentRequest,
+  ): Promise<TestSnapshot> {
+    return this.idempotent(user, 'test.attachment.add', request, async (tx) => {
+      await this.authorizeTest(tx, user, request.testId);
+      await tx
+        .select({ id: tests.id })
+        .from(tests)
+        .where(eq(tests.id, request.testId))
+        .for('update');
+      await this.authorizeTest(tx, user, request.testId);
+      await this.insertAttachment(tx, user, request.testId, request.screenshot);
+      return this.snapshot(tx, request.testId);
+    });
+  }
+
+  deleteTestAttachment(
+    user: AuthenticatedUser,
+    request: DeleteTestAttachmentRequest,
+  ): Promise<TestSnapshot> {
+    return this.idempotent(user, 'test.attachment.delete', request, async (tx) => {
+      await this.authorizeTest(tx, user, request.testId);
+      await tx
+        .delete(testAttachments)
+        .where(
+          and(
+            eq(testAttachments.id, request.attachmentId),
+            eq(testAttachments.testId, request.testId),
+          ),
+        );
+      return this.snapshot(tx, request.testId);
+    });
+  }
+
+  getTestAttachment(user: AuthenticatedUser, testId: string, attachmentId: string) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeTest(tx, user, testId);
+      const [attachment] = await tx
+        .select()
+        .from(testAttachments)
+        .where(and(eq(testAttachments.id, attachmentId), eq(testAttachments.testId, testId)))
+        .limit(1);
+      if (!attachment) throw new RepositoryError('NOT_FOUND', 'The screenshot was not found.');
+      return attachment;
+    });
+  }
+
+  private async insertAttachment(
+    tx: Transaction,
+    user: AuthenticatedUser,
+    testId: string,
+    screenshot: ScreenshotUpload,
+  ): Promise<void> {
+    const data = Buffer.from(screenshot.base64, 'base64');
+    const validImage =
+      screenshot.mimeType === 'image/png'
+        ? data.length >= 24 &&
+          data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+          data.toString('ascii', 12, 16) === 'IHDR'
+        : screenshot.mimeType === 'image/jpeg'
+          ? data.length >= 4 && data[0] === 255 && data[1] === 216 && data[2] === 255
+          : data.length >= 16 &&
+            data.toString('ascii', 0, 4) === 'RIFF' &&
+            data.toString('ascii', 8, 12) === 'WEBP';
+    if (!validImage || data.length > MAX_SCREENSHOT_BYTES)
+      throw new RepositoryError(
+        'BAD_REQUEST',
+        'Upload a PNG, JPEG, or WebP screenshot up to 5 MB.',
+      );
+    const existing = await tx
+      .select({ size: testAttachments.size })
+      .from(testAttachments)
+      .where(eq(testAttachments.testId, testId));
+    if (
+      existing.length >= MAX_TEST_SCREENSHOTS ||
+      existing.reduce((total, item) => total + item.size, data.length) > MAX_TEST_SCREENSHOT_BYTES
+    )
+      throw new RepositoryError(
+        'BAD_REQUEST',
+        'A test can have up to 10 screenshots totaling 10 MB.',
+      );
+    await tx.insert(testAttachments).values({
+      testId,
+      name: screenshot.name,
+      mimeType: screenshot.mimeType,
+      size: data.length,
+      data,
+      createdBy: user.id,
     });
   }
 
@@ -913,6 +1015,8 @@ export class CanonicalRepository {
       if (!test.currentRevisionId || !test.currentRevisionNumber)
         throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
       const snapshot = await this.snapshot(tx, request.testId);
+      if (snapshot.currentRevision.content.status === 'requested')
+        throw new RepositoryError('CONFLICT', 'Test requests must be marked ready before running.');
       if (!snapshot.currentRevision.content.environmentIds.includes(request.environmentId))
         throw new RepositoryError('CONFLICT', 'The environment is not assigned to this test.');
       if (request.profileId) {
@@ -1420,7 +1524,6 @@ export class CanonicalRepository {
               .from(tests)
               .where(and(inArray(tests.projectId, projectIds), isNull(tests.deletedAt)))
               .orderBy(asc(tests.createdAt));
-      const testValues = await Promise.all(testRows.map((row) => this.snapshot(tx, row.id)));
       const deletedTestRows =
         projectIds.length === 0
           ? []
@@ -1429,9 +1532,20 @@ export class CanonicalRepository {
               .from(tests)
               .where(and(inArray(tests.projectId, projectIds), isNotNull(tests.deletedAt)))
               .orderBy(asc(tests.createdAt));
-      const deletedTestValues = await Promise.all(
-        deletedTestRows.map((row) => this.snapshot(tx, row.id)),
-      );
+      const attachmentRows = await this.attachmentMetadata(tx, [
+        ...testRows.map((row) => row.id),
+        ...deletedTestRows.map((row) => row.id),
+      ]);
+      const attachmentsByTest = new Map<string, AttachmentMetadata[]>();
+      for (const attachment of attachmentRows) {
+        const group = attachmentsByTest.get(attachment.testId) ?? [];
+        group.push(attachment);
+        attachmentsByTest.set(attachment.testId, group);
+      }
+      const hydrateTest = (row: { id: string }) =>
+        this.snapshot(tx, row.id, attachmentsByTest.get(row.id) ?? []);
+      const testValues = await Promise.all(testRows.map(hydrateTest));
+      const deletedTestValues = await Promise.all(deletedTestRows.map(hydrateTest));
       const testIds = testRows.map((test) => test.id);
       const completedRunRows =
         testIds.length === 0
@@ -1601,7 +1715,9 @@ export class CanonicalRepository {
       thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
       const projectOverviews = projectValues.map((project) => {
         const projectTests = testValues.filter(
-          (snapshot) => snapshot.test.projectId === project.id,
+          (snapshot) =>
+            snapshot.test.projectId === project.id &&
+            snapshot.currentRevision.content.status !== 'requested',
         );
         const projectRuns = completedRunRows.filter((run) => run.projectId === project.id);
         const recentRuns = projectRuns.filter(
@@ -2065,6 +2181,8 @@ export class CanonicalRepository {
     if (uniqueIds.length === 0 || rows.length !== uniqueIds.length)
       throw new RepositoryError('NOT_FOUND', 'A selected test was not found in this project.');
     const snapshots = await Promise.all(uniqueIds.map((testId) => this.snapshot(tx, testId)));
+    if (snapshots.some((snapshot) => snapshot.currentRevision.content.status === 'requested'))
+      throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
     if (
       snapshots.some(
         (snapshot) => !snapshot.currentRevision.content.environmentIds.includes(environmentId),
@@ -2098,6 +2216,8 @@ export class CanonicalRepository {
       throw new RepositoryError('CONFLICT', 'The run schedule has no runnable tests.');
     const values = selections.map(({ test, revision }) => {
       const content = this.revision(revision).content;
+      if (content.status === 'requested')
+        throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
       if (!content.environmentIds.includes(schedule.environmentId))
         throw new RepositoryError(
           'CONFLICT',
@@ -2219,6 +2339,8 @@ export class CanonicalRepository {
   }
 
   private validateSetupTestContent(content: TestRevisionContent): void {
+    if (content.status === 'requested')
+      throw new RepositoryError('CONFLICT', 'A test request cannot be used for authentication.');
     if (content.prerequisites.length > 0)
       throw new RepositoryError(
         'CONFLICT',
@@ -2331,10 +2453,14 @@ export class CanonicalRepository {
     const testRows = await tx
       .select({ id: tests.id, testSuiteId: tests.testSuiteId })
       .from(tests)
+      .innerJoin(testRevisions, eq(testRevisions.id, tests.currentRevisionId))
       .where(
-        deletion === 'active'
-          ? and(inArray(tests.testSuiteId, suiteIds), isNull(tests.deletedAt))
-          : inArray(tests.testSuiteId, suiteIds),
+        and(
+          sql`coalesce(${testRevisions.content}->>'status', 'ready') <> 'requested'`,
+          deletion === 'active'
+            ? and(inArray(tests.testSuiteId, suiteIds), isNull(tests.deletedAt))
+            : inArray(tests.testSuiteId, suiteIds),
+        ),
       );
     const testIds = testRows.map((test) => test.id);
     const runRows =
@@ -2382,7 +2508,31 @@ export class CanonicalRepository {
     });
   }
 
-  private async snapshot(tx: Transaction, testId: string): Promise<TestSnapshot> {
+  private async attachmentMetadata(
+    tx: Transaction,
+    testIds: string[],
+  ): Promise<AttachmentMetadata[]> {
+    if (testIds.length === 0) return [];
+    return tx
+      .select({
+        id: testAttachments.id,
+        testId: testAttachments.testId,
+        name: testAttachments.name,
+        mimeType: testAttachments.mimeType,
+        size: testAttachments.size,
+        createdAt: testAttachments.createdAt,
+        createdBy: testAttachments.createdBy,
+      })
+      .from(testAttachments)
+      .where(inArray(testAttachments.testId, testIds))
+      .orderBy(asc(testAttachments.createdAt), asc(testAttachments.id));
+  }
+
+  private async snapshot(
+    tx: Transaction,
+    testId: string,
+    prefetchedAttachments?: AttachmentMetadata[],
+  ): Promise<TestSnapshot> {
     const [test] = await tx.select().from(tests).where(eq(tests.id, testId)).limit(1);
     if (!test?.currentRevisionId || !test.currentRevisionNumber)
       throw new RepositoryError('NOT_FOUND', 'The test snapshot was not found.');
@@ -2392,7 +2542,16 @@ export class CanonicalRepository {
       .where(eq(testRevisions.id, test.currentRevisionId))
       .limit(1);
     if (!revision) throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
+    const attachments = prefetchedAttachments ?? (await this.attachmentMetadata(tx, [testId]));
     return testSnapshotSchema.parse({
+      ...(attachments.length
+        ? {
+            attachments: attachments.map((attachment) => ({
+              ...attachment,
+              createdAt: instant(attachment.createdAt),
+            })),
+          }
+        : {}),
       test: {
         id: test.id,
         projectId: test.projectId,

@@ -135,6 +135,7 @@ export const createHttpServer = (options: {
           : undefined;
       if (trpcPrefix) {
         await nodeHTTPRequestHandler({
+          maxBodySize: 15 * 1024 * 1024,
           req: request,
           res: response,
           path: url.pathname.slice(trpcPrefix.length),
@@ -154,6 +155,37 @@ export const createHttpServer = (options: {
             };
           },
         });
+        return;
+      }
+      const attachmentMatch = url.pathname.match(
+        /^\/api\/tests\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+      );
+      if ((request.method === 'GET' || request.method === 'HEAD') && attachmentMatch) {
+        const user = await options.authentication.authenticate(
+          request.headers.authorization ?? (cookieToken ? `Bearer ${cookieToken}` : undefined),
+        );
+        if (!user) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        try {
+          const attachment = await options.repository.getTestAttachment(
+            user,
+            attachmentMatch[1]!,
+            attachmentMatch[2]!,
+          );
+          response.writeHead(200, {
+            'content-type': attachment.mimeType,
+            'content-length': attachment.size,
+            'cache-control': 'private, no-store',
+            'x-content-type-options': 'nosniff',
+            'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
+          });
+          response.end(request.method === 'HEAD' ? undefined : attachment.data);
+        } catch (error) {
+          if (!(error instanceof RepositoryError)) throw error;
+          json(response, error.code === 'FORBIDDEN' ? 403 : 404, { error: error.message });
+        }
         return;
       }
       const artifactMatch = url.pathname.match(

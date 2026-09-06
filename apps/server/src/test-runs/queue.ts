@@ -164,7 +164,11 @@ export class ServerRunQueue {
       .orderBy(asc(tests.createdAt));
     return selected.flatMap(({ test, revision }) => {
       const content = revisionContent(revision.content);
-      if (!content.environmentIds.includes(schedule.environmentId)) return [];
+      if (
+        content.status === 'requested' ||
+        !content.environmentIds.includes(schedule.environmentId)
+      )
+        return [];
       return [
         {
           projectId: schedule.projectId,
@@ -241,6 +245,7 @@ export class ServerRunQueue {
         if (!revision || !environment)
           throw new Error('The queued run references missing execution data.');
         content = revisionContent(revision.content);
+        if (content.status === 'requested') throw new Error('Test requests cannot run.');
       } catch {
         await tx
           .update(serverRunJobs)

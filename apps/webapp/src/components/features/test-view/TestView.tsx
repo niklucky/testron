@@ -17,6 +17,7 @@ import {
   SegmentedControl,
   StatusDot,
 } from '../../ui/design';
+import { TestAttachments } from './TestAttachments';
 import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
@@ -499,7 +500,26 @@ export const TestView = () => {
                 : undefined
             }
             onClose={() => setNewTestOpen(false)}
-            onStart={(title, environmentIds) => {
+            onRequest={
+              snapshot.library?.server?.authentication === 'signedIn'
+                ? (title, environmentIds, description, screenshots) => {
+                    const projectId = snapshot.library?.selectedProjectId;
+                    if (!projectId || environmentIds.length === 0) return;
+                    window.testron?.command({
+                      type: 'create-test',
+                      projectId,
+                      testSuiteId: snapshot.library.selectedTestSuiteId ?? null,
+                      environmentIds,
+                      title,
+                      description,
+                      screenshots,
+                      status: 'requested',
+                    });
+                    setNewTestOpen(false);
+                  }
+                : undefined
+            }
+            onStart={(title, environmentIds, description, screenshots) => {
               const projectId = snapshot.library.selectedProjectId;
               if (!projectId || environmentIds.length === 0) return;
               window.testron?.command({
@@ -507,6 +527,8 @@ export const TestView = () => {
                 projectId,
                 environmentIds,
                 title,
+                description,
+                screenshots,
               });
               setNewTestOpen(false);
             }}
@@ -734,6 +756,23 @@ export const TestView = () => {
                 onLog={setLog}
               />
             </Lane>
+            {selectedTestId && snapshot.library.server?.authentication === 'signedIn' && (
+              <>
+                <Flow />
+                <Lane
+                  icon="test"
+                  title={t('screenshots')}
+                  count={selectedTest?.attachments?.length ?? 0}
+                  width={320}
+                >
+                  <TestAttachments
+                    key={selectedTestId}
+                    testId={selectedTestId}
+                    attachments={selectedTest?.attachments}
+                  />
+                </Lane>
+              </>
+            )}
             <Flow />
             <Lane
               icon="clipboard"

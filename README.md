@@ -3,6 +3,28 @@
 Server-backed Electron test recorder that persists recoverable drafts and emits
 deterministic Playwright TypeScript.
 
+## Test requests
+
+QA can use **Request test** on the project dashboard to submit a title, description
+draft, and one or more environments without recording steps. The **Create test**
+modal also offers a description field and **Request test** action. Include preconditions, actions,
+and expected results in the description. Requests appear in a separate table with
+**Requested** status and are excluded from runnable test counts and schedules.
+
+The existing workspace sync carries `currentRevision.content.status` and
+`currentRevision.content.description` to desktop drafts and local SQLite storage.
+After implementing the test, use **Mark ready** to move it into the regular test
+list. The description remains in revision history. Code generation and a separate
+command to pull requests into a source repository are outside this feature.
+
+Screenshots can be selected before creating a test or request, or uploaded later
+from the test editor's **Screenshots** section. PNG, JPEG, and WebP are supported
+(up to 5 MB per image, 10 images and 10 MB per test). Open a thumbnail to view it
+at full size, or use **Delete screenshot** to remove the attachment permanently.
+Attachments are stored in `test_attachments`, separately from test revisions;
+workspace sync includes metadata, while image downloads require project access.
+Apply database migration `0019_test_attachments` when updating the server.
+
 ## Workspaces
 
 - `apps/desktop` — Electron application, renderer, local persistence, and replay.

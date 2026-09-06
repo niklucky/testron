@@ -62,6 +62,8 @@ describe('desktop protocol adapter', () => {
         content: {
           stepSchemaVersion: 1,
           title: 'checkout',
+          status: 'requested',
+          description: 'Apply a coupon and verify the total.',
           environmentIds: [id('16')],
           prerequisites: [],
           steps: [
@@ -88,6 +90,14 @@ describe('desktop protocol adapter', () => {
     });
 
     expect(imported.record).toMatchObject({ title: 'checkout', environmentIds: [id('16')] });
+    expect(imported.record).toMatchObject({
+      status: 'requested',
+      description: 'Apply a coupon and verify the total.',
+    });
+    expect(request.content).toMatchObject({
+      status: 'requested',
+      description: 'Apply a coupon and verify the total.',
+    });
     expect(imported.steps).toHaveLength(1);
     expect(imported.draft).toMatchObject({
       draftId: id('18'),

@@ -82,26 +82,32 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
         })),
       ),
     ),
-    tests: value.tests.map(({ test, currentRevision }) => ({
+    tests: value.tests.map(({ test, currentRevision, attachments }) => ({
       id: test.id,
       projectId: test.projectId,
       environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
       profileId: currentRevision.content.profileId ?? null,
       title: test.title,
+      attachments,
       prerequisites: currentRevision.content.prerequisites,
+      status: currentRevision.content.status,
+      description: currentRevision.content.description,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
     })),
     testSuites: value.testSuites,
-    deletedTests: value.deletedTests?.map(({ test, currentRevision }) => ({
+    deletedTests: value.deletedTests?.map(({ test, currentRevision, attachments }) => ({
       id: test.id,
       projectId: test.projectId,
       environmentIds: currentRevision.content.environmentIds,
       testSuiteId: test.testSuiteId,
       profileId: currentRevision.content.profileId ?? null,
       title: test.title,
+      attachments,
       prerequisites: currentRevision.content.prerequisites,
+      status: currentRevision.content.status,
+      description: currentRevision.content.description,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
     })),
@@ -525,15 +531,25 @@ const command = (input: AppCommand): void => {
         .mutate({
           meta,
           projectId: value(input, 'projectId'),
-          testSuiteId: selectedTestSuiteId ?? null,
+          screenshots: value(input, 'screenshots'),
+          testSuiteId:
+            input.testSuiteId === undefined
+              ? (selectedTestSuiteId ?? null)
+              : value(input, 'testSuiteId'),
           content: {
             stepSchemaVersion: 1,
             title: value(input, 'title'),
+            status: value(input, 'status'),
+            description: value(input, 'description'),
             environmentIds: value(input, 'environmentIds'),
             steps: [],
           },
         })
         .then(async (snapshot) => {
+          if (snapshot.currentRevision.content.status === 'requested') {
+            await refresh();
+            return;
+          }
           selectedTestId = snapshot.test.id;
           selectedEnvironmentId =
             snapshot.currentRevision.content.environmentIds[0] ?? selectedEnvironmentId;
@@ -545,8 +561,31 @@ const command = (input: AppCommand): void => {
             testId: snapshot.test.id,
           });
           if (!window.testronDesktop) goToTest(snapshot.test.id);
+        })
+        .catch((error: unknown) => {
+          window.alert(error instanceof Error ? error.message : 'Could not create test.');
         });
       break;
+    case 'complete-test-request': {
+      const test = workspace?.tests.find((item) => item.test.id === value(input, 'testId'));
+      if (!test || test.currentRevision.content.status !== 'requested') break;
+      void trpcClient.test.saveRevision
+        .mutate({
+          meta,
+          testId: test.test.id,
+          baseRevision: test.test.currentRevision,
+          content: { ...test.currentRevision.content, status: 'ready' },
+        })
+        .then(async (result) => {
+          await refresh();
+          if (result.status === 'conflict')
+            window.alert('The test changed. Review the request and try again.');
+        })
+        .catch((error: unknown) =>
+          window.alert(error instanceof Error ? error.message : 'Could not update test request.'),
+        );
+      break;
+    }
     case 'delete-test': {
       const testId = value<string>(input, 'testId');
       const test = workspace?.tests.find((item) => item.test.id === testId);

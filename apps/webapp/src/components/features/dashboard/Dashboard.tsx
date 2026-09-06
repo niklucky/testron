@@ -117,7 +117,9 @@ export const Dashboard = ({
     const persistedSuites = library.testSuites
       .filter((testSuite) => testSuite.projectId === library.selectedProjectId)
       .map((testSuite): SuiteRecord => {
-        const persistedTests = library.tests.filter((test) => test.testSuiteId === testSuite.id);
+        const persistedTests = library.tests.filter(
+          (test) => test.testSuiteId === testSuite.id && test.status !== 'requested',
+        );
         const tests = persistedTests.map(toTestRecord);
         return {
           id: testSuite.id,
@@ -136,7 +138,12 @@ export const Dashboard = ({
       });
 
     const ungrouppedTests = library.tests
-      .filter((test) => test.projectId === library.selectedProjectId && !test.testSuiteId)
+      .filter(
+        (test) =>
+          test.projectId === library.selectedProjectId &&
+          !test.testSuiteId &&
+          test.status !== 'requested',
+      )
       .map(toTestRecord);
     if (ungrouppedTests.length === 0) return persistedSuites;
 
@@ -531,6 +538,7 @@ export const Dashboard = ({
 
         {view === 'overview' ? (
           <Overview
+            library={library}
             suites={overviewSuites}
             totals={totals}
             live={liveOverview}
@@ -669,7 +677,26 @@ export const Dashboard = ({
             library?.selectedEnvironmentId ? [library.selectedEnvironmentId] : undefined
           }
           onClose={() => setNewTestSuite(undefined)}
-          onStart={(title, environmentIds) => {
+          onRequest={
+            library?.server?.authentication === 'signedIn'
+              ? (title, environmentIds, description, screenshots) => {
+                  const projectId = library?.selectedProjectId;
+                  if (!projectId || environmentIds.length === 0) return;
+                  window.testron?.command({
+                    type: 'create-test',
+                    projectId,
+                    testSuiteId: newTestSuite?.id ?? null,
+                    environmentIds,
+                    title,
+                    description,
+                    screenshots,
+                    status: 'requested',
+                  });
+                  setNewTestSuite(undefined);
+                }
+              : undefined
+          }
+          onStart={(title, environmentIds, description, screenshots) => {
             setLog(
               newTestSuite ? `New test · ${title} in ${newTestSuite.name}` : `New test · ${title}`,
             );
@@ -688,6 +715,8 @@ export const Dashboard = ({
               projectId,
               environmentIds,
               title,
+              description,
+              screenshots,
             });
             setNewTestSuite(undefined);
             setLog(`Creating test on server · ${title}`);

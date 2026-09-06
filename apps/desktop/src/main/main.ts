@@ -589,7 +589,10 @@ const createWindow = async (): Promise<void> => {
           profileId: snapshot.currentRevision.content.profileId ?? null,
           testSuiteId: snapshot.test.testSuiteId,
           title: snapshot.test.title,
+          attachments: snapshot.attachments,
           prerequisites: snapshot.currentRevision.content.prerequisites,
+          status: snapshot.currentRevision.content.status,
+          description: snapshot.currentRevision.content.description,
           createdAt: snapshot.test.createdAt,
           updatedAt: snapshot.currentRevision.createdAt,
         }))
@@ -603,7 +606,10 @@ const createWindow = async (): Promise<void> => {
       environmentIds: snapshot.currentRevision.content.environmentIds,
       testSuiteId: snapshot.test.testSuiteId,
       title: snapshot.test.title,
+      attachments: snapshot.attachments,
       prerequisites: snapshot.currentRevision.content.prerequisites,
+      status: snapshot.currentRevision.content.status,
+      description: snapshot.currentRevision.content.description,
       profileId: snapshot.currentRevision.content.profileId ?? null,
       createdAt: snapshot.test.createdAt,
       updatedAt: snapshot.currentRevision.createdAt,
@@ -2302,7 +2308,41 @@ const createWindow = async (): Promise<void> => {
           });
         break;
       }
+      case 'complete-test-request': {
+        const test = remoteTest(command.testId);
+        if (!serverClient || !test || test.currentRevision.content.status !== 'requested') break;
+        const attempt = loginAttempt;
+        void serverClient
+          .saveTestRevision(
+            saveTestRevisionRequestSchema.parse({
+              meta: mutationMeta(`test-ready-${randomUUID()}`),
+              testId: test.test.id,
+              baseRevision: test.test.currentRevision,
+              content: { ...test.currentRevision.content, status: 'ready' },
+            }),
+          )
+          .then(async (result) => {
+            if (attempt !== loginAttempt) return;
+            await reloadRemoteWorkspace();
+            if (result.status === 'conflict')
+              session.warn('The test changed. Review the request and try again.');
+            sendSnapshot(session.snapshot());
+          })
+          .catch((error: unknown) => {
+            session.warn(error instanceof Error ? error.message : 'Could not update test request.');
+            sendSnapshot(session.snapshot());
+          });
+        break;
+      }
       case 'create-test': {
+        if (
+          command.status === 'requested' &&
+          (!serverClient || serverState.authentication !== 'signedIn')
+        ) {
+          session.warn('Sign in before creating a test request.');
+          sendSnapshot(session.snapshot());
+          break;
+        }
         if (!serverClient || serverState.authentication !== 'signedIn') {
           if (localMode) {
             const test = store.createTest(
@@ -2310,6 +2350,7 @@ const createWindow = async (): Promise<void> => {
               command.environmentIds,
               command.title,
               selectedTestSuiteId,
+              command.description,
             );
             store.setTestProfile(test.id, selectedProfileId ?? null);
             selectedProjectId = test.projectId;
@@ -2332,11 +2373,15 @@ const createWindow = async (): Promise<void> => {
         const request = createTestRequestSchema.parse({
           meta: mutationMeta(`test-create-${randomUUID()}`),
           projectId: command.projectId,
-          testSuiteId: selectedTestSuiteId ?? null,
+          screenshots: command.screenshots,
+          testSuiteId:
+            command.testSuiteId === undefined ? (selectedTestSuiteId ?? null) : command.testSuiteId,
           content: {
             stepSchemaVersion: 1,
             title: command.title,
-            profileId: selectedProfileId ?? null,
+            status: command.status,
+            description: command.description,
+            profileId: command.status === 'requested' ? null : (selectedProfileId ?? null),
             environmentIds: command.environmentIds,
             steps: [],
           },
@@ -2350,6 +2395,11 @@ const createWindow = async (): Promise<void> => {
               return;
             replaceRemoteTest(snapshot);
             await reloadRemoteWorkspace();
+            if (snapshot.currentRevision.content.status === 'requested') {
+              serverState = { ...serverState, status: 'synced', message: undefined };
+              sendSnapshot(session.snapshot());
+              return;
+            }
             selectedProjectId = snapshot.test.projectId;
             selectedEnvironmentId = snapshot.currentRevision.content.environmentIds[0];
             selectedTestSuiteId = snapshot.test.testSuiteId ?? undefined;
@@ -2864,6 +2914,11 @@ const createWindow = async (): Promise<void> => {
         const { selectedTest, environment } = selectedContext();
         if (!selectedTest || !environment) {
           session.warn('Select a saved test and environment before running.');
+          break;
+        }
+        if (selectedTest.status === 'requested') {
+          session.warn('Implement the test request and mark it ready before running.');
+          sendSnapshot(session.snapshot());
           break;
         }
         const dataDirectory = process.env.TESTRON_DATA_DIR ?? app.getPath('userData');

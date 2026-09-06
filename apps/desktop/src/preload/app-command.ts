@@ -13,6 +13,7 @@ import {
   testIdAttributeSchema,
   testSuiteNameSchema,
   testTitleSchema,
+  screenshotUploadsSchema,
 } from '@testron/protocol';
 import { recordLayoutSchema, recordPanelStateSchema } from './record';
 import { verifyAssertionSchema } from './verify-assertion';
@@ -223,10 +224,15 @@ export const appCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('create-test'),
+    screenshots: screenshotUploadsSchema.optional(),
+    status: z.enum(['requested', 'ready']).optional(),
+    description: z.string().trim().max(20_000).optional(),
+    testSuiteId: entityIdSchema.nullable().optional(),
     projectId: entityIdSchema,
     environmentIds: z.array(entityIdSchema).min(1).max(100),
     title: testTitleSchema,
   }),
+  z.object({ type: z.literal('complete-test-request'), testId: entityIdSchema }),
   z.object({ type: z.literal('select-project'), projectId: entityIdSchema }),
   z.object({ type: z.literal('select-test-suite'), testSuiteId: entityIdSchema }),
   z.object({ type: z.literal('select-environment'), environmentId: entityIdSchema }),

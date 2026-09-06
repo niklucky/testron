@@ -1,3 +1,5 @@
+import type { ScreenshotUpload } from '@testron/protocol';
+import { ScreenshotPicker } from './ScreenshotPicker';
 import { useTranslation } from '@warpunit/slang-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,6 +14,8 @@ export const NewTestForm = ({
   environments,
   initialEnvironmentIds,
   onStart,
+  onRequest,
+  showDescription = true,
   onClose,
 }: {
   suiteName?: string;
@@ -20,10 +24,26 @@ export const NewTestForm = ({
   submitLabel?: string;
   environments?: Array<{ id: string; name: string }>;
   initialEnvironmentIds?: string[];
-  onStart: (title: string, environmentIds: string[]) => void;
+  onStart?: (
+    title: string,
+    environmentIds: string[],
+    description: string,
+    screenshots: ScreenshotUpload[],
+  ) => void;
+  onRequest?: (
+    title: string,
+    environmentIds: string[],
+    description: string,
+    screenshots: ScreenshotUpload[],
+  ) => void;
+  showDescription?: boolean;
   onClose: () => void;
 }) => {
   const { t } = useTranslation();
+  const [screenshots, setScreenshots] = useState<ScreenshotUpload[]>([]);
+  const [readingScreenshots, setReadingScreenshots] = useState(false);
+  const [description, setDescription] = useState('');
+  const descriptionId = useId();
   const [title, setTitle] = useState(initialTitle);
   const [environmentIds, setEnvironmentIds] = useState(
     initialEnvironmentIds ?? environments?.map(({ id }) => id) ?? [],
@@ -43,9 +63,12 @@ export const NewTestForm = ({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (readingScreenshots) return;
     const nextTitle = title.trim();
     if (nextTitle && (!environments || environmentIds.length > 0))
-      onStart(nextTitle, environmentIds);
+      if (onStart) onStart(nextTitle, environmentIds, description.trim(), screenshots);
+      else if (description.trim())
+        onRequest?.(nextTitle, environmentIds, description.trim(), screenshots);
   };
 
   return createPortal(
@@ -59,7 +82,7 @@ export const NewTestForm = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
+        className="max-h-[calc(100dvh-3rem)] w-full max-w-[520px] overflow-y-auto rounded-xl border border-line bg-surface p-6 shadow-[0_24px_70px_rgba(0,0,0,0.32)]"
       >
         <h2 id={titleId} className="text-2xl font-semibold tracking-[-0.02em]">
           {heading}
@@ -83,6 +106,33 @@ export const NewTestForm = ({
             onChange={(event) => setTitle(event.target.value)}
             className="mt-2 h-10 w-full rounded-md border border-line bg-plane px-3 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
           />
+
+          {showDescription && (
+            <div className="mt-5">
+              <label htmlFor={descriptionId} className="block font-medium text-ink-2">
+                {t('description_draft')}
+              </label>
+              <textarea
+                id={descriptionId}
+                maxLength={20000}
+                rows={5}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t('test_request_description_hint')}
+                className="mt-2 w-full rounded-md border border-line bg-plane px-3 py-2 text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+              />
+            </div>
+          )}
+
+          {onRequest && (
+            <div className="mt-5">
+              <ScreenshotPicker
+                value={screenshots}
+                onChange={setScreenshots}
+                onBusyChange={setReadingScreenshots}
+              />
+            </div>
+          )}
 
           {environments && (
             <fieldset className="mt-5">
@@ -108,15 +158,40 @@ export const NewTestForm = ({
             </fieldset>
           )}
 
-          <div className="mt-6 flex justify-end gap-2">
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
             <Button onClick={onClose}>{t('cancel')}</Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!title.trim() || Boolean(environments && environmentIds.length === 0)}
-            >
-              {submitLabel}
-            </Button>
+            {onRequest && (
+              <Button
+                type={onStart ? 'button' : 'submit'}
+                variant={onStart ? 'default' : 'primary'}
+                disabled={
+                  readingScreenshots ||
+                  !title.trim() ||
+                  !description.trim() ||
+                  Boolean(environments && environmentIds.length === 0)
+                }
+                onClick={
+                  onStart
+                    ? () => onRequest(title.trim(), environmentIds, description.trim(), screenshots)
+                    : undefined
+                }
+              >
+                {t('request_test')}
+              </Button>
+            )}
+            {onStart && (
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={
+                  readingScreenshots ||
+                  !title.trim() ||
+                  Boolean(environments && environmentIds.length === 0)
+                }
+              >
+                {submitLabel}
+              </Button>
+            )}
           </div>
         </form>
       </section>
