@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createTRPCClient, httpBatchLink, TRPCClientError } from '@trpc/client';
 import { eq, sql } from 'drizzle-orm';
+import { Client } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MutationMetadata, RequestMetadata, TestRevisionContent } from '@testron/protocol';
@@ -678,6 +679,72 @@ describe('PostgreSQL tRPC vertical slice', () => {
       attachment.id,
     ]);
     expect(rows.rowCount).toBe(0);
+  });
+
+  it('batches workspace attachment metadata for active, deleted, and attachment-free tests', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot: withoutAttachments } = await createSlice(api);
+    const screenshot = {
+      name: 'expected.png',
+      mimeType: 'image/png' as const,
+      base64:
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aEuoAAAAASUVORK5CYII=',
+    };
+    const active = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: content(environment.id, 'Active screenshots'),
+      screenshots: [screenshot, { ...screenshot, name: 'second.png' }],
+    });
+    const removed = await api.test.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      content: content(environment.id, 'Deleted screenshots'),
+      screenshots: [screenshot],
+    });
+    await api.test.delete.mutate({
+      meta: mutationMeta(),
+      testId: removed.test.id,
+      baseRevision: removed.test.currentRevision,
+    });
+    const empty = await signIn('empty-workspace@example.test');
+    const querySpy = vi.spyOn(Client.prototype, 'query');
+    const attachmentQueries = () =>
+      querySpy.mock.calls.flatMap(([query]: unknown[]) => {
+        const statement =
+          typeof query === 'string'
+            ? query
+            : query && typeof query === 'object' && 'text' in query
+              ? String(query.text)
+              : '';
+        return statement.includes('from "test_attachments"') ? [statement] : [];
+      });
+    try {
+      const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+      expect(attachmentQueries()).toHaveLength(1);
+      expect(attachmentQueries()[0]).not.toContain('"data"');
+      expect(workspace.tests.find((test) => test.test.id === active.test.id)?.attachments).toEqual(
+        active.attachments,
+      );
+      expect(
+        workspace.tests.find((test) => test.test.id === withoutAttachments.test.id)?.attachments,
+      ).toBeUndefined();
+      expect(
+        workspace.deletedTests?.find((test) => test.test.id === removed.test.id)?.attachments,
+      ).toEqual(removed.attachments);
+
+      querySpy.mockClear();
+      const single = await api.test.get.query({ meta: requestMeta(), testId: active.test.id });
+      expect(single.attachments).toEqual(active.attachments);
+      expect(attachmentQueries()).toHaveLength(1);
+
+      querySpy.mockClear();
+      const emptyWorkspace = await empty.api.workspace.get.query({ meta: requestMeta() });
+      expect(emptyWorkspace.tests).toEqual([]);
+      expect(attachmentQueries()).toHaveLength(0);
+    } finally {
+      querySpy.mockRestore();
+    }
   });
 
   it('rejects invalid and oversized screenshot uploads and rolls back test creation', async () => {

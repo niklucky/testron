@@ -111,6 +111,7 @@ import {
 } from './schema.js';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+type AttachmentMetadata = Omit<typeof testAttachments.$inferSelect, 'data'>;
 
 export class RepositoryError extends Error {
   constructor(
@@ -1523,7 +1524,6 @@ export class CanonicalRepository {
               .from(tests)
               .where(and(inArray(tests.projectId, projectIds), isNull(tests.deletedAt)))
               .orderBy(asc(tests.createdAt));
-      const testValues = await Promise.all(testRows.map((row) => this.snapshot(tx, row.id)));
       const deletedTestRows =
         projectIds.length === 0
           ? []
@@ -1532,9 +1532,20 @@ export class CanonicalRepository {
               .from(tests)
               .where(and(inArray(tests.projectId, projectIds), isNotNull(tests.deletedAt)))
               .orderBy(asc(tests.createdAt));
-      const deletedTestValues = await Promise.all(
-        deletedTestRows.map((row) => this.snapshot(tx, row.id)),
-      );
+      const attachmentRows = await this.attachmentMetadata(tx, [
+        ...testRows.map((row) => row.id),
+        ...deletedTestRows.map((row) => row.id),
+      ]);
+      const attachmentsByTest = new Map<string, AttachmentMetadata[]>();
+      for (const attachment of attachmentRows) {
+        const group = attachmentsByTest.get(attachment.testId) ?? [];
+        group.push(attachment);
+        attachmentsByTest.set(attachment.testId, group);
+      }
+      const hydrateTest = (row: { id: string }) =>
+        this.snapshot(tx, row.id, attachmentsByTest.get(row.id) ?? []);
+      const testValues = await Promise.all(testRows.map(hydrateTest));
+      const deletedTestValues = await Promise.all(deletedTestRows.map(hydrateTest));
       const testIds = testRows.map((test) => test.id);
       const completedRunRows =
         testIds.length === 0
@@ -2497,17 +2508,12 @@ export class CanonicalRepository {
     });
   }
 
-  private async snapshot(tx: Transaction, testId: string): Promise<TestSnapshot> {
-    const [test] = await tx.select().from(tests).where(eq(tests.id, testId)).limit(1);
-    if (!test?.currentRevisionId || !test.currentRevisionNumber)
-      throw new RepositoryError('NOT_FOUND', 'The test snapshot was not found.');
-    const [revision] = await tx
-      .select()
-      .from(testRevisions)
-      .where(eq(testRevisions.id, test.currentRevisionId))
-      .limit(1);
-    if (!revision) throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
-    const attachments = await tx
+  private async attachmentMetadata(
+    tx: Transaction,
+    testIds: string[],
+  ): Promise<AttachmentMetadata[]> {
+    if (testIds.length === 0) return [];
+    return tx
       .select({
         id: testAttachments.id,
         testId: testAttachments.testId,
@@ -2518,8 +2524,25 @@ export class CanonicalRepository {
         createdBy: testAttachments.createdBy,
       })
       .from(testAttachments)
-      .where(eq(testAttachments.testId, testId))
+      .where(inArray(testAttachments.testId, testIds))
       .orderBy(asc(testAttachments.createdAt), asc(testAttachments.id));
+  }
+
+  private async snapshot(
+    tx: Transaction,
+    testId: string,
+    prefetchedAttachments?: AttachmentMetadata[],
+  ): Promise<TestSnapshot> {
+    const [test] = await tx.select().from(tests).where(eq(tests.id, testId)).limit(1);
+    if (!test?.currentRevisionId || !test.currentRevisionNumber)
+      throw new RepositoryError('NOT_FOUND', 'The test snapshot was not found.');
+    const [revision] = await tx
+      .select()
+      .from(testRevisions)
+      .where(eq(testRevisions.id, test.currentRevisionId))
+      .limit(1);
+    if (!revision) throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
+    const attachments = prefetchedAttachments ?? (await this.attachmentMetadata(tx, [testId]));
     return testSnapshotSchema.parse({
       ...(attachments.length
         ? {
