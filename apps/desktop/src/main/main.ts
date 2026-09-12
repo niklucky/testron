@@ -856,6 +856,9 @@ const createWindow = async (): Promise<void> => {
         session.warn(serverState.message ?? 'The recording could not be saved.');
       });
   };
+  const afterPendingTestSaves = (operation: () => void): void => {
+    void testSaveQueue.then(operation);
+  };
   let syncRetry: ReturnType<typeof setTimeout> | undefined;
   let loginAttempt = 0;
   const applySyncResult = (result: SyncResult): void => {
@@ -1197,23 +1200,27 @@ const createWindow = async (): Promise<void> => {
   const handleAppCommand = (command: AppCommand): void => {
     switch (command.type) {
       case 'show-product':
-        unloadRecorderWebsite();
-        productVisible = Boolean(remoteView);
-        if (remoteView && !isWebappLocation(remoteView.webContents.getURL()))
-          void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
-        layout();
+        afterPendingTestSaves(() => {
+          unloadRecorderWebsite();
+          productVisible = Boolean(remoteView);
+          if (remoteView && !isWebappLocation(remoteView.webContents.getURL()))
+            void remoteView.webContents.loadURL(webappUrl).catch(() => undefined);
+          layout();
+        });
         break;
       case 'show-selected-test': {
-        unloadRecorderWebsite();
-        productVisible = Boolean(remoteView);
-        if (remoteView && selectedProjectId && selectedTestId) {
-          const target = new URL(webappUrl);
-          target.pathname = `/projects/${encodeURIComponent(selectedProjectId)}/tests/${encodeURIComponent(selectedTestId)}`;
-          target.search = '';
-          target.hash = '';
-          void remoteView.webContents.loadURL(target.toString()).catch(() => undefined);
-        }
-        layout();
+        afterPendingTestSaves(() => {
+          unloadRecorderWebsite();
+          productVisible = Boolean(remoteView);
+          if (remoteView && selectedProjectId && selectedTestId) {
+            const target = new URL(webappUrl);
+            target.pathname = `/projects/${encodeURIComponent(selectedProjectId)}/tests/${encodeURIComponent(selectedTestId)}`;
+            target.search = '';
+            target.hash = '';
+            void remoteView.webContents.loadURL(target.toString()).catch(() => undefined);
+          }
+          layout();
+        });
         break;
       }
       case 'reload-product':
