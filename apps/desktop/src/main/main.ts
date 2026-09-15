@@ -29,7 +29,6 @@ import {
 import {
   ACCOUNT_PASSWORD_MIN_LENGTH,
   cancelInvitationRequestSchema,
-  browserStorageStateSchema,
   changeAccountPasswordRequestSchema,
   createEnvironmentRequestSchema,
   createBrowserAuthenticationFlowRequestSchema,
@@ -68,8 +67,9 @@ import { appCommandSchema, type AppCommand, type VerifyAssertion } from '../prel
 import { recordShortcutKeySchema } from '../preload/record';
 import { verifyAssertionSchema } from '../preload/verify-assertion';
 import { TestronRepository, type LibrarySnapshot } from './persistence/repository';
+import { parseBrowserStorageState, safeParseBrowserStorageState } from './profiles/storage-state';
 import { RecordingSession } from './recording/session';
-import { LocalReplayRunner, type BrowserStorageState, type ReplaySnapshot } from './replay/runner';
+import { LocalReplayRunner, type ReplaySnapshot } from './replay/runner';
 import { BrowserInstaller } from './replay/browser-installer';
 import {
   SecureAuthenticationStateStore,
@@ -111,11 +111,6 @@ const redactSensitiveValues = (message: string, values: readonly string[]): stri
   let redacted = message;
   for (const value of values) if (value) redacted = redacted.replaceAll(value, '[REDACTED]');
   return redacted;
-};
-
-const parseBrowserStorageState = (value: string | undefined): BrowserStorageState | undefined => {
-  if (!value) return undefined;
-  return browserStorageStateSchema.parse(JSON.parse(value)) as BrowserStorageState;
 };
 
 const recorderControlSchema = z.discriminatedUnion('kind', [
@@ -961,12 +956,15 @@ const createWindow = async (): Promise<void> => {
   let recordingAuthenticationUpdate = Promise.resolve();
   const applyRecordingAuthentication = (): Promise<void> => {
     const { environment, profile, values } = selectedProfileContext();
-    const storageState =
+    const storageStateValue = values.find(({ name }) => name === 'storageState')?.value;
+    const parsedStorageState =
       profile?.authenticationType === 'storage-state'
-        ? parseBrowserStorageState(values.find(({ name }) => name === 'storageState')?.value)
-        : undefined;
+        ? safeParseBrowserStorageState(storageStateValue)
+        : {};
     recordingAuthenticationUpdate = recordingAuthenticationUpdate
       .then(async () => {
+        const storageState = parsedStorageState.state;
+        if (parsedStorageState.error) session.warn(parsedStorageState.error);
         await Promise.all(
           appliedProfileCookies.map(({ name, url }) =>
             testedWebsiteSession.cookies.remove(url, name),
