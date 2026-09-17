@@ -12,3 +12,7 @@ coverage/
 .DS_Store
 *.log
 tmp/
+
+# Provisioning settings and SSH keys stay on the operator's machine.
+deployment/*_id_rsa*
+deployment/developer_keys.pub
