@@ -98,6 +98,7 @@ if bash provision-server.sh /work prepare; then exit 1; fi
 diff -r /tmp/before /etc/nginx
 cp /tmp/site-template nginx/testron.dev.conf
 rm -rf /tmp/before
+test -z "$(compgen -G '/var/backups/testron-nginx.*' || true)"
 
 # A failed ACME request must roll back the config too. No real ACME requests.
 sed -i 's/MODE=nginx/MODE=certs/' settings.sh
@@ -108,6 +109,7 @@ chmod +x /usr/bin/certbot
 if bash provision-server.sh /work prepare; then exit 1; fi
 diff -r /tmp/before /etc/nginx
 rm -rf /tmp/before
+test -z "$(compgen -G '/var/backups/testron-nginx.*' || true)"
 
 # SSH hardening must override cloud-init, remain idempotent and roll back errors.
 echo 'PasswordAuthentication yes' > /etc/ssh/sshd_config.d/50-cloud-init.conf
@@ -120,4 +122,5 @@ printf '\nMatch User github\n    PasswordAuthentication yes\n' >> /etc/ssh/sshd_
 cp /etc/ssh/sshd_config /tmp/sshd-before
 if bash provision-server.sh /work harden; then exit 1; fi
 cmp /tmp/sshd-before /etc/ssh/sshd_config
+test -z "$(compgen -G '/var/backups/testron-ssh.*' || true)"
 echo 'Debian provisioning integration checks passed'

@@ -122,7 +122,7 @@ fresh server. Certificates can be reissued; database and encryption keys cannot.
 
 ```sh
 bash -n deployment/provision-app.sh deployment/provision-server.sh
-python3 deployment/tests/test_cli.py
+python3 -B -m unittest discover -s deployment/tests -p 'test_*.py'
 docker run --rm -v "$PWD/deployment:/source:ro" debian:13 \
   bash /source/tests/debian.sh
 ```

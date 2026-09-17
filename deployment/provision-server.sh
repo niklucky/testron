@@ -92,19 +92,28 @@ reload_ssh() { systemctl reload ssh; }
 rollback() {
   local rc=$?
   trap - EXIT
-  set +e
   if [ "$nginx_pending" = 1 ]; then
     printf 'Restoring nginx from %s\n' "$nginx_backup" >&2
-    rm -rf /etc/nginx
-    cp -a "$nginx_backup/nginx" /etc/nginx
-    nginx -t && systemctl reload nginx
+    if rm -rf /etc/nginx \
+      && cp -a "$nginx_backup/nginx" /etc/nginx \
+      && nginx -t && systemctl reload nginx \
+      && rm -rf "$nginx_backup"; then
+      nginx_pending=0
+    else
+      printf 'nginx rollback or cleanup failed; backup retained at %s\n' "$nginx_backup" >&2
+    fi
   fi
   if [ "$ssh_pending" = 1 ]; then
     printf 'Restoring sshd from %s\n' "$ssh_backup" >&2
-    cp -a "$ssh_backup/sshd_config" /etc/ssh/sshd_config
-    rm -f /etc/ssh/testron-hardening.conf
-    [ ! -f "$ssh_backup/testron-hardening.conf" ] || cp -a "$ssh_backup/testron-hardening.conf" /etc/ssh/
-    sshd -t && reload_ssh
+    if cp -a "$ssh_backup/sshd_config" /etc/ssh/sshd_config \
+      && rm -f /etc/ssh/testron-hardening.conf \
+      && { [ ! -f "$ssh_backup/testron-hardening.conf" ] || cp -a "$ssh_backup/testron-hardening.conf" /etc/ssh/; } \
+      && sshd -t && reload_ssh \
+      && rm -rf "$ssh_backup"; then
+      ssh_pending=0
+    else
+      printf 'sshd rollback or cleanup failed; backup retained at %s\n' "$ssh_backup" >&2
+    fi
   fi
   exit "$rc"
 }
