@@ -1,60 +1,38 @@
 # VPS deployment
 
 The production workflow builds the server image, pushes an immutable commit tag
-to GitHub Container Registry, and deploys `compose.yml` over SSH. The stack binds
+to GitHub Container Registry, and deploys `deployment/compose.yml` over SSH. The stack binds
 Testron to `127.0.0.1:4400`; nginx should proxy the public HTTPS host to that
 address. PostgreSQL is reachable only inside the Compose network.
 
 ## VPS preparation
 
-Install Docker Engine with the Compose plugin, create the `github` user, add it
-to the Docker group, and create its SSH key. Prepare the deployment and database
-directories before the first deployment:
+Use [the shell provisioner](../deployment/README.md) on a Debian 13 server.
+It installs nginx, Docker Engine with Compose, and Certbot; creates the `github`
+and `developer` accounts; installs public SSH keys; prepares storage; configures
+HTTPS; and disables SSH password authentication after verifying developer access.
+All provisioning scripts and nginx templates live in `deployment/`.
 
 ```sh
-sudo install -d -o github -g github /opt/testron
-sudo install -d /data/testron/db
+./deployment/provision-app.sh
+# Reapply nginx templates without changing users, packages, certificates or SSH:
+./deployment/provision-app.sh --nginx-only
 ```
 
-The deployment directory defaults to `/opt/testron`. PostgreSQL data is stored
-on the host at `/data/testron/db`.
+Settings live in ignored `deployment/.env.production`. The default SSH target is
+`testron`, using your workstation's SSH config. This settings file is separate
+from the application `.env` written on the server by GitHub Actions.
 
-Configure nginx with an HTTPS virtual host whose upstream is:
+The provisioner serves `app.testron.dev` through `127.0.0.1:4400` and
+`testron.dev` from `/var/www/testron.dev/current`. Set `INCLUDE_WWW=1` if
+`www.testron.dev` should also be included. It prepares `/opt/testron`,
+`/data/testron/db`, and `/data/testron/artifacts`. Keep the workflow paths at
+their defaults unless you also change the provisioner and nginx templates.
 
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:4400;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-Slang runtime refresh also needs two read-only proxy locations. Keep the project
-API key in a root-owned nginx snippet such as
-`/etc/nginx/snippets/testron-slang-key.conf`; the snippet should contain only
-`proxy_set_header X-Api-Key "<project-key>";` and must not be committed or served.
-Do not proxy the Slang push endpoint, because that would let public clients
-modify translations with the injected key.
-
-```nginx
-location = /slang/api/translations {
-    limit_except GET { deny all; }
-    proxy_pass https://slang.warpunit.com/api/translations;
-    proxy_ssl_server_name on;
-    proxy_set_header Host slang.warpunit.com;
-    include /etc/nginx/snippets/testron-slang-key.conf;
-}
-
-location = /slang/api/translations/state {
-    limit_except GET { deny all; }
-    proxy_pass https://slang.warpunit.com/api/translations/state;
-    proxy_ssl_server_name on;
-    proxy_set_header Host slang.warpunit.com;
-    include /etc/nginx/snippets/testron-slang-key.conf;
-}
-```
+Set `SLANG_API_KEY` in the local provisioning settings to enable the two
+read-only translation endpoints. The key is installed in a root-owned nginx
+snippet with mode `0600`; it is not committed or returned to clients. Other
+`/slang/` routes are refused, including translation writes.
 
 ## GitHub production environment
 
@@ -133,38 +111,11 @@ ln -sfn /var/www/testron.dev/releases/<sha> /var/www/testron.dev/current.new
 mv -T /var/www/testron.dev/current.new /var/www/testron.dev/current
 ```
 
-Prepare the site directory once, owned by the deployment user:
-
-```sh
-sudo install -d -o github -g github /var/www/testron.dev/releases
-```
-
-The path defaults to `/var/www/testron.dev` and is overridden with the
-`VPS_WEB_PATH` repository variable. Serve it from nginx as a plain static root —
-no proxy, since the site has no server side:
-
-```nginx
-server {
-    server_name testron.dev;
-    root /var/www/testron.dev/current;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Asset file names carry a content hash; index.html must never be cached.
-    location /assets/ {
-        add_header Cache-Control "public, max-age=31536000, immutable";
-    }
-
-    location = /index.html {
-        add_header Cache-Control "no-cache";
-    }
-}
-```
-
-`testron.dev` and `app.testron.dev` both resolve to the VPS; the apex serves
-these files and the subdomain proxies to `127.0.0.1:4400` as above.
+The provisioner creates the site directory owned by `github` and installs the
+[static nginx configuration](../deployment/nginx/testron.dev.conf). Hashed assets
+receive immutable caching; `index.html` is never cached. The workflow's
+`VPS_WEB_PATH` defaults to `/var/www/testron.dev`; if you override it, update the
+provisioner and nginx root together.
 
 The site reads the newest release tag from the public GitHub API purely to
 display it. Download links do not depend on that request.

@@ -140,7 +140,7 @@ jobs:
         run: |
           SSH_TARGET="$VPS_USER@$VPS_HOST"
           ssh -p "$VPS_PORT" "$SSH_TARGET" "mkdir -p '$VPS_DEPLOY_PATH'"
-          scp -P "$VPS_PORT" compose.yml deploy.env "$SSH_TARGET:$VPS_DEPLOY_PATH/"
+          scp -P "$VPS_PORT" deployment/compose.yml deploy.env "$SSH_TARGET:$VPS_DEPLOY_PATH/"
       - name: Deploy
         run: |
           SSH_TARGET="$VPS_USER@$VPS_HOST"
