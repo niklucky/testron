@@ -59,16 +59,25 @@ export const projectRunsFromLibrary = (library: LibrarySnapshot): ProjectRun[] =
         suite: suite?.name ?? 'Unassigned',
         verdict: runVerdict(run.status),
         environment: environments.get(run.environmentId)?.name ?? 'Unknown environment',
-        browser: run.source === 'desktop-local' ? 'Desktop Chromium' : 'Server Chromium',
+        browser:
+          run.source === 'ci' || run.source === 'repository-local'
+            ? run.context?.playwrightProject || 'Playwright'
+            : run.source === 'desktop-local'
+              ? 'Desktop Chromium'
+              : 'Server Chromium',
         branch: '—',
         commit: '—',
         trigger: run.source === 'server-scheduled' ? 'schedule' : 'manual',
         by:
-          run.source === 'server-scheduled'
-            ? 'Server schedule'
-            : run.source === 'server-manual'
-              ? 'Server queue'
-              : 'Desktop runner',
+          run.source === 'ci'
+            ? 'CI reporter'
+            : run.source === 'repository-local'
+              ? 'Local Playwright reporter'
+              : run.source === 'server-scheduled'
+                ? 'Server schedule'
+                : run.source === 'server-manual'
+                  ? 'Server queue'
+                  : 'Desktop runner',
         minutesAgo: minutesSince(run.startedAt),
         seconds: (run.durationMs ?? 0) / 1_000,
         attempts: 1,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { entityIdSchema, revisionPointerSchema } from './common';
+import { testExecutionModeSchema, reportedRunContextSchema } from './resources';
 
 // Source paths are portable repository-relative paths, never filesystem destinations.
 export const sourcePathSchema = z
@@ -25,7 +26,7 @@ export const syncPullSchema = syncProjectSchema.extend({ repositoryId: entityIdS
 export const syncPushSchema = syncPullSchema
   .extend({
     dryRun: z.boolean().default(false),
-    environmentIds: z.array(entityIdSchema).min(1).max(100),
+    environmentIds: z.array(entityIdSchema).max(100).default([]),
     files: z
       .array(
         z
@@ -46,7 +47,12 @@ export const syncPushSchema = syncPullSchema
         z
           .object({
             id: entityIdSchema,
-            suiteId: entityIdSchema,
+            execution: testExecutionModeSchema.default('ci-only'),
+            kind: z.enum(['catalogue', 'portable']).default('catalogue'),
+            source: z.string().max(2_000_000).optional(),
+            description: z.string().max(20_000).optional(),
+            humanSteps: z.array(z.string().max(2_000)).max(200).optional(),
+            suiteId: entityIdSchema.nullable(),
             title: z.string().trim().min(1).max(500),
             file: sourcePathSchema,
             titlePath: z.array(z.string().max(500)).max(100),
@@ -85,3 +91,17 @@ export const createSyncKeySchema = syncProjectSchema.extend({
   days: z.number().int().min(1).max(365).default(90),
 });
 export type SyncPush = z.infer<typeof syncPushSchema>;
+
+export const reportRunSchema = syncProjectSchema.extend({
+  id: entityIdSchema,
+  testId: entityIdSchema,
+  testRevision: revisionPointerSchema,
+  environmentId: entityIdSchema,
+  source: z.enum(['ci', 'repository-local']),
+  status: z.enum(['passed', 'failed', 'timedOut', 'cancelled']),
+  startedAt: z.iso.datetime(),
+  durationMs: z.number().int().nonnegative().max(86_400_000),
+  error: z.string().max(10_000).nullable(),
+  context: reportedRunContextSchema,
+});
+export type ReportRun = z.infer<typeof reportRunSchema>;

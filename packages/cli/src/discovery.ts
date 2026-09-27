@@ -117,9 +117,34 @@ export const testId = (test: DiscoveredTest) => {
 };
 export const suiteId = (test: DiscoveredTest) =>
   test.annotations.filter((annotation) => annotation.type === 'testron.suite').at(-1)?.description;
-export function validateTests(tests: DiscoveredTest[], suiteIds: Set<string>) {
+export function publication(test: DiscoveredTest) {
+  const annotation = test.annotations.filter((item) => item.type === 'testron.publish').at(-1);
+  if (annotation && !['true', 'false'].includes(annotation.description ?? ''))
+    throw new CliError(
+      'INVALID_PUBLICATION',
+      `Use publish: true or false at ${test.file}:${test.line}.`,
+    );
+  return annotation?.description === 'true';
+}
+export function executionMode(test: DiscoveredTest): 'ci-only' | 'ci-and-testron' {
+  const value = test.annotations
+    .filter((item) => item.type === 'testron.execution')
+    .at(-1)?.description;
+  if (value !== undefined && value !== 'ci-only' && value !== 'ci-and-testron')
+    throw new CliError(
+      'INVALID_EXECUTION',
+      `Unknown execution mode at ${test.file}:${test.line}: ${value}`,
+    );
+  return value ?? 'ci-only';
+}
+export function validateTests(
+  tests: DiscoveredTest[],
+  suiteIds: Set<string>,
+  unassignedIds = new Set<string>(),
+) {
   const ids = new Set<string>();
   for (const test of tests) {
+    executionMode(test);
     const id = testId(test);
     if (id && !z.uuid().safeParse(id).success)
       throw new CliError('INVALID_ID', `Invalid test UUID at ${test.file}:${test.line}`);
@@ -127,12 +152,12 @@ export function validateTests(tests: DiscoveredTest[], suiteIds: Set<string>) {
       throw new CliError('DUPLICATE_ID', `Test ID ${id} is reused at ${test.file}:${test.line}`);
     if (id) ids.add(id);
     const suite = suiteId(test);
-    if (!suite)
+    if (!suite && !(id && unassignedIds.has(id)))
       throw new CliError(
         'SUITE_REQUIRED',
         `Assign a suite at ${test.file}:${test.line}, e.g. testron({ suite: suites.Authentication }).`,
       );
-    if (!suiteIds.has(suite))
+    if (suite && !suiteIds.has(suite))
       throw new CliError(
         'SUITE_UNKNOWN',
         `Suite ${suite} does not exist in this project. Run testron pull.`,
@@ -141,7 +166,7 @@ export function validateTests(tests: DiscoveredTest[], suiteIds: Set<string>) {
 }
 
 // Locate declarations by Playwright's source location, never by a title regex.
-function declaration(file: ts.SourceFile, test: DiscoveredTest) {
+export function declaration(file: ts.SourceFile, test: DiscoveredTest) {
   let result: ts.CallExpression | undefined;
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
@@ -189,7 +214,7 @@ export async function assignIds(root: string, tests: DiscoveredTest[], dryRun: b
       );
     const id = randomUUID();
     ids.set(location, id);
-    const details = call.arguments[1];
+    const details = call.arguments[1]!;
     const annotation = `{ type: 'testron.id', description: '${id}' }`;
     let change;
     if (call.arguments.length === 2) {
@@ -201,10 +226,10 @@ export async function assignIds(root: string, tests: DiscoveredTest[], dryRun: b
     } else if (
       ts.isCallExpression(details) &&
       details.arguments.length === 1 &&
-      ts.isObjectLiteralExpression(details.arguments[0]) &&
+      ts.isObjectLiteralExpression(details.arguments[0]!) &&
       details.expression.getText(ast) === 'testron'
     ) {
-      const obj = details.arguments[0];
+      const obj = details.arguments[0]!;
       change = {
         position: obj.getStart(ast) + 1,
         end: obj.getStart(ast) + 1,
@@ -315,7 +340,14 @@ export async function collectFiles(root: string, config: Config, tests: Discover
   return result;
 }
 
-export function annotateExport(source: string, id: string, suite: string | null): string {
+export function annotateExport(
+  source: string,
+  id: string,
+  suite: string | null,
+  execution: 'ci-only' | 'ci-and-testron' = 'ci-and-testron',
+  requiresAuth = false,
+  metadata: { description?: string | undefined; humanSteps?: string[] | undefined } = {},
+): string {
   const ast = ts.createSourceFile('export.spec.ts', source, ts.ScriptTarget.Latest, true);
   const calls = ast.statements
     .filter(ts.isExpressionStatement)
@@ -324,16 +356,25 @@ export function annotateExport(source: string, id: string, suite: string | null)
       (expression): expression is ts.CallExpression =>
         ts.isCallExpression(expression) && expression.expression.getText(ast) === 'test',
     );
-  if (calls.length !== 1 || calls[0].arguments.length !== 2)
+  if (calls.length !== 1 || calls[0]!.arguments.length !== 2)
     throw new CliError(
       'SOURCE_EXPORT_UNSUPPORTED',
       `Test ${id} cannot be exported automatically. Its source must contain one standalone test declaration.`,
     );
   const annotations = [
     { type: 'testron.id', description: id },
+    { type: 'testron.publish', description: 'true' },
+    ...(metadata.description
+      ? [{ type: 'testron.description', description: metadata.description }]
+      : []),
+    ...(metadata.humanSteps
+      ? [{ type: 'testron.steps', description: JSON.stringify(metadata.humanSteps) }]
+      : []),
+    { type: 'testron.execution', description: execution },
+    ...(requiresAuth ? [{ type: 'testron.local-auth', description: 'required' }] : []),
     ...(suite ? [{ type: 'testron.suite', description: suite }] : []),
   ];
-  const position = calls[0].arguments[1].getStart(ast);
+  const position = calls[0]!.arguments[1]!.getStart(ast);
   return (
     source.slice(0, position) +
     `{ annotation: ${JSON.stringify(annotations)} }, ` +

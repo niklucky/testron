@@ -5,6 +5,7 @@ import { TRPCError, initTRPC } from '@trpc/server';
 import {
   syncPullSchema,
   syncPushSchema,
+  reportRunSchema,
   createSyncKeySchema,
   syncProjectSchema,
   authLoginInputSchema,
@@ -160,6 +161,9 @@ export const createAppRouter = ({ authentication, repository, runQueue }: Router
       push: syncProcedure
         .input(syncPushSchema)
         .mutation(({ ctx, input }) => call(() => repository.pushRepository(ctx.user, input))),
+      report: syncProcedure
+        .input(reportRunSchema)
+        .mutation(({ ctx, input }) => call(() => repository.reportRepositoryRun(ctx.user, input))),
       createKey: authenticatedProcedure
         .input(createSyncKeySchema)
         .mutation(({ ctx, input }) => call(() => repository.createSyncKey(ctx.user, input))),
@@ -395,6 +399,13 @@ export const createAppRouter = ({ authentication, repository, runQueue }: Router
         .mutation(({ ctx, input }) => call(() => repository.saveTestRevision(ctx.user, input))),
     }),
     run: t.router({
+      enqueue: authenticatedProcedure
+        .input(startTestRunProcedure.input.omit({ source: true }))
+        .mutation(async ({ ctx, input }) => {
+          const job = await call(() => repository.enqueueTestRun(ctx.user, input));
+          runQueue?.wake();
+          return job;
+        }),
       start: authenticatedProcedure
         .input(startTestRunProcedure.input)
         .output(startTestRunProcedure.output)

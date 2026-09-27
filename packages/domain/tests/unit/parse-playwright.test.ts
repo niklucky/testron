@@ -175,7 +175,6 @@ describe('source review regressions', () => {
     "await page.getByText('Delete', { exact: true, ...options }).click();",
     "await page.getByRole('button', { [name]: 'Continue' }).click();",
     "await page.getByTestId('').click();",
-    "await page.goto('/relative');",
     "await expect(page.getByTestId('row')).toHaveCount(1.5);",
   ])('keeps unsupported semantics as code: %s', (statement) => {
     const parsed = parsePlaywright(`test('review', async ({ page }) => { ${statement} });`);

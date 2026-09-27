@@ -52,12 +52,14 @@ export const SourceEditor = ({
   onFocusChange,
   ariaLabel,
   className = '',
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onFocusChange?: (focused: boolean) => void;
   ariaLabel: string;
   className?: string;
+  readOnly?: boolean;
 }) => {
   const highlightedRef = useRef<HTMLPreElement>(null);
   const synchronizeScroll = (event: UIEvent<HTMLTextAreaElement>) => {
@@ -79,6 +81,7 @@ export const SourceEditor = ({
       <textarea
         aria-label={ariaLabel}
         value={value}
+        readOnly={readOnly}
         wrap="off"
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}

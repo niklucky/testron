@@ -40,6 +40,7 @@ const parseOptions = () =>
       repository: { type: 'string' },
       environment: { type: 'string', multiple: true },
       agent: { type: 'boolean' },
+      skill: { type: 'boolean' },
       email: { type: 'string' },
       'password-stdin': { type: 'boolean' },
       name: { type: 'string' },
@@ -136,7 +137,7 @@ async function main() {
     key: subcommand === 'create' ? ['name', 'days'] : ['id'],
     pull: ['tests', 'test', 'suite'],
     push: ['file', 'dry-run'],
-    docs: ['agent'],
+    docs: ['agent', 'skill'],
   };
   if (!allowed[command])
     throw new CliError('UNKNOWN_COMMAND', `Unknown command ${command}. Run testron --help.`);
@@ -150,7 +151,13 @@ async function main() {
       throw new CliError('INVALID_ARGUMENTS', `--${flag} is not supported by ${command}.`);
   if (command === 'docs') {
     process.stdout.write(
-      await readFile(new URL(values.agent ? './AGENT.md' : './CLI.md', import.meta.url), 'utf8'),
+      await readFile(
+        new URL(
+          values.skill ? './SKILL.md' : values.agent ? './AGENT.md' : './CLI.md',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
     );
     return;
   }
@@ -193,6 +200,10 @@ async function main() {
       await atomicWrite(
         path.join(dir, 'AGENT.md'),
         await readFile(new URL('./AGENT.md', import.meta.url), 'utf8'),
+      );
+      await atomicWrite(
+        path.join(dir, 'SKILL.md'),
+        await readFile(new URL('./SKILL.md', import.meta.url), 'utf8'),
       );
       const agents = await sourcePath(root, 'AGENTS.md', true);
       const previous = (await readOptional(agents)) ?? '';

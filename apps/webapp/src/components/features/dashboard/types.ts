@@ -37,6 +37,8 @@ export type Failure = {
 };
 
 export type TestRecord = {
+  execution?: 'ci-only' | 'ci-and-testron';
+  repositoryManaged?: boolean;
   id: string;
   name: string;
   status: StepState;

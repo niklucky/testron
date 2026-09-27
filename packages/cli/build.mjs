@@ -21,3 +21,14 @@ await build({
 await copyFile('../../docs/integration/agents.md', 'dist/AGENT.md');
 await copyFile('../../docs/integration/cli.md', 'dist/CLI.md');
 await chmod('dist/cli.js', 0o755);
+await build({
+  entryPoints: ['src/run-reporter.ts'],
+  outfile: 'dist/run-reporter.js',
+  bundle: true,
+  platform: 'node',
+  target: 'node22',
+  format: 'esm',
+  external: ['@trpc/client', 'esbuild', 'typescript', 'zod'],
+});
+
+await copyFile('../../docs/agents/testron/SKILL.md', 'dist/SKILL.md');

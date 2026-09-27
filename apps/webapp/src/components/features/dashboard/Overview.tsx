@@ -1,3 +1,4 @@
+import { CiOnlyIndicator } from '../../ui/CiOnlyIndicator';
 import { useTranslation } from '@warpunit/slang-react';
 import { useMemo, type RefObject } from 'react';
 import type { LibrarySnapshot } from '../../../lib/library';
@@ -503,6 +504,9 @@ export const Overview = ({
                                       >
                                         {test.name}
                                       </span>
+                                      {test.execution === 'ci-only' && <CiOnlyIndicator />}
+                                      {test.execution === 'ci-and-testron' &&
+                                        test.repositoryManaged && <Badge>CI catalogue</Badge>}
                                       {test.deleted && <Badge>{t('deleted')}</Badge>}
                                     </span>
                                     <span className="text-ink-3">{t(verdict.label)}</span>

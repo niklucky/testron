@@ -1,3 +1,4 @@
+import { CiOnlyIndicator } from '../../ui/CiOnlyIndicator';
 import { useTranslation } from '@warpunit/slang-react';
 import { useRef, useState } from 'react';
 
@@ -217,6 +218,7 @@ const SuiteBranch = ({
                   label={verdictTone[test.status].label}
                 />
                 <span className="truncate text-ink-2">{test.name}</span>
+                {test.execution === 'ci-only' && <CiOnlyIndicator />}
                 <span className="ui-mono ml-auto shrink-0 text-ink-3">
                   {test.seconds === undefined ? '—' : ms(test.seconds * 1000)}
                 </span>

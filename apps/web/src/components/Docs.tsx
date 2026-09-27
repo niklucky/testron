@@ -89,6 +89,7 @@ export function Docs() {
               {label}
             </a>
           ))}
+          <a href="/agents/SKILL.md">Agent skill ↓</a>
         </nav>
         <main className="docs-content">
           {page ? (

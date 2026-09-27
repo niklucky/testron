@@ -101,6 +101,8 @@ export const Dashboard = ({
       return {
         id: persisted.id,
         name: persisted.title,
+        execution: persisted.execution,
+        repositoryManaged: persisted.repositoryManaged,
         status: !latestRun
           ? 'skipped'
           : latestRun.status === 'passed'
@@ -177,6 +179,8 @@ export const Dashboard = ({
       return {
         id: persisted.id,
         name: persisted.title,
+        execution: persisted.execution,
+        repositoryManaged: persisted.repositoryManaged,
         status: !latestRun
           ? 'skipped'
           : latestRun.status === 'passed'

@@ -14,7 +14,16 @@ export const isUnauthorizedError = (error: unknown): boolean => {
 };
 
 export const workspaceQueryOptions = () => trpc.workspace.getWeb.queryOptions(workspaceInput);
-export const useWorkspace = () => useQuery(workspaceQueryOptions());
+export const useWorkspace = () =>
+  useQuery({
+    ...workspaceQueryOptions(),
+    refetchInterval: (query) =>
+      query.state.data?.serverRunJobs?.some(
+        (job) => job.status === 'queued' || job.status === 'running',
+      )
+        ? 1_000
+        : false,
+  });
 
 export const useRefreshWorkspace = () => {
   const queryClient = useQueryClient();

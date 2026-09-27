@@ -22,7 +22,8 @@ import { NewTestForm } from '../dashboard/NewTestForm';
 import { presentSource } from '../record/live';
 import { replacePrimaryLocator } from '../record/locator-edit';
 import type { RecordedStep, StepViewMode } from '../record/types';
-import { Branch, EmptyLane, Flow, Lane } from './Board';
+import { Branch, Card, EmptyLane, Flow, Lane } from './Board';
+import { CiOnlyIndicator } from '../../ui/CiOnlyIndicator';
 import { BrowserInstallModal } from './BrowserInstallModal';
 import {
   AssertionCard,
@@ -141,24 +142,33 @@ export const TestView = () => {
   );
   const board = useMemo(() => liveTestBoard(liveSnapshot), [liveSnapshot]);
   const { detail, prerequisites, steps, assertions, runs, fullSteps } = board;
+  const selectedTestId = snapshot.library.selectedTestId;
+  const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
+  const readOnly = Boolean(selectedTest?.repositoryManaged);
+  const ciOnly = readOnly || selectedTest?.execution === 'ci-only';
+  const humanSteps = selectedTest?.humanSteps ?? [];
   const source = snapshot.source;
   const sourceEditor = useSourceDraft(
     snapshot.library.selectedTestId ?? '',
     source,
-    (value, testId) => window.testron?.command({ type: 'update-source', source: value, testId }),
+    (value, testId) => {
+      if (!readOnly) window.testron?.command({ type: 'update-source', source: value, testId });
+    },
   );
   const sourceDraft = sourceEditor.value;
   const [sourceParseError, setSourceParseError] = useState<string>();
   useEffect(() => {
+    if (readOnly) {
+      setSourceParseError(undefined);
+      return;
+    }
     const timeout = setTimeout(() => setSourceParseError(parsePlaywright(sourceDraft).error), 500);
     return () => clearTimeout(timeout);
-  }, [sourceDraft]);
+  }, [sourceDraft, readOnly]);
   useEffect(() => {
     if (sourceParseError) setLog(`Source error · ${sourceParseError}`);
   }, [sourceParseError]);
   const lines = useMemo(() => presentSource(source, fullSteps), [source, fullSteps]);
-  const selectedTestId = snapshot.library.selectedTestId;
-  const selectedTest = snapshot.library.tests.find((test) => test.id === selectedTestId);
   const projectEnvironments = snapshot.library.environments.filter(
     (environment) => environment.projectId === selectedTest?.projectId,
   );
@@ -181,12 +191,14 @@ export const TestView = () => {
         ),
       ),
     }));
-  const editInRecorder = () =>
+  const editInRecorder = () => {
+    if (readOnly) return;
     goToRecorder(
       selectedTestId && selectedTest
         ? { projectId: selectedTest.projectId, testId: selectedTestId }
         : undefined,
     );
+  };
   const testSuites = snapshot.library.testSuites.filter(
     (suite) => suite.projectId === snapshot.library.selectedProjectId,
   );
@@ -214,8 +226,9 @@ export const TestView = () => {
       setLog(
         `Run ${replay.status} · ${replay.steps.filter((one) => one.status === 'passed').length}/${replay.steps.length} steps passed`,
       );
+    else if (readOnly) setLog('Managed in your repository · run locally or in CI');
     else setLog(`${detail.name} · ${snapshot.steps.length} persisted steps`);
-  }, [loaded, selectedTestId, replay, snapshot.steps.length, detail]);
+  }, [loaded, selectedTestId, replay, snapshot.steps.length, detail, readOnly]);
 
   useEffect(() => {
     if (snapshot.documentMutationError) setLog(snapshot.documentMutationError);
@@ -390,6 +403,7 @@ export const TestView = () => {
   };
 
   const startRun = () => {
+    if (ciOnly) return;
     const desktop = window.testronDesktop;
     const profile = snapshot.library.profiles.find(
       (candidate) => candidate.id === snapshot.library.selectedProfileId,
@@ -418,6 +432,7 @@ export const TestView = () => {
   };
 
   const run = () => {
+    if (ciOnly) return;
     if (running) {
       if (window.testronDesktop) window.testronDesktop.cancelRun();
       else window.testron?.command({ type: 'cancel-run' });
@@ -449,8 +464,8 @@ export const TestView = () => {
         closeSource: () => setSourceOpen(false),
       },
       {
-        enabled: Boolean(selectedTestId) && !newTestOpen && !sourceModalOpen,
-        runEnabled: snapshot.steps.length > 0,
+        enabled: Boolean(selectedTestId) && !readOnly && !newTestOpen && !sourceModalOpen,
+        runEnabled: !ciOnly && snapshot.steps.length > 0,
         sourceEnabled: Boolean(selectedTestId) && !newTestOpen,
         closeSource: sourceModalOpen && !newTestOpen,
       },
@@ -592,6 +607,7 @@ export const TestView = () => {
               label={lastVerdict ? `Last run ${lastVerdict}` : t('never_run')}
             />
             <span className="truncate">{detail.name}</span>
+            {ciOnly && <CiOnlyIndicator />}
           </span>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
@@ -640,11 +656,15 @@ export const TestView = () => {
         <Button
           variant="primary"
           icon={running ? 'pause' : 'play'}
-          disabled={snapshot.steps.length === 0}
+          disabled={ciOnly || snapshot.steps.length === 0}
           onClick={run}
           kbd={displayTestViewShortcut('run')}
         >
-          {running ? t('cancel_run') : `Run on ${detail.environments[0] ?? t('local')}`}
+          {ciOnly
+            ? 'Run on Testron unavailable'
+            : running
+              ? t('cancel_run')
+              : `Run on ${detail.environments[0] ?? t('local')}`}
         </Button>
         <Button
           icon="code"
@@ -654,7 +674,12 @@ export const TestView = () => {
         >
           {sourceOpen && wideSourceLayout ? t('hide_source') : t('view_source')}
         </Button>
-        <Button icon="pencil" onClick={editInRecorder} kbd={displayTestViewShortcut('edit')}>
+        <Button
+          disabled={readOnly}
+          icon="pencil"
+          onClick={editInRecorder}
+          kbd={displayTestViewShortcut('edit')}
+        >
           {t('edit_in_recorder')}
         </Button>
         {window.testronDesktop && (
@@ -680,16 +705,22 @@ export const TestView = () => {
           </Button>
         )}
         <span className="mx-1 h-5 w-px bg-line" />
-        <Button icon="suite" onClick={() => setMoveOpen(true)}>
+        <Button disabled={readOnly} icon="suite" onClick={() => setMoveOpen(true)}>
           {t('move')}
         </Button>
-        <Button icon="trash" onClick={() => setDeleteOpen(true)}>
+        <Button disabled={readOnly} icon="trash" onClick={() => setDeleteOpen(true)}>
           {t('delete')}
         </Button>
         <span className="ml-auto flex items-center gap-3 text-ink-3">
           {running && <PulseDot tone="accent" label={t('running')} />}
           <span>
-            {steps.length} {t('actions')} {assertions.length} {t('assertions')}
+            {readOnly ? (
+              `${humanSteps.length} test steps`
+            ) : (
+              <>
+                {steps.length} {t('actions')} {assertions.length} {t('assertions')}
+              </>
+            )}
           </span>
           <span className="ui-mono">{detail.file}</span>
         </span>
@@ -703,6 +734,7 @@ export const TestView = () => {
             <Lane icon="test" title={t('test')} width={320}>
               <DetailCard
                 detail={detail}
+                readOnly={readOnly}
                 metadataEditable={false}
                 profiles={testProfiles}
                 profileId={selectedTest?.profileId ?? undefined}
@@ -756,35 +788,38 @@ export const TestView = () => {
                 onLog={setLog}
               />
             </Lane>
-            {selectedTestId && snapshot.library.server?.authentication === 'signedIn' && (
-              <>
-                <Flow />
-                <Lane
-                  icon="test"
-                  title={t('screenshots')}
-                  count={selectedTest?.attachments?.length ?? 0}
-                  width={320}
-                >
-                  <TestAttachments
-                    key={selectedTestId}
-                    testId={selectedTestId}
-                    attachments={selectedTest?.attachments}
-                  />
-                </Lane>
-              </>
-            )}
+            {!readOnly &&
+              selectedTestId &&
+              snapshot.library.server?.authentication === 'signedIn' && (
+                <>
+                  <Flow />
+                  <Lane
+                    icon="test"
+                    title={t('screenshots')}
+                    count={selectedTest?.attachments?.length ?? 0}
+                    width={320}
+                  >
+                    <TestAttachments
+                      key={selectedTestId}
+                      testId={selectedTestId}
+                      attachments={selectedTest?.attachments}
+                    />
+                  </Lane>
+                </>
+              )}
             <Flow />
             <Lane
               icon="clipboard"
               title={t('prerequisites')}
               count={prerequisites.length}
-              onAdd={() => setPrerequisiteEdit({ index: null, value: '' })}
+              onAdd={readOnly ? undefined : () => setPrerequisiteEdit({ index: null, value: '' })}
               addLabel={t('add')}
             >
               {prerequisites.map((prerequisite, index) => (
                 <PrerequisiteCard
                   key={`${index}-${prerequisite}`}
                   prerequisite={prerequisite}
+                  readOnly={readOnly}
                   onEdit={() => setPrerequisiteEdit({ index, value: prerequisite })}
                   onDelete={() => {
                     replacePrerequisites(
@@ -794,126 +829,151 @@ export const TestView = () => {
                   }}
                 />
               ))}
-              {prerequisites.length === 0 && <PrerequisitesEmpty />}
+              {prerequisites.length === 0 &&
+                (readOnly ? (
+                  <EmptyLane>No prerequisites published.</EmptyLane>
+                ) : (
+                  <PrerequisitesEmpty />
+                ))}
             </Lane>
             <Flow />
 
             <Lane
               icon="steps"
               title={t('steps_2')}
-              count={steps.length}
-              hint={t('assertions_hint', { count: assertions.length })}
+              count={readOnly ? humanSteps.length : steps.length}
+              hint={
+                readOnly
+                  ? 'Scenario published from the repository.'
+                  : t('assertions_hint', { count: assertions.length })
+              }
               width={360}
               contentTestId="steps-lane-scroll"
               action={
-                <SegmentedControl
-                  label={t('step_view')}
-                  items={[
-                    { id: 'tester', label: t('tester'), icon: 'list' },
-                    { id: 'developer', label: t('developer'), icon: 'code' },
-                  ]}
-                  value={stepViewMode}
-                  onChange={setStepViewMode}
-                  variant="pill"
-                  iconOnly
-                />
+                !readOnly && (
+                  <SegmentedControl
+                    label={t('step_view')}
+                    items={[
+                      { id: 'tester', label: t('tester'), icon: 'list' },
+                      { id: 'developer', label: t('developer'), icon: 'code' },
+                    ]}
+                    value={stepViewMode}
+                    onChange={setStepViewMode}
+                    variant="pill"
+                    iconOnly
+                  />
+                )
               }
             >
-              {steps.map((step, index) => {
-                const branch = assertionsFor(board, index);
-                const result = selectedReplay.steps[originalIndex(step.id)];
-                return (
-                  <div key={step.id}>
+              {readOnly &&
+                humanSteps.map((step, index) => (
+                  <div key={index}>
                     {index > 0 && <StepArrow />}
-                    <StepCard
-                      step={step}
-                      index={index}
-                      locatorEditable
-                      viewMode={stepViewMode}
-                      failed={result?.status === 'failed'}
-                      running={result?.status === 'running'}
-                      passed={result?.status === 'passed'}
-                      error={result?.error}
-                      onStep={(next) => updateAction(step, next)}
-                      onRepick={() => {
-                        const original = originalIndex(step.id);
-                        if (original < 0) return;
-                        window.testron?.command({ type: 'set-repick-step', index: original });
-                        editInRecorder();
-                      }}
-                      onAddAssertion={() => addAssertion(step)}
-                      onDelete={() => {
-                        const original = originalIndex(step.id);
-                        if (original < 0) {
-                          setLog(`Step ${index + 1} could not be found`);
-                          return;
-                        }
-                        window.testron?.command({ type: 'delete-step', index: original });
-                        setLog(`Deleting step ${index + 1}…`);
-                      }}
-                    />
-                    {branch.map((assertion, position) => {
-                      const assertionResult = selectedReplay.steps[originalIndex(assertion.id)];
-                      const allowedKinds: AssertionKind[] =
-                        assertion.kind === 'urlPath'
-                          ? ['urlPath']
-                          : [
-                              'visible',
-                              'hidden',
-                              'textEquals',
-                              'textContains',
-                              'value',
-                              'enabled',
-                              'disabled',
-                              'checked',
-                              'unchecked',
-                              'countExactly',
-                              'countAtLeast',
-                              'numberEquals',
-                              'numberGreaterThan',
-                              'numberAtLeast',
-                              'numberLessThan',
-                              'numberAtMost',
-
-                              'attribute',
-                              'class',
-                            ];
-                      return (
-                        <Branch key={assertion.id} last={position === branch.length - 1}>
-                          <AssertionCard
-                            assertion={assertion}
-                            kinds={allowedKinds}
-                            subjectEditable={false}
-                            locatorEditable
-                            viewMode={stepViewMode}
-                            status={assertionResult?.status}
-                            error={assertionResult?.error}
-                            canMoveUp={index > 0}
-                            canMoveDown={index < steps.length - 1}
-                            onAssertion={(next) => updateAssertion(assertion, next)}
-                            onMove={(direction) => moveAssertion(assertion, index, direction)}
-                            onDelete={() => {
-                              const original = originalIndex(assertion.id);
-                              if (original < 0) {
-                                setLog('Assertion could not be found');
-                                return;
-                              }
-                              window.testron?.command({ type: 'delete-step', index: original });
-                              setLog('Deleting assertion…');
-                            }}
-                          />
-                        </Branch>
-                      );
-                    })}
+                    <Card>
+                      <span className="ui-mono mr-2 text-ink-3">{index + 1}</span>
+                      {step}
+                    </Card>
                   </div>
-                );
-              })}
-              {steps.length === 0 && (
+                ))}
+              {readOnly && humanSteps.length === 0 && (
+                <EmptyLane>No scenario published. View the source to inspect this test.</EmptyLane>
+              )}
+              {!readOnly &&
+                steps.map((step, index) => {
+                  const branch = assertionsFor(board, index);
+                  const result = selectedReplay.steps[originalIndex(step.id)];
+                  return (
+                    <div key={step.id}>
+                      {index > 0 && <StepArrow />}
+                      <StepCard
+                        step={step}
+                        index={index}
+                        locatorEditable
+                        viewMode={stepViewMode}
+                        failed={result?.status === 'failed'}
+                        running={result?.status === 'running'}
+                        passed={result?.status === 'passed'}
+                        error={result?.error}
+                        onStep={(next) => updateAction(step, next)}
+                        onRepick={() => {
+                          const original = originalIndex(step.id);
+                          if (original < 0) return;
+                          window.testron?.command({ type: 'set-repick-step', index: original });
+                          editInRecorder();
+                        }}
+                        onAddAssertion={() => addAssertion(step)}
+                        onDelete={() => {
+                          const original = originalIndex(step.id);
+                          if (original < 0) {
+                            setLog(`Step ${index + 1} could not be found`);
+                            return;
+                          }
+                          window.testron?.command({ type: 'delete-step', index: original });
+                          setLog(`Deleting step ${index + 1}…`);
+                        }}
+                      />
+                      {branch.map((assertion, position) => {
+                        const assertionResult = selectedReplay.steps[originalIndex(assertion.id)];
+                        const allowedKinds: AssertionKind[] =
+                          assertion.kind === 'urlPath'
+                            ? ['urlPath']
+                            : [
+                                'visible',
+                                'hidden',
+                                'textEquals',
+                                'textContains',
+                                'value',
+                                'enabled',
+                                'disabled',
+                                'checked',
+                                'unchecked',
+                                'countExactly',
+                                'countAtLeast',
+                                'numberEquals',
+                                'numberGreaterThan',
+                                'numberAtLeast',
+                                'numberLessThan',
+                                'numberAtMost',
+
+                                'attribute',
+                                'class',
+                              ];
+                        return (
+                          <Branch key={assertion.id} last={position === branch.length - 1}>
+                            <AssertionCard
+                              assertion={assertion}
+                              kinds={allowedKinds}
+                              subjectEditable={false}
+                              locatorEditable
+                              viewMode={stepViewMode}
+                              status={assertionResult?.status}
+                              error={assertionResult?.error}
+                              canMoveUp={index > 0}
+                              canMoveDown={index < steps.length - 1}
+                              onAssertion={(next) => updateAssertion(assertion, next)}
+                              onMove={(direction) => moveAssertion(assertion, index, direction)}
+                              onDelete={() => {
+                                const original = originalIndex(assertion.id);
+                                if (original < 0) {
+                                  setLog('Assertion could not be found');
+                                  return;
+                                }
+                                window.testron?.command({ type: 'delete-step', index: original });
+                                setLog('Deleting assertion…');
+                              }}
+                            />
+                          </Branch>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              {!readOnly && steps.length === 0 && (
                 <EmptyLane>
                   {t('this_test_has_no_actions_yet_record_it_again_to_add_steps')}
                 </EmptyLane>
               )}
-              {steps.length > 0 && assertions.length === 0 && (
+              {!readOnly && steps.length > 0 && assertions.length === 0 && (
                 <EmptyLane>
                   {t('nothing_is_proved_yet_hover_a_step_and_add_an_assertion')}
                 </EmptyLane>
@@ -921,7 +981,12 @@ export const TestView = () => {
             </Lane>
             <Flow />
 
-            <Lane icon="history" title={t('runs')} count={runs.length} hint="Recent server runs.">
+            <Lane
+              icon="history"
+              title={t('runs')}
+              count={runs.length}
+              hint={readOnly ? 'Reported local and CI runs.' : 'Recent server runs.'}
+            >
               {runs.length === 0 && <EmptyLane>{t('this_test_has_no_completed_runs')}</EmptyLane>}
               {runs.map((entry: Run) => (
                 <RunCard
@@ -951,6 +1016,7 @@ export const TestView = () => {
             file={detail.file}
             detached={false}
             source={sourceDraft}
+            readOnly={readOnly}
             canDetach={false}
             onDetach={() => undefined}
             onSource={sourceEditor.onChange}
@@ -965,7 +1031,7 @@ export const TestView = () => {
         )}
       </div>
 
-      {moveOpen && (
+      {!readOnly && moveOpen && (
         <MoveSheet
           projects={movableProjects}
           testSuites={snapshot.library.testSuites}
@@ -1007,7 +1073,7 @@ export const TestView = () => {
         />
       )}
 
-      {prerequisiteEdit && (
+      {!readOnly && prerequisiteEdit && (
         <PrerequisiteSheet
           key={`${prerequisiteEdit.index}-${prerequisiteEdit.value}`}
           prerequisite={prerequisiteEdit.value}
@@ -1025,7 +1091,7 @@ export const TestView = () => {
         />
       )}
 
-      {deleteOpen && selectedTestId && (
+      {!readOnly && deleteOpen && selectedTestId && (
         <DeleteSheet
           name={detail.name}
           onClose={() => setDeleteOpen(false)}
@@ -1064,9 +1130,11 @@ export const TestView = () => {
           <span>
             {t('updated')} {detail.updatedAt}
           </span>
-          <a href="#/record" className="text-ink-3 no-underline hover:text-ink">
-            {t('edit_in_recorder')}
-          </a>
+          {!readOnly && (
+            <a href="#/record" className="text-ink-3 no-underline hover:text-ink">
+              {t('edit_in_recorder')}
+            </a>
+          )}
         </span>
       </footer>
     </main>

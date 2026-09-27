@@ -1,36 +1,25 @@
 # Push, pull, and conflicts
 
-Push uploads a source snapshot, preserving each test's UUID, suite, title, and
-source location. The server validates the whole selected upload before committing
-it in one transaction. Partial pushes never delete other tests. Removing a local
-test does not automatically delete its Testron record.
+Push selects tests annotated publish: true. It preserves identity and publishes
+source, title, description and scenario steps. Portable tests also update their
+editable step projection. Complex tests are catalogue entries: helper and fixture
+files remain in the repository. Spec files containing multiple tests are synchronized
+whole, so source publication is not a file-level privacy boundary.
 
-The upload includes selected specs, their statically resolvable local imports,
-Playwright configuration, available package/lock/TypeScript configuration files,
-and explicit supportFiles. Node modules, .env files, and known authentication-state
-paths are excluded or rejected. Review source before publishing: code can contain
-hardcoded credentials. Dynamically loaded assets must be listed in supportFiles.
-This is a source snapshot, not an executable deployment bundle.
+Pull without source flags refreshes generated references and the test catalogue.
+Pull --test or --tests downloads source. Portable tests receive a local execution
+fixture and preserve their existing file path when already linked to this repository.
+Testron-authored imports initially use importDir (default tests/testron). Catalogue
+source is useful for review; it is not a complete executable repository backup.
+Requests without implementations become local work items rather than passing stubs.
 
-Pull without source flags refreshes the suite map and test catalog. It does not
-advance source baselines. Pull --tests or --test downloads available source context.
-A test in a shared file is downloaded with the complete file and its stored support
-files. Requests without source become local work items, not empty passing tests.
-Recorder tests are exported as standalone annotated specs under tests/testron.
+Synchronization tracks test revisions, local file hashes and uploaded-file baselines
+separately in .testron/state.json. This supports UI edits followed by pull/edit/push
+without confusing the locally adapted file with the canonical Testron document.
+Conflicts never authorize overwriting unrelated work. Reconcile both versions before
+retrying. Partial pushes never delete other tests or reset their revisions.
 
-Synchronization stores local baselines in .testron/state.json. If only the remote
-source changed, pull updates the local file. If only local source changed, it stays
-local. If both changed, or an existing file has no baseline and differs from the
-remote copy, pull reports PULL_CONFLICT before writing source files.
-
-Push compares test revisions and file hashes. A conflict means another checkout or
-the UI changed the synchronized version. Inspect both versions and reconcile them;
-there is no implicit force overwrite. To adopt a remote version, preserve your local
-edits elsewhere and put the reviewed remote content in place, then pull to establish
-the common baseline. An exact match can safely establish a baseline after a lost
-response or on a fresh checkout.
-
-Commit configuration, generated references, .testron/AGENT.md, and test IDs. Ignore local state and
-catalog caches. Different repositories need different repositoryIds. Feature branches
-currently share the same remote test records, so their conflicting pushes are rejected;
-separate branch previews are not part of this release.
+Commit configuration, generated references, agent instructions and test IDs. Ignore
+local state/catalog caches and credentials. Different repositories need different
+repositoryIds. Checkouts of one repository share test records; conflicting updates
+are rejected. Test history survives a downgrade from portable to CI catalogue.

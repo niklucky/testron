@@ -1,6 +1,6 @@
 # Quickstart
 
-Create a Testron project, at least one suite, and an environment in the web app.
+Create a Testron project, at least one suite in the web app.
 Copy the project UUID from its URL. You need Node.js 22+ and @playwright/test
 installed in your application repository.
 
@@ -31,10 +31,14 @@ by all checkouts: commit the configuration and testron.generated.ts.
 import { test, expect } from '@playwright/test';
 import { testron, suites } from '../../testron.generated';
 
-test('user can sign in', testron({ suite: suites.Authentication }), async ({ page }) => {
-  await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
-});
+test(
+  'user can sign in',
+  testron({ suite: suites.Authentication, publish: true, execution: 'ci-only' }),
+  async ({ page }) => {
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  },
+);
 ```
 
 Use the suite keys actually generated for your project. Run your Playwright test,
@@ -49,3 +53,7 @@ npx testron push -f tests/e2e/auth.spec.ts
 The first push inserts a stable ID into the test declaration. Commit that edit.
 Open the returned test URL to see its source and suite in Testron. Repeating an
 unchanged push does not create another revision.
+
+This example publishes a CI-only test for visibility. It needs no Testron environment
+and cannot run against a Testron target. See the Playwright guide for explicit
+ci-and-testron eligibility and importing tests for local/CI execution.

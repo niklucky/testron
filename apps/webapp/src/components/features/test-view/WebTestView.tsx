@@ -1,8 +1,7 @@
-import type { WebWorkspaceSnapshot } from '@testron/protocol';
+import { type WebWorkspaceSnapshot } from '@testron/protocol';
 import { useLayoutEffect } from 'react';
 
 import { connectBrowserApi } from '../../../lib/browser-api';
-import { RepositoryTestView } from './RepositoryTestView';
 import { TestView } from './TestView';
 
 export const WebTestView = ({
@@ -18,8 +17,5 @@ export const WebTestView = ({
     () => connectBrowserApi(workspace, projectId, testId),
     [workspace, projectId, testId],
   );
-  const snapshot = workspace.tests.find(({ test }) => test.id === testId);
-  if (snapshot?.currentRevision.content.repository)
-    return <RepositoryTestView snapshot={snapshot} workspace={workspace} />;
   return <TestView />;
 };

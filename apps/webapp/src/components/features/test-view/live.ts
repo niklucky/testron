@@ -95,8 +95,16 @@ const serverRun = (
     environment: environment?.name ?? 'Unknown environment',
     seconds: (run.durationMs ?? 0) / 1_000,
     minutesAgo: Math.max(0, (Date.now() - Date.parse(run.startedAt)) / 60_000),
-    by: 'Server runner',
-    trigger: 'manual',
+    by:
+      run.source === 'ci'
+        ? 'CI'
+        : run.source === 'repository-local'
+          ? 'Local Playwright'
+          : 'Server runner',
+    trigger: run.source === 'ci' ? 'ci' : run.source === 'server-scheduled' ? 'schedule' : 'manual',
+    reported: run.source === 'ci' || run.source === 'repository-local',
+    revision: run.testRevision.number,
+    context: run.context,
     ...(run.error
       ? { error: run.error }
       : run.status === 'timedOut'
@@ -152,12 +160,13 @@ export const liveTestBoard = (
       project: context.project,
       suite: context.suite,
       name: context.title,
-      file: context.file,
+      description: selectedTest?.description,
+      file: selectedTest?.repositoryFile ?? context.file,
       environments: [context.environment],
       tags: [],
       createdAt: displayDate(selectedTest?.createdAt),
       updatedAt: displayDate(selectedTest?.updatedAt),
-      createdBy: 'Local workspace',
+      createdBy: selectedTest?.repositoryManaged ? 'Repository' : 'Local workspace',
     },
     prerequisites: selectedTest?.prerequisites ?? [],
     steps,

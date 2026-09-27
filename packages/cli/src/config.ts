@@ -25,6 +25,8 @@ export const configSchema = z
     playwrightConfig: sourcePathSchema.default('playwright.config.ts'),
     environmentIds: z.array(z.uuid()).default([]),
     supportFiles: z.array(sourcePathSchema).default([]),
+    importDir: sourcePathSchema.optional(),
+    reportEnvironmentId: z.uuid().optional(),
   })
   .strict();
 export type Config = z.infer<typeof configSchema>;

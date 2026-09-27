@@ -425,6 +425,11 @@ export const testRuns = pgTable(
     profileId: uuid('profile_id').references(() => profiles.id),
     status: text('status').notNull(),
     source: text('source').notNull(),
+    context: jsonb('context').$type<{
+      sourceHash: string;
+      playwrightProject: string;
+      retry: number;
+    }>(),
     startedAt: instant('started_at').defaultNow().notNull(),
     finishedAt: instant('finished_at'),
     durationMs: integer('duration_ms'),

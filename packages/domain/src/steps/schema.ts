@@ -32,7 +32,7 @@ export const stepSchema = z.discriminatedUnion('kind', [
   z.object({
     version: z.literal(1),
     kind: z.literal('navigate'),
-    url: z.url(),
+    url: z.union([z.url(), z.string().regex(/^\/(?![/\\])/)]),
     metadata: metadataSchema,
   }),
   z.object({

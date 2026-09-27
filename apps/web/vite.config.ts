@@ -14,6 +14,14 @@ export default defineConfig({
       generateBundle(_options, bundle) {
         const index = bundle['index.html'];
         if (!index || index.type !== 'asset') return;
+        this.emitFile({
+          type: 'asset',
+          fileName: 'agents/SKILL.md',
+          source: readFileSync(
+            new URL('../../docs/agents/testron/SKILL.md', import.meta.url),
+            'utf8',
+          ),
+        });
         for (const slug of ['index', 'quickstart', 'playwright', 'sync', 'cli', 'agents']) {
           this.emitFile({
             type: 'asset',

@@ -31,6 +31,7 @@ export const DetailCard = ({
   onDetail,
   onLog,
   metadataEditable = true,
+  readOnly = false,
   profiles = [],
   profileId,
   onProfile,
@@ -42,6 +43,7 @@ export const DetailCard = ({
   onDetail: (detail: TestDetail) => void;
   onLog: (message: string) => void;
   metadataEditable?: boolean;
+  readOnly?: boolean;
   profiles?: Array<{ id: string; name: string; supported?: boolean }>;
   profileId?: string;
   onProfile?: (profileId?: string) => void;
@@ -57,17 +59,31 @@ export const DetailCard = ({
   const environmentsEditable = Boolean(onEnvironments) || metadataEditable;
   return (
     <Card className="!p-3">
-      <InlineText
-        label={t('test_name')}
-        value={detail.name}
-        onChange={(name) => {
-          onDetail({ ...detail, name });
-          onLog('Test renamed');
-        }}
-        className="font-semibold"
-      />
+      {readOnly ? (
+        <p className="px-1 py-px font-semibold">{detail.name}</p>
+      ) : (
+        <InlineText
+          label={t('test_name')}
+          value={detail.name}
+          onChange={(name) => {
+            onDetail({ ...detail, name });
+            onLog('Test renamed');
+          }}
+          className="font-semibold"
+        />
+      )}
 
-      {onProfile && (
+      {detail.description && (
+        <p className="mt-2 whitespace-pre-wrap text-ink-2">{detail.description}</p>
+      )}
+      {readOnly && (
+        <p className="mt-3 text-ink-3">
+          Managed in your repository. Edit locally and publish with <code>testron push</code>. Run
+          locally or in CI.
+        </p>
+      )}
+
+      {!readOnly && onProfile && (
         <>
           <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">Authentication profile</p>
           <InlineSelect
@@ -88,43 +104,49 @@ export const DetailCard = ({
         </>
       )}
 
-      <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('environments')}</p>
-      <div className="flex flex-wrap gap-1">
-        {environmentChoices.map((environment) => {
-          const on = selectedEnvironmentIds.includes(environment.id);
-          return (
-            <Chip
-              key={environment.id}
-              on={on}
-              onClick={
-                environmentsEditable
-                  ? () => {
-                      if (on && selectedEnvironmentIds.length === 1) {
-                        onLog('A test must have at least one environment');
-                        return;
-                      }
-                      const next = on
-                        ? selectedEnvironmentIds.filter((id) => id !== environment.id)
-                        : [...selectedEnvironmentIds, environment.id];
-                      if (onEnvironments) onEnvironments(next);
-                      else {
-                        onDetail({
-                          ...detail,
-                          environments: next,
-                        });
-                        onLog(`${environment.name} ${on ? 'removed from' : 'added to'} this test`);
-                      }
-                    }
-                  : undefined
-              }
-            >
-              {environment.name}
-            </Chip>
-          );
-        })}
-      </div>
+      {!readOnly && (
+        <>
+          <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('environments')}</p>
+          <div className="flex flex-wrap gap-1">
+            {environmentChoices.map((environment) => {
+              const on = selectedEnvironmentIds.includes(environment.id);
+              return (
+                <Chip
+                  key={environment.id}
+                  on={on}
+                  onClick={
+                    environmentsEditable
+                      ? () => {
+                          if (on && selectedEnvironmentIds.length === 1) {
+                            onLog('A test must have at least one environment');
+                            return;
+                          }
+                          const next = on
+                            ? selectedEnvironmentIds.filter((id) => id !== environment.id)
+                            : [...selectedEnvironmentIds, environment.id];
+                          if (onEnvironments) onEnvironments(next);
+                          else {
+                            onDetail({
+                              ...detail,
+                              environments: next,
+                            });
+                            onLog(
+                              `${environment.name} ${on ? 'removed from' : 'added to'} this test`,
+                            );
+                          }
+                        }
+                      : undefined
+                  }
+                >
+                  {environment.name}
+                </Chip>
+              );
+            })}
+          </div>
+        </>
+      )}
 
-      {metadataEditable && (
+      {!readOnly && metadataEditable && (
         <>
           <p className="mb-1.5 mt-3 uppercase tracking-wider text-ink-3">{t('tags')}</p>
           <div className="flex flex-wrap items-center gap-1">
@@ -173,8 +195,10 @@ export const PrerequisiteCard = ({
   prerequisite,
   onEdit,
   onDelete,
+  readOnly = false,
 }: {
   prerequisite: Prerequisite;
+  readOnly?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) => {
@@ -185,10 +209,17 @@ export const PrerequisiteCard = ({
         <span className="min-w-0 flex-1">
           <span className="block whitespace-pre-wrap break-words text-ink">{prerequisite}</span>
         </span>
-        <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-          <IconButton icon="pencil" size="sm" label={t('edit_prerequisite')} onClick={onEdit} />
-          <IconButton icon="trash" size="sm" label={t('delete_prerequisite')} onClick={onDelete} />
-        </span>
+        {!readOnly && (
+          <span className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+            <IconButton icon="pencil" size="sm" label={t('edit_prerequisite')} onClick={onEdit} />
+            <IconButton
+              icon="trash"
+              size="sm"
+              label={t('delete_prerequisite')}
+              onClick={onDelete}
+            />
+          </span>
+        )}
       </div>
     </Card>
   );
@@ -619,18 +650,34 @@ export const RunCard = ({
         </span>
       </div>
 
-      <Meter
-        className="mt-2"
-        height={4}
-        value={run.completed / total}
-        tone={verdict.tone === 'neutral' ? 'accent' : verdict.tone}
-        label={t('of_steps', { value1: run.completed, value2: total })}
-      />
+      {!run.reported && (
+        <Meter
+          className="mt-2"
+          height={4}
+          value={run.completed / total}
+          tone={verdict.tone === 'neutral' ? 'accent' : verdict.tone}
+          label={t('of_steps', { value1: run.completed, value2: total })}
+        />
+      )}
 
       <Meta>
         <span style={{ color: toneFill.neutral }}>{run.environment}</span>·
         <span className="truncate">{run.by}</span>·<span>{age(run.minutesAgo)}</span>
       </Meta>
+
+      {run.reported && (
+        <div className="mt-2 space-y-1 text-ink-3">
+          <p>Revision {run.revision}</p>
+          {run.context && (
+            <>
+              <p>
+                Project: {run.context.playwrightProject || 'default'} · Retry: {run.context.retry}
+              </p>
+              <p className="ui-mono">Source: {run.context.sourceHash.slice(0, 12)}</p>
+            </>
+          )}
+        </div>
+      )}
 
       {run.error && run.verdict !== 'running' && (
         <div className="mt-2 rounded-md border border-critical/40 bg-critical/10 p-2">

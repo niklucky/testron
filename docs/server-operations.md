@@ -173,3 +173,8 @@ pnpm --filter @testron/server test
 Set `TESTRON_TEST_DATABASE_URL` to point the suite at another disposable
 PostgreSQL database. The suite truncates application tables between tests, so
 never point it at a database containing data you need to keep.
+
+For local development only, TESTRON_RUNNER_LOOPBACK_ORIGINS accepts exact origins
+(such as http://127.0.0.1:3000) that the operator permits the browser runner to reach.
+It does not permit private networks or metadata endpoints. Default hosted behavior
+continues to block loopback; tests cannot change this operator setting.

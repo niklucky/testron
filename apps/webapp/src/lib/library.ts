@@ -50,6 +50,10 @@ export interface ProfileRecord {
 export interface TestRecord {
   attachments?: TestAttachment[];
   status?: 'requested' | 'ready';
+  execution?: 'ci-only' | 'ci-and-testron';
+  repositoryManaged?: boolean;
+  repositoryFile?: string;
+  humanSteps?: string[];
   description?: string;
   id: string;
   projectId: string;

@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -166,5 +168,218 @@ describe('safe source pulls', () => {
     await expect(sourcePath(root, '.env', true)).rejects.toThrow('Invalid source path');
     await symlink(tmpdir(), path.join(root, 'escape'), 'dir');
     await expect(sourcePath(root, 'escape/test.ts', true)).rejects.toThrow('Symlink');
+  });
+});
+
+describe('publication policy', () => {
+  it('publishes only opted-in tests, supports nearest overrides and never infers environments', async () => {
+    const root = await fixture();
+    await writeFile(
+      path.join(root, 'testron.generated.ts'),
+      generateReferences({ suites: [{ id: suite, codeKey: 'Authentication' }] } as Catalog),
+    );
+    await writeFile(
+      path.join(root, 'mixed.spec.ts'),
+      `import {test} from '@playwright/test';
+import {testron,suites} from './testron.generated';
+test('local only, no suite', async()=>{});
+test.describe('publish group', testron({suite:suites.Authentication,publish:true,execution:'ci-and-testron'}),()=>{
+  test('shared', async()=>{});
+  test('destructive', testron({execution:'ci-only'}), async()=>{});
+  test('private', testron({publish:false}), async()=>{});
+});
+test('default CI only', testron({suite:suites.Authentication,publish:true}), async()=>{});`,
+    );
+    const mutate = vi.fn().mockImplementation(async (request) => ({
+      dryRun: request.dryRun,
+      files: [],
+      tests: request.tests.map((test: { id: string }) => ({
+        id: test.id,
+        status: 'created',
+        revision: null,
+      })),
+    }));
+    const api = {
+      sync: {
+        pull: {
+          query: vi.fn().mockResolvedValue({
+            suites: [{ id: suite }],
+            tests: [],
+            environments: [{ id: randomUUID() }],
+          }),
+        },
+        push: { mutate },
+      },
+    } as unknown as Api;
+    const { push } = await import('../src/sync');
+    await push(root, config, api, { file: 'mixed.spec.ts', dryRun: true });
+    const payload = mutate.mock.calls[0]![0];
+    expect(payload.environmentIds).toEqual([]);
+    expect(
+      payload.tests.map((test: { title: string; execution: string }) => [
+        test.title,
+        test.execution,
+      ]),
+    ).toEqual([
+      ['shared', 'ci-only'],
+      ['destructive', 'ci-only'],
+      ['default CI only', 'ci-only'],
+    ]);
+    expect(await readFile(path.join(root, 'mixed.spec.ts'), 'utf8')).not.toContain('testron.id');
+    await writeFile(
+      path.join(root, 'unpublished.spec.ts'),
+      "import {test} from '@playwright/test'; test('private',async()=>{});",
+    );
+    await expect(push(root, config, api, { file: 'unpublished.spec.ts' })).rejects.toMatchObject({
+      code: 'NO_PUBLISHED_TESTS',
+    });
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails on malformed native annotations rather than guessing eligibility', async () => {
+    const root = await fixture();
+    await writeFile(
+      path.join(root, 'bad.spec.ts'),
+      `import {test} from '@playwright/test';
+      test('bad',{annotation:[{type:'testron.publish',description:'yes'},{type:'testron.execution',description:'production'}]},async()=>{});`,
+    );
+    const [test] = logicalTests(await discover(root, config));
+    const { publication, executionMode } = await import('../src/discovery');
+    expect(() => publication(test!)).toThrow('publish: true or false');
+    expect(() => executionMode(test!)).toThrow('Unknown execution mode');
+  });
+
+  it('pulls native tests with their identity, policy, a local fixture and no remote target', async () => {
+    const root = await fixture();
+    const id = randomUUID();
+    const catalog = {
+      suites: [{ id: suite, codeKey: 'Authentication' }],
+      environments: [],
+      files: [],
+      tests: [
+        {
+          test: {
+            id,
+            title: 'dashboard',
+            testSuiteId: suite,
+            currentRevision: { id: randomUUID(), number: 1 },
+          },
+          currentRevision: {
+            content: {
+              stepSchemaVersion: 1,
+              title: 'dashboard',
+              environmentIds: [randomUUID()],
+              prerequisites: [],
+              steps: [],
+              profileId: randomUUID(),
+              source:
+                "import {test} from '@playwright/test'; test('dashboard',async({page})=>{await page.goto('https://production.example/dashboard');});",
+            },
+          },
+        },
+      ],
+    } as unknown as Catalog;
+    const api = { sync: { pull: { query: vi.fn().mockResolvedValue(catalog) } } } as unknown as Api;
+    await pull(root, { ...config, importDir: 'tests/e2e/imported' }, api, { tests: true });
+    const source = await readFile(path.join(root, `tests/e2e/imported/${id}.spec.ts`), 'utf8');
+    expect(source).not.toContain('production.example');
+    expect(source).toContain("page.goto('/dashboard')");
+    const [test] = logicalTests(await discover(root, config));
+    const { publication, executionMode } = await import('../src/discovery');
+    expect(testId(test!)).toBe(id);
+    expect(publication(test!)).toBe(true);
+    expect(executionMode(test!)).toBe('ci-and-testron');
+    expect(test!.annotations).toContainEqual(
+      expect.objectContaining({ type: 'testron.local-auth' }),
+    );
+    expect(
+      await readFile(path.join(root, 'tests/e2e/imported/testron.fixture.ts'), 'utf8'),
+    ).toContain('TESTRON_BASE_URL');
+    expect(
+      JSON.parse(await readFile(path.join(root, '.testron/catalog.json'), 'utf8')).tests[0].origin,
+    ).toBe('testron');
+    expect(api.sync.pull.query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('imported local execution', () => {
+  it('requires a local target and auth, ignores remote project defaults, and rejects test overrides', async () => {
+    const root = await fixture();
+    const { importedFixture } = await import('../src/export-test');
+    await writeFile(path.join(root, 'testron.fixture.ts'), importedFixture);
+    await writeFile(
+      path.join(root, 'imported.spec.ts'),
+      `import {test,expect} from './testron.fixture';
+      test('uses local target', async({baseURL})=>{ expect(baseURL).toBe('http://127.0.0.1:3210'); });`,
+    );
+    const run = (target: string) =>
+      promisify(execFile)(
+        process.execPath,
+        [path.join(root, 'node_modules/@playwright/test/cli.js'), 'test', '--reporter=line'],
+        { cwd: root, env: { ...process.env, TESTRON_BASE_URL: target, TESTRON_STORAGE_STATE: '' } },
+      );
+    await expect(run('')).rejects.toMatchObject({
+      stdout: expect.stringContaining('Set TESTRON_BASE_URL'),
+    });
+    await expect(run('http://127.0.0.1:3210')).resolves.toMatchObject({
+      stdout: expect.stringContaining('2 passed'),
+    });
+    await writeFile(
+      path.join(root, 'playwright.config.ts'),
+      `export default {testDir:'.',use:{baseURL:'https://production.example'}};`,
+    );
+    await expect(run('http://127.0.0.1:3210')).resolves.toMatchObject({
+      stdout: expect.stringContaining('1 passed'),
+    });
+    await writeFile(
+      path.join(root, 'imported.spec.ts'),
+      `import {test} from './testron.fixture';
+      test.use({baseURL:'https://production.example'});
+      test('wrong target',async()=>{});`,
+    );
+    await expect(run('http://127.0.0.1:3210')).rejects.toMatchObject({
+      stdout: expect.stringContaining('overrides TESTRON_BASE_URL'),
+    });
+    await writeFile(
+      path.join(root, 'imported.spec.ts'),
+      `import {test} from './testron.fixture';
+      test('requires auth',{annotation:{type:'testron.local-auth',description:'required'}},async({storageState})=>{});`,
+    );
+    await expect(run('http://127.0.0.1:3210')).rejects.toMatchObject({
+      stdout: expect.stringContaining('TESTRON_STORAGE_STATE'),
+    });
+  });
+
+  it('rejects custom code and multiple recorded origins instead of changing their meaning', async () => {
+    const { exportTestSource } = await import('../src/export-test');
+    const content = {
+      stepSchemaVersion: 1 as const,
+      title: 'unsafe',
+      environmentIds: [randomUUID()],
+      prerequisites: [],
+      steps: [],
+    };
+    expect(() =>
+      exportTestSource(
+        {
+          ...content,
+          source:
+            "import {test} from '@playwright/test'; test('unsafe',async({page})=>{ await page.evaluate(()=>fetch('/delete')); });",
+        },
+        randomUUID(),
+        suite,
+      ),
+    ).toThrow('custom code');
+    expect(() =>
+      exportTestSource(
+        {
+          ...content,
+          source:
+            "import {test} from '@playwright/test'; test('unsafe',async({page})=>{ await page.goto('https://one.example'); await page.goto('https://two.example'); });",
+        },
+        randomUUID(),
+        suite,
+      ),
+    ).toThrow('multiple origins');
   });
 });
