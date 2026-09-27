@@ -56,7 +56,7 @@ export default class TestronReporter implements Reporter {
           testId: id,
           testRevision: revision,
           environmentId,
-          source: process.env.CI ? 'ci' : 'repository-local',
+          source: process.env.CI === 'true' ? 'ci' : 'repository-local',
           status:
             result.status === 'skipped' || result.status === 'interrupted'
               ? 'cancelled'

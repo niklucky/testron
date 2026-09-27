@@ -35,10 +35,13 @@ repeat. Run only one server instance until worker ownership/leases are implement
 
 ## Server browser network policy
 
-Server runs support **public HTTP(S) websites only**. Localhost, private networks,
+Server runs support **public HTTP(S) websites by default**. Localhost, private networks,
 link-local/cloud metadata, reserved addresses, and local-file URLs are blocked.
-There is no private-network override. This applies to authentication setup runs
-as well as scheduled/manual tests; desktop recording is unaffected.
+For local development, operators can allow exact loopback origins with
+`TESTRON_RUNNER_LOOPBACK_ORIGINS`; hosted behavior still blocks loopback by default.
+This does not allow other private networks or metadata endpoints, and tests cannot
+change the operator setting. The policy applies to authentication setup runs as
+well as scheduled/manual tests; desktop recording is unaffected.
 
 Each run starts an ephemeral, loopback-only filtering proxy outside Chromium.
 It allows the selected environment origin plus exact public origins listed by

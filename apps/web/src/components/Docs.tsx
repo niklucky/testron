@@ -15,14 +15,20 @@ const pages = {
   agents: ['Agent guide', agents],
 } as const;
 function inline(text: string): ReactNode[] {
-  return text
-    .split(/(`[^`]+`)/)
-    .map((part, index) =>
-      part.startsWith('`') ? <code key={index}>{part.slice(1, -1)}</code> : part,
-    );
+  return text.split(/(`[^`]+`|\[[^\]]+\]\([^\s)]+\))/).map((part, index) => {
+    if (part.startsWith('`')) return <code key={index}>{part.slice(1, -1)}</code>;
+    const link = /^\[([^\]]+)\]\(([^\s)]+)\)$/.exec(part);
+    if (link && /^(https?:\/\/|mailto:|\/(?!\/)|#)/i.test(link[2]!))
+      return (
+        <a key={index} href={link[2]}>
+          {inline(link[1]!)}
+        </a>
+      );
+    return part;
+  });
 }
 // Deliberately small renderer for our authored Markdown: text is escaped by React.
-function Markdown({ source }: { source: string }) {
+export function Markdown({ source }: { source: string }) {
   const blocks = source.split(/(```[\s\S]*?```)/g);
   return (
     <>
@@ -45,7 +51,9 @@ function Markdown({ source }: { source: string }) {
           .map((paragraph, part) => {
             const key = `${index}-${part}`;
             if (paragraph.startsWith('# ')) return <h1 key={key}>{paragraph.slice(2)}</h1>;
-            if (paragraph.startsWith('## ')) return <h2 key={key}>{paragraph.slice(3)}</h2>;
+            if (paragraph.startsWith('## ')) return <h2 key={key}>{inline(paragraph.slice(3))}</h2>;
+            if (paragraph.startsWith('### '))
+              return <h3 key={key}>{inline(paragraph.slice(4))}</h3>;
             if (paragraph.startsWith('- '))
               return (
                 <ul key={key}>

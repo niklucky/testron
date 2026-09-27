@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { entityIdSchema, revisionPointerSchema } from './common';
-import { testExecutionModeSchema, reportedRunContextSchema } from './resources';
+import { testExecutionModeSchema, reportedRunContextSchema, testTitleSchema } from './resources';
 
 // Source paths are portable repository-relative paths, never filesystem destinations.
 export const sourcePathSchema = z
@@ -15,6 +15,7 @@ export const sourcePathSchema = z
       value.split('/').every((part) => part !== '' && part !== '.' && part !== '..') &&
       !value
         .split('/')
+        .map((part) => part.toLowerCase())
         .some(
           (part) =>
             ['.git', 'node_modules', '.env', '.testron'].includes(part) || part.startsWith('.env.'),
@@ -53,7 +54,7 @@ export const syncPushSchema = syncPullSchema
             description: z.string().max(20_000).optional(),
             humanSteps: z.array(z.string().max(2_000)).max(200).optional(),
             suiteId: entityIdSchema.nullable(),
-            title: z.string().trim().min(1).max(500),
+            title: testTitleSchema,
             file: sourcePathSchema,
             titlePath: z.array(z.string().max(500)).max(100),
             line: z.number().int().positive(),

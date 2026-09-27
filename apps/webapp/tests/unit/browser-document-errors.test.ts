@@ -57,3 +57,28 @@ it('reports rejected step edits, preserves invalid source, and clears the error 
   unsubscribe();
   unsubscribeAgain();
 });
+
+it('selects the new project environment without applying a previous project test assignment', async () => {
+  vi.stubGlobal('window', {});
+  const { connectBrowserApi, libraryFromWorkspace } = await import('../../src/lib/browser-api');
+  const workspace = {
+    projects: [{ id: 'first' }, { id: 'second' }],
+    environments: [
+      { id: 'unassigned', projectId: 'first' },
+      { id: 'assigned', projectId: 'first' },
+      { id: 'second-env', projectId: 'second' },
+    ],
+    profiles: [],
+    activeRuns: [],
+    tests: [
+      {
+        test: { id: 'selected', projectId: 'first', title: 'Selected' },
+        currentRevision: { content: { environmentIds: ['assigned'], steps: [] } },
+      },
+    ],
+  } as unknown as WebWorkspaceSnapshot;
+  connectBrowserApi(workspace, 'first', 'selected');
+  expect(libraryFromWorkspace(workspace).selectedEnvironmentId).toBe('assigned');
+  connectBrowserApi(workspace, 'second');
+  expect(libraryFromWorkspace(workspace).selectedEnvironmentId).toBe('second-env');
+});

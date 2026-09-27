@@ -142,6 +142,11 @@
   font-weight: 600;
   margin: 32px 0 16px;
 }
+.docs-content h3 {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
 .docs-content p,
 .docs-content ul,
 .docs-content ol {

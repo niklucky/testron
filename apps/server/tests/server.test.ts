@@ -202,7 +202,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
   });
 
-  it('resets a password with an expiring single-use email token and revokes existing sessions', async () => {
+  it('resets a password with an expiring single-use email token and revokes sessions and API keys', async () => {
     const email = 'reset@example.test';
     const password = 'correct horse battery staple';
     const registration = await client().auth.register.mutate({
@@ -210,6 +210,12 @@ describe('PostgreSQL tRPC vertical slice', () => {
       email,
       password,
     });
+
+    const api = client(registration.accessToken);
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Reset keys' });
+    const key = await api.sync.createKey.mutate({ projectId: project.id, name: 'CI', days: 365 });
+    const keyRequest = { projectId: project.id, repositoryId: randomUUID() };
+    await expect(client(key.token).sync.pull.query(keyRequest)).resolves.toBeDefined();
 
     await expect(
       client().auth.requestPasswordReset.mutate({ email: 'missing@example.test' }),
@@ -254,6 +260,9 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       client(registration.accessToken).workspace.get.query({ meta: requestMeta() }),
     ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+    await expect(client(key.token).sync.pull.query(keyRequest)).rejects.toMatchObject({
+      data: { code: 'UNAUTHORIZED' },
+    });
     await expect(client().auth.login.mutate({ email, password })).rejects.toMatchObject({
       data: { code: 'UNAUTHORIZED' },
     });
@@ -2261,6 +2270,82 @@ describe('PostgreSQL tRPC vertical slice', () => {
 });
 
 describe('repository synchronization', () => {
+  it('rejects oversized titles without breaking workspace reads and accepts the shared title limit', async () => {
+    const { api } = await signIn();
+    const { project } = await createSlice(api);
+    const request = {
+      projectId: project.id,
+      repositoryId: randomUUID(),
+      files: [{ path: 'test.spec.ts', source: '// catalogue', baseHash: null }],
+      tests: [
+        {
+          id: randomUUID(),
+          suiteId: null,
+          title: 'x'.repeat(201),
+          file: 'test.spec.ts',
+          titlePath: ['test'],
+          line: 1,
+          baseRevision: null,
+        },
+      ],
+    };
+    await expect(api.sync.push.mutate(request)).rejects.toMatchObject({
+      data: { code: 'BAD_REQUEST' },
+    });
+    expect(
+      (
+        await api.sync.pull.query({
+          projectId: request.projectId,
+          repositoryId: request.repositoryId,
+        })
+      ).tests,
+    ).toHaveLength(1);
+    await api.sync.push.mutate({
+      ...request,
+      tests: [{ ...request.tests[0]!, title: 'x'.repeat(200) }],
+    });
+    expect((await api.workspace.getWeb.query({ meta: requestMeta() })).tests).toHaveLength(2);
+  });
+
+  it.each([
+    "import {test} from '@playwright/test'; test('broken', async () => {",
+    "import {test} from '@playwright/test'; test('custom', async ({page}) => { await page.evaluate(() => 1); });",
+  ])('downgrades unsupported portable source and blocks remote execution: %s', async (source) => {
+    const { api } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const id = randomUUID();
+    const result = await api.sync.push.mutate({
+      projectId: project.id,
+      repositoryId: randomUUID(),
+      environmentIds: [environment.id],
+      files: [{ path: 'test.spec.ts', source, baseHash: null }],
+      tests: [
+        {
+          id,
+          suiteId: null,
+          title: 'Unsupported',
+          file: 'test.spec.ts',
+          titlePath: ['Unsupported'],
+          line: 1,
+          baseRevision: null,
+          kind: 'portable',
+          execution: 'ci-and-testron',
+        },
+      ],
+    });
+    expect(result.tests[0]?.execution).toBe('ci-only');
+    const saved = await api.test.get.query({ meta: requestMeta(), testId: id });
+    expect(saved.currentRevision.content).toMatchObject({
+      source,
+      steps: [],
+      environmentIds: [],
+      repository: { kind: 'catalogue' },
+    });
+    await expect(
+      api.run.enqueue.mutate({ meta: mutationMeta(), testId: id, environmentId: environment.id }),
+    ).rejects.toThrow('CI-only');
+  });
+
   it('publishes CI-only tests without environments and preserves explicit execution eligibility', async () => {
     const { api } = await signIn();
     const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'CI catalogue' });
@@ -2275,7 +2360,14 @@ describe('repository synchronization', () => {
     const request = {
       projectId: project.id,
       repositoryId,
-      files: [{ path: 'tests/mixed.spec.ts', source: '// suite', baseHash: null }],
+      files: [
+        {
+          path: 'tests/mixed.spec.ts',
+          source:
+            "import {test} from '@playwright/test'; test('shared', async ({page}) => { await page.goto('/'); });",
+          baseHash: null,
+        },
+      ],
       tests: [ciId, sharedId].map((id) => ({
         id,
         suiteId: suite.id,
@@ -2365,7 +2457,14 @@ describe('repository synchronization', () => {
     await api.sync.push.mutate({
       projectId: project.id,
       repositoryId: randomUUID(),
-      files: [{ path: 'imported.spec.ts', source: '// adapted', baseHash: null }],
+      files: [
+        {
+          path: 'imported.spec.ts',
+          source:
+            "import {test} from '@playwright/test'; test('adopted', async ({page}) => { await page.goto('/'); });",
+          baseHash: null,
+        },
+      ],
       tests: [
         {
           id: snapshot.test.id,
@@ -2605,7 +2704,7 @@ describe('portable test acceptance round trips', () => {
               TESTRON_BASE_URL: target,
               TESTRON_STORAGE_STATE: path.join(root, 'local-auth.json'),
               TESTRON_API_KEY: token,
-              CI: '1',
+              CI: 'true',
             },
             timeout: 30000,
           },

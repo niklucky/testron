@@ -31,6 +31,7 @@ import {
   testSuiteSchema,
   testSuiteSummarySchema,
   testRevisionSchema,
+  testRevisionContentSchema,
   testSnapshotSchema,
   workspaceSnapshotSchema,
   runScheduleSchema,
@@ -2237,14 +2238,19 @@ export class CanonicalRepository {
             'CONFLICT',
             'Authentication setup tests cannot be converted into repository tests.',
           );
-        const portable = input.kind === 'portable' && input.execution === 'ci-and-testron';
         const source = input.source ?? files.find((file) => file.path === input.file)!.source;
-        const parsed = portable ? parsePlaywright(source) : undefined;
+        const parsed =
+          input.kind === 'portable' && input.execution === 'ci-and-testron'
+            ? parsePlaywright(source)
+            : undefined;
+        const portable = Boolean(
+          parsed && !parsed.error && !parsed.steps.some(({ step }) => step.kind === 'code'),
+        );
         const steps = reconcilePlaywrightSteps(
           before?.steps.map((step) => step.payload) ?? [],
-          parsed?.steps.map((step) => step.step) ?? [],
+          portable ? parsed!.steps.map((step) => step.step) : [],
         );
-        const content: TestRevisionContent = {
+        const content = testRevisionContentSchema.parse({
           stepSchemaVersion: 1,
           title: input.title,
           status: 'ready',
@@ -2274,7 +2280,7 @@ export class CanonicalRepository {
             titlePath: input.titlePath,
             line: input.line,
           },
-        };
+        });
         await this.requireTestProfile(
           tx,
           user,

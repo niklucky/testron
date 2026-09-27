@@ -22,8 +22,8 @@ Keep credentials in TESTRON_API_KEY or the CLI credential store.
 
 This skill performs the authoring review. There is no new test-lint gate for manual
 writers. Ordinary source imports trigger a catalogue downgrade; do not assume that
-absence of imports proves a test portable. Unsupported code remains visible and
-may fail in the existing structured runner.
+absence of imports proves a test portable. The server also downgrades source
+that the existing parser rejects or represents as unsupported code steps.
 
 ## Author and review portable tests
 
@@ -111,7 +111,7 @@ force source changes to bypass pull conflicts; reconcile the intended published
 revision. Reporting setup does not authorize publishing changes by itself.
 
 The reporter automatically uploads completed attempts for tests with `testron.id`.
-A set `CI` variable labels them CI; otherwise they are repository-local. Reports
+`CI=true` labels them CI; otherwise they are repository-local. Reports
 include status, duration, errors, revision, source hash, Playwright project, and retry.
 Check reporting errors and resulting Runs entries before claiming upload success.
 Missing configuration/revisions or upload failures fail the run. Skipped/interrupted

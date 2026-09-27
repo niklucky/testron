@@ -172,6 +172,38 @@ describe('safe source pulls', () => {
 });
 
 describe('publication policy', () => {
+  it('reports a server-side downgrade of a standalone test', async () => {
+    const root = await fixture();
+    const id = randomUUID();
+    await writeFile(
+      path.join(root, 'test.spec.ts'),
+      `import {test} from '@playwright/test';
+      test('unsupported smoke',{annotation:[
+        {type:'testron.id',description:'${id}'},
+        {type:'testron.suite',description:'${suite}'},
+        {type:'testron.publish',description:'true'},
+        {type:'testron.execution',description:'ci-and-testron'}
+      ]},async({page})=>{await page.evaluate(()=>1);});`,
+    );
+    const mutate = vi.fn().mockResolvedValue({
+      files: [],
+      tests: [{ id, status: 'created', revision: null, execution: 'ci-only', environmentIds: [] }],
+    });
+    const api = {
+      sync: {
+        pull: { query: vi.fn().mockResolvedValue({ suites: [{ id: suite }], tests: [] }) },
+        push: { mutate },
+      },
+    } as unknown as Api;
+    const { push } = await import('../src/sync');
+    const result = await push(root, config, api, { dryRun: true });
+    expect(mutate.mock.calls[0]![0].tests[0]).toMatchObject({
+      kind: 'portable',
+      execution: 'ci-and-testron',
+    });
+    expect(result.downgraded).toEqual(['unsupported smoke']);
+  });
+
   it('publishes only opted-in tests, supports nearest overrides and never infers environments', async () => {
     const root = await fixture();
     await writeFile(

@@ -38,7 +38,9 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
   const environments = value.environments.filter(
     (item) =>
       item.projectId === projectId &&
-      (!selectedTest || selectedTest.currentRevision.content.environmentIds.includes(item.id)),
+      (!selectedTest ||
+        selectedTest.test.projectId !== projectId ||
+        selectedTest.currentRevision.content.environmentIds.includes(item.id)),
   );
   const environmentId =
     selectedEnvironmentId && environments.some((item) => item.id === selectedEnvironmentId)

@@ -165,6 +165,7 @@ export class AuthenticationService {
         .set(passwordRecord(input.newPassword))
         .where(eq(users.id, resetToken.userId));
       await transaction.delete(sessions).where(eq(sessions.userId, resetToken.userId));
+      await transaction.delete(apiKeys).where(eq(apiKeys.userId, resetToken.userId));
       await transaction
         .delete(passwordResetTokens)
         .where(eq(passwordResetTokens.userId, resetToken.userId));

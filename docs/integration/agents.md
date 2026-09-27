@@ -46,7 +46,7 @@ full developer setup and GitLab example. When configuring a repository:
    attempts automatically, reporting only tests annotated with `testron.id`. Check
    reporter errors and the resulting Runs entries before claiming upload success.
 
-A set `CI` variable labels reports CI; otherwise they are repository-local. Reporting
+`CI=true` labels reports CI; otherwise they are repository-local. Reporting
 does not change the execution target or make CI-only tests runnable on Testron.
 Results include status, duration, errors, revision, source hash, Playwright project,
 and retry. Reporting errors fail the run; skipped/interrupted tests currently map

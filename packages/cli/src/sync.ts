@@ -365,7 +365,14 @@ export async function push(
     ...result,
     idsAssigned: assigned.size,
     downgraded: selected
-      .filter((_test, index) => publications[index]?.downgrade)
+      .filter(
+        (_test, index) =>
+          publications[index]?.downgrade ||
+          (request.tests[index]?.execution === 'ci-and-testron' &&
+            result.tests.some(
+              (test) => test.id === request.tests[index]?.id && test.execution === 'ci-only',
+            )),
+      )
       .map((test) => test.title),
     tests: result.tests.map((test) => ({
       ...test,
