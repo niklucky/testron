@@ -7,3 +7,4 @@ export * from './operations';
 export * from './resources';
 export * from './trpc';
 export * from './version';
+export * from './sync';

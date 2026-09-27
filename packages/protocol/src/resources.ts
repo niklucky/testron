@@ -369,6 +369,7 @@ export const testSuiteSchema = z
     id: entityIdSchema,
     projectId: entityIdSchema,
     name: testSuiteNameSchema,
+    codeKey: z.string().optional(),
     revision: revisionNumberSchema,
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -435,6 +436,17 @@ export const testRevisionContentSchema = z
     prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
     /** Canonical Playwright document. Older revisions are generated from their steps on load. */
     source: z.string().max(2_000_000).optional(),
+    /** Repository tests are source snapshots; they require a complete-spec runner. */
+    repository: z
+      .object({
+        id: entityIdSchema,
+        file: z.string().min(1).max(500),
+        files: z.array(z.string().min(1).max(500)).max(200).optional(),
+        titlePath: z.array(z.string()).max(100),
+        line: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
     steps: z.array(revisionStepSchema).max(10_000),
   })
   .strict()

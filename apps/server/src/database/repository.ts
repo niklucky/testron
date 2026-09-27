@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import {
+  type SyncPush,
   MAX_SCREENSHOT_BYTES,
   MAX_TEST_SCREENSHOT_BYTES,
   MAX_TEST_SCREENSHOTS,
@@ -85,6 +86,8 @@ import type { AuthenticationEncryption } from '../authentication-state/encryptio
 import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
+  apiKeys,
+  repositoryFiles,
   testAttachments,
   environments,
   authenticationStates,
@@ -657,9 +660,25 @@ export class CanonicalRepository {
   createTestSuite(user: AuthenticatedUser, request: CreateTestSuiteRequest): Promise<TestSuite> {
     return this.idempotent(user, 'testSuite.create', request, async (tx) => {
       await this.authorizeProject(tx, user, request.projectId);
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`suites:${request.projectId}`}))`,
+      );
+      const existing = await tx
+        .select({ key: testSuites.codeKey })
+        .from(testSuites)
+        .where(eq(testSuites.projectId, request.projectId));
+      const stem =
+        request.name.replace(
+          /[^a-zA-Z0-9]+(.)?/g,
+          (_, next: string | undefined) => next?.toUpperCase() ?? '',
+        ) || 'Suite';
+      const base = /^[A-Za-z]/.test(stem) ? stem : `Suite${stem}`;
+      let codeKey = base;
+      for (let suffix = 2; existing.some(({ key }) => key === codeKey); suffix++)
+        codeKey = `${base}${suffix}`;
       const [row] = await tx
         .insert(testSuites)
-        .values({ projectId: request.projectId, name: request.name, revision: 1 })
+        .values({ projectId: request.projectId, name: request.name, codeKey, revision: 1 })
         .returning();
       if (!row) throw new Error('Could not create the test suite.');
       await this.recordActivity(tx, user, {
@@ -1015,6 +1034,11 @@ export class CanonicalRepository {
       if (!test.currentRevisionId || !test.currentRevisionNumber)
         throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
       const snapshot = await this.snapshot(tx, request.testId);
+      if (snapshot.currentRevision.content.repository)
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository tests must run in their Playwright project.',
+        );
       if (snapshot.currentRevision.content.status === 'requested')
         throw new RepositoryError('CONFLICT', 'Test requests must be marked ready before running.');
       if (!snapshot.currentRevision.content.environmentIds.includes(request.environmentId))
@@ -1863,6 +1887,18 @@ export class CanonicalRepository {
         .for('update')
         .limit(1);
       if (!test) throw new RepositoryError('NOT_FOUND', 'The test was not found.');
+      const current = await this.snapshot(tx, test.id);
+      if (
+        current.currentRevision.content.repository &&
+        (stable(current.currentRevision.content.repository) !==
+          stable(request.content.repository) ||
+          current.currentRevision.content.source !== request.content.source ||
+          stable(current.currentRevision.content.steps) !== stable(request.content.steps))
+      )
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository source is read-only. Update it with testron push.',
+        );
       await this.requireEnvironments(tx, request.content.environmentIds, test.projectId);
       await this.requireTestProfile(
         tx,
@@ -1969,6 +2005,260 @@ export class CanonicalRepository {
     });
   }
 
+  async createSyncKey(
+    user: AuthenticatedUser,
+    request: { projectId: string; name: string; days: number },
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const token = `tsk_${randomBytes(32).toString('base64url')}`;
+      const expiresAt = new Date(Date.now() + request.days * 86_400_000).toISOString();
+      const [key] = await tx
+        .insert(apiKeys)
+        .values({
+          userId: user.id,
+          projectId: request.projectId,
+          name: request.name,
+          tokenHash: createHash('sha256').update(token).digest('hex'),
+          expiresAt,
+        })
+        .returning({ id: apiKeys.id });
+      return { id: key!.id, token, expiresAt };
+    });
+  }
+
+  async revokeSyncKey(user: AuthenticatedUser, request: { projectId: string; id: string }) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await tx
+        .delete(apiKeys)
+        .where(
+          and(
+            eq(apiKeys.id, request.id),
+            eq(apiKeys.projectId, request.projectId),
+            eq(apiKeys.userId, user.id),
+          ),
+        );
+      return { revoked: true };
+    });
+  }
+
+  async pullRepository(
+    user: AuthenticatedUser,
+    request: { projectId: string; repositoryId: string },
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const rows = await tx
+        .select({ id: tests.id })
+        .from(tests)
+        .where(and(eq(tests.projectId, request.projectId), isNull(tests.deletedAt)))
+        .orderBy(asc(tests.createdAt));
+      const snapshots = [];
+      for (const row of rows) snapshots.push(await this.snapshot(tx, row.id));
+      return {
+        suites: await this.testSuiteSummaries(tx, [request.projectId]),
+        environments: await tx
+          .select({ id: environments.id, name: environments.name })
+          .from(environments)
+          .where(
+            and(eq(environments.projectId, request.projectId), isNull(environments.deletedAt)),
+          ),
+        tests: snapshots,
+        files: await tx
+          .select({
+            path: repositoryFiles.path,
+            source: repositoryFiles.source,
+            hash: repositoryFiles.hash,
+          })
+          .from(repositoryFiles)
+          .where(
+            and(
+              eq(repositoryFiles.projectId, request.projectId),
+              eq(repositoryFiles.repositoryId, request.repositoryId),
+            ),
+          ),
+      };
+    });
+  }
+
+  async pushRepository(user: AuthenticatedUser, request: SyncPush) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sync:${request.projectId}`}))`);
+      await this.requireEnvironments(tx, request.environmentIds, request.projectId);
+      for (const suiteId of new Set(request.tests.map((test) => test.suiteId)))
+        await this.requireTestSuite(tx, suiteId, request.projectId);
+      const files = request.files.map((file) => ({
+        ...file,
+        hash: createHash('sha256').update(file.source).digest('hex'),
+      }));
+      for (const file of files) {
+        const [previous] = await tx
+          .select()
+          .from(repositoryFiles)
+          .where(
+            and(
+              eq(repositoryFiles.projectId, request.projectId),
+              eq(repositoryFiles.repositoryId, request.repositoryId),
+              eq(repositoryFiles.path, file.path),
+            ),
+          )
+          .for('update');
+        if (previous?.hash !== file.hash && (previous?.hash ?? null) !== file.baseHash)
+          throw new RepositoryError(
+            'CONFLICT',
+            `FILE_CONFLICT: ${file.path} changed remotely. Pull and reconcile it before pushing.`,
+          );
+      }
+      const changes = [];
+      for (const input of [...request.tests].sort((a, b) => a.id.localeCompare(b.id))) {
+        const [previous] = await tx
+          .select()
+          .from(tests)
+          .where(eq(tests.id, input.id))
+          .for('update');
+        if (previous && (previous.projectId !== request.projectId || previous.deletedAt))
+          throw new RepositoryError(
+            'CONFLICT',
+            `TEST_ID_UNAVAILABLE: ${input.id} cannot be used in this project.`,
+          );
+        const snapshot = previous ? await this.snapshot(tx, input.id) : undefined;
+        const before = snapshot?.currentRevision.content;
+        if (before?.repository && before.repository.id !== request.repositoryId)
+          throw new RepositoryError(
+            'CONFLICT',
+            `REPOSITORY_CONFLICT: ${input.id} belongs to another repository.`,
+          );
+        const [flow] = await tx
+          .select({ id: browserAuthenticationFlows.id })
+          .from(browserAuthenticationFlows)
+          .where(
+            and(
+              eq(browserAuthenticationFlows.setupTestId, input.id),
+              isNull(browserAuthenticationFlows.deletedAt),
+            ),
+          );
+        if (flow)
+          throw new RepositoryError(
+            'CONFLICT',
+            'Authentication setup tests cannot be converted into repository tests.',
+          );
+        const content: TestRevisionContent = {
+          stepSchemaVersion: 1,
+          title: input.title,
+          status: 'ready',
+          environmentIds: request.environmentIds,
+          prerequisites: before?.prerequisites ?? [],
+          steps: [],
+          ...(before?.description ? { description: before.description } : {}),
+          source: files.find((file) => file.path === input.file)!.source,
+          repository: {
+            id: request.repositoryId,
+            file: input.file,
+            files: files.map((file) => file.path).sort(),
+            titlePath: input.titlePath,
+            line: input.line,
+          },
+        };
+        const unchanged =
+          before && stable(before) === stable(content) && previous?.testSuiteId === input.suiteId;
+        if (
+          !unchanged &&
+          (previous
+            ? previous.currentRevisionId !== input.baseRevision?.id ||
+              previous.currentRevisionNumber !== input.baseRevision?.number
+            : input.baseRevision !== null)
+        )
+          throw new RepositoryError(
+            'CONFLICT',
+            `TEST_CONFLICT: ${input.id} changed or has no synchronized baseline. Pull before pushing.`,
+          );
+        changes.push({
+          input,
+          previous,
+          content,
+          status: unchanged
+            ? ('unchanged' as const)
+            : previous
+              ? ('updated' as const)
+              : ('created' as const),
+        });
+      }
+      const result = [];
+      for (const { input, previous, content, status } of changes) {
+        let revision = previous?.currentRevisionId
+          ? { id: previous.currentRevisionId, number: previous.currentRevisionNumber! }
+          : null;
+        if (!request.dryRun && status !== 'unchanged') {
+          if (!previous)
+            await tx.insert(tests).values({
+              id: input.id,
+              projectId: request.projectId,
+              title: input.title,
+              testSuiteId: input.suiteId,
+              createdBy: user.id,
+            });
+          const [created] = await tx
+            .insert(testRevisions)
+            .values({
+              testId: input.id,
+              projectId: request.projectId,
+              number: (previous?.currentRevisionNumber ?? 0) + 1,
+              parentRevisionId: previous?.currentRevisionId ?? null,
+              parentRevisionNumber: previous?.currentRevisionNumber ?? null,
+              content,
+              createdBy: user.id,
+            })
+            .returning();
+          revision = { id: created!.id, number: created!.number };
+          await tx
+            .update(tests)
+            .set({
+              title: input.title,
+              testSuiteId: input.suiteId,
+              currentRevisionId: revision.id,
+              currentRevisionNumber: revision.number,
+            })
+            .where(eq(tests.id, input.id));
+          await this.recordActivity(tx, user, {
+            projectId: request.projectId,
+            action: previous ? 'test.updated' : 'test.created',
+            entityType: 'test',
+            entityId: input.id,
+            entityLabel: input.title,
+          });
+        }
+        result.push({ id: input.id, status, revision });
+      }
+      if (!request.dryRun)
+        for (const file of files) {
+          await tx
+            .insert(repositoryFiles)
+            .values({
+              projectId: request.projectId,
+              repositoryId: request.repositoryId,
+              path: file.path,
+              source: file.source,
+              hash: file.hash,
+            })
+            .onConflictDoUpdate({
+              target: [
+                repositoryFiles.projectId,
+                repositoryFiles.repositoryId,
+                repositoryFiles.path,
+              ],
+              set: { source: file.source, hash: file.hash },
+            });
+        }
+      return {
+        dryRun: request.dryRun,
+        tests: result,
+        files: files.map(({ path, hash }) => ({ path, hash })),
+      };
+    });
+  }
+
   private async idempotent<T>(
     user: AuthenticatedUser,
     operation: string,
@@ -2042,6 +2332,8 @@ export class CanonicalRepository {
     user: AuthenticatedUser,
     projectId: string,
   ): Promise<void> {
+    if (user.apiKeyProjectId && user.apiKeyProjectId !== projectId)
+      throw new RepositoryError('FORBIDDEN', 'This API key belongs to another project.');
     const [project] = await tx
       .select({ ownerId: projects.ownerId })
       .from(projects)
@@ -2181,6 +2473,11 @@ export class CanonicalRepository {
     if (uniqueIds.length === 0 || rows.length !== uniqueIds.length)
       throw new RepositoryError('NOT_FOUND', 'A selected test was not found in this project.');
     const snapshots = await Promise.all(uniqueIds.map((testId) => this.snapshot(tx, testId)));
+    if (snapshots.some((snapshot) => snapshot.currentRevision.content.repository))
+      throw new RepositoryError(
+        'CONFLICT',
+        'Repository tests must run in their Playwright project.',
+      );
     if (snapshots.some((snapshot) => snapshot.currentRevision.content.status === 'requested'))
       throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
     if (
@@ -2216,6 +2513,11 @@ export class CanonicalRepository {
       throw new RepositoryError('CONFLICT', 'The run schedule has no runnable tests.');
     const values = selections.map(({ test, revision }) => {
       const content = this.revision(revision).content;
+      if (content.repository)
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository tests must run in their Playwright project.',
+        );
       if (content.status === 'requested')
         throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
       if (!content.environmentIds.includes(schedule.environmentId))
@@ -2696,6 +2998,7 @@ export class CanonicalRepository {
       id: row.id,
       projectId: row.projectId,
       name: row.name,
+      codeKey: row.codeKey,
       revision: row.revision,
       createdAt: instant(row.createdAt),
       updatedAt: instant(row.updatedAt),

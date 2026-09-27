@@ -1,0 +1,35 @@
+{
+  "name": "@testron/cli",
+  "version": "0.1.0",
+  "description": "Synchronize Playwright tests with Testron",
+  "type": "module",
+  "bin": {
+    "testron": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node build.mjs && vitest run"
+  },
+  "dependencies": {
+    "@trpc/client": "^11.18.0",
+    "esbuild": "0.25.12",
+    "typescript": "6.0.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@testron/domain": "workspace:*",
+    "@testron/protocol": "workspace:*",
+    "@testron/server": "workspace:*",
+    "@playwright/test": "1.62.1",
+    "vitest": "4.1.10"
+  }
+}

@@ -165,6 +165,7 @@ export class ServerRunQueue {
     return selected.flatMap(({ test, revision }) => {
       const content = revisionContent(revision.content);
       if (
+        content.repository ||
         content.status === 'requested' ||
         !content.environmentIds.includes(schedule.environmentId)
       )

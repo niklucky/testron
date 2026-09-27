@@ -2250,3 +2250,113 @@ describe('PostgreSQL tRPC vertical slice', () => {
     });
   });
 });
+
+describe('repository synchronization', () => {
+  it('preserves suite code keys, stable IDs and no-op revisions, and rejects stale atomic pushes', async () => {
+    const { api } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const suite = await api.testSuite.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Authentication',
+    });
+    expect(suite.codeKey).toBe('Authentication');
+    const renamed = await api.testSuite.update.mutate({
+      meta: mutationMeta(),
+      testSuiteId: suite.id,
+      baseRevision: suite.revision,
+      name: 'Login and identity',
+    });
+    expect(renamed.codeKey).toBe('Authentication');
+    const repositoryId = randomUUID();
+    const id = randomUUID();
+    const request = {
+      projectId: project.id,
+      repositoryId,
+      environmentIds: [environment.id],
+      files: [
+        { path: 'tests/auth.spec.ts', source: '// first source', baseHash: null as string | null },
+      ],
+      tests: [
+        {
+          id,
+          suiteId: suite.id,
+          title: 'sign in',
+          file: 'tests/auth.spec.ts',
+          titlePath: ['Password', 'sign in'],
+          line: 3,
+          baseRevision: null as { id: string; number: number } | null,
+        },
+      ],
+    };
+    const preview = await api.sync.push.mutate({ ...request, dryRun: true });
+    expect(preview.tests[0]?.status).toBe('created');
+    expect((await api.sync.pull.query({ projectId: project.id, repositoryId })).files).toEqual([]);
+    const created = await api.sync.push.mutate(request);
+    expect(created.tests[0]?.revision?.number).toBe(1);
+    const retry = await api.sync.push.mutate(request);
+    expect(retry.tests[0]?.status).toBe('unchanged');
+    expect(retry.tests[0]?.revision).toEqual(created.tests[0]?.revision);
+    const snapshot = await api.test.get.query({ meta: requestMeta(), testId: id });
+    expect(snapshot.currentRevision.content.repository?.file).toBe('tests/auth.spec.ts');
+    expect(snapshot.test.testSuiteId).toBe(suite.id);
+    const updated = await api.sync.push.mutate({
+      ...request,
+      files: [
+        { ...request.files[0]!, source: '// second source', baseHash: created.files[0]!.hash },
+      ],
+      tests: [
+        { ...request.tests[0]!, title: 'renamed login', baseRevision: created.tests[0]!.revision },
+      ],
+    });
+    expect(updated.tests[0]?.revision?.number).toBe(2);
+    await expect(
+      api.sync.push.mutate({
+        ...request,
+        files: [
+          { ...request.files[0]!, source: '// stale edit', baseHash: created.files[0]!.hash },
+          { path: 'helpers.ts', source: 'export {};', baseHash: null },
+        ],
+      }),
+    ).rejects.toThrow('FILE_CONFLICT');
+    const catalog = await api.sync.pull.query({ projectId: project.id, repositoryId });
+    expect(catalog.files).toHaveLength(1);
+    expect(catalog.tests.find(({ test }) => test.id === id)?.test.title).toBe('renamed login');
+    await expect(
+      api.test.saveRevision.mutate({
+        meta: mutationMeta(),
+        testId: id,
+        baseRevision: updated.tests[0]!.revision!,
+        content: { ...snapshot.currentRevision.content, source: '// edited in UI' },
+      }),
+    ).rejects.toThrow('read-only');
+  });
+
+  it('scopes API keys to project sync, enforces access, and revokes them', async () => {
+    const { api } = await signIn();
+    const { project } = await createSlice(api);
+    const other = await api.project.create.mutate({ meta: mutationMeta(), name: 'Other' });
+    const key = await api.sync.createKey.mutate({ projectId: project.id, name: 'CLI', days: 1 });
+    const keyed = client(key.token);
+    await expect(
+      keyed.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).resolves.toHaveProperty('suites');
+    await expect(
+      keyed.sync.pull.query({ projectId: other.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('another project');
+    await expect(keyed.workspace.get.query({ meta: requestMeta() })).rejects.toThrow(
+      'only use repository sync',
+    );
+    await expect(
+      keyed.sync.createKey.mutate({ projectId: project.id, name: 'Another' }),
+    ).rejects.toThrow('only use repository sync');
+    const stranger = await signIn('stranger@example.test');
+    await expect(
+      stranger.api.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('access');
+    await api.sync.revokeKey.mutate({ projectId: project.id, id: key.id });
+    await expect(
+      keyed.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('UNAUTHORIZED');
+  });
+});

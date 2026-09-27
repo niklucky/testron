@@ -15,6 +15,7 @@ import {
 } from '@testron/protocol';
 import type { Database } from './database/database.js';
 import {
+  apiKeys,
   passwordResetEmailOutbox,
   passwordResetTokens,
   sessions,
@@ -32,6 +33,7 @@ const passwordRecord = (password: string) => {
 
 export interface AuthenticatedUser {
   id: string;
+  apiKeyProjectId?: string;
   email: string;
   name: string | null;
 }
@@ -172,6 +174,25 @@ export class AuthenticationService {
 
   async authenticate(authorization: string | undefined): Promise<AuthenticatedUser | undefined> {
     if (!authorization?.startsWith('Bearer ')) return undefined;
+    if (authorization.slice(7).startsWith('tsk_')) {
+      const [user] = await this.db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          apiKeyProjectId: apiKeys.projectId,
+        })
+        .from(apiKeys)
+        .innerJoin(users, eq(users.id, apiKeys.userId))
+        .where(
+          and(
+            eq(apiKeys.tokenHash, hash(authorization.slice(7))),
+            gt(apiKeys.expiresAt, new Date().toISOString()),
+          ),
+        )
+        .limit(1);
+      return user;
+    }
     const [user] = await this.db
       .select({ id: users.id, email: users.email, name: users.name })
       .from(sessions)

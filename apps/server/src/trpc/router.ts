@@ -1,7 +1,12 @@
+import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { TRPCError, initTRPC } from '@trpc/server';
 
 import {
+  syncPullSchema,
+  syncPushSchema,
+  createSyncKeySchema,
+  syncProjectSchema,
   authLoginInputSchema,
   authPasswordResetOutputSchema,
   authPasswordResetRequestedOutputSchema,
@@ -97,6 +102,16 @@ const passwordResetAllowed = (email: string, requestIp: string | undefined): boo
 };
 const authenticatedProcedure = publicProcedure.use(({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  if (ctx.user.apiKeyProjectId)
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'API keys can only use repository sync operations.',
+    });
+  return next({ ctx: { ...ctx, user: ctx.user } });
+});
+
+const syncProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
 
@@ -138,6 +153,20 @@ const callAuthentication = async <T>(operation: () => Promise<T>): Promise<T> =>
 
 export const createAppRouter = ({ authentication, repository, runQueue }: RouterServices) =>
   t.router({
+    sync: t.router({
+      pull: syncProcedure
+        .input(syncPullSchema)
+        .query(({ ctx, input }) => call(() => repository.pullRepository(ctx.user, input))),
+      push: syncProcedure
+        .input(syncPushSchema)
+        .mutation(({ ctx, input }) => call(() => repository.pushRepository(ctx.user, input))),
+      createKey: authenticatedProcedure
+        .input(createSyncKeySchema)
+        .mutation(({ ctx, input }) => call(() => repository.createSyncKey(ctx.user, input))),
+      revokeKey: authenticatedProcedure
+        .input(syncProjectSchema.extend({ id: z.uuid() }))
+        .mutation(({ ctx, input }) => call(() => repository.revokeSyncKey(ctx.user, input))),
+    }),
     auth: t.router({
       register: publicProcedure
         .input(authRegisterInputSchema)
