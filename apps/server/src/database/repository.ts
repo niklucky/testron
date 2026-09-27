@@ -1,8 +1,16 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import {
+  parsePlaywright,
+  reconcilePlaywrightSteps,
+} from '@testron/domain/codegen/parse-playwright';
 
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 
 import {
+  type SyncPush,
+  type ReportRun,
+  testExecutionMode,
+  isCatalogueTest,
   MAX_SCREENSHOT_BYTES,
   MAX_TEST_SCREENSHOT_BYTES,
   MAX_TEST_SCREENSHOTS,
@@ -23,6 +31,7 @@ import {
   testSuiteSchema,
   testSuiteSummarySchema,
   testRevisionSchema,
+  testRevisionContentSchema,
   testSnapshotSchema,
   workspaceSnapshotSchema,
   runScheduleSchema,
@@ -85,6 +94,8 @@ import type { AuthenticationEncryption } from '../authentication-state/encryptio
 import { disabledInvitationMailer, type InvitationMailer } from '../email.js';
 import type { Database } from './database.js';
 import {
+  apiKeys,
+  repositoryFiles,
   testAttachments,
   environments,
   authenticationStates,
@@ -657,9 +668,25 @@ export class CanonicalRepository {
   createTestSuite(user: AuthenticatedUser, request: CreateTestSuiteRequest): Promise<TestSuite> {
     return this.idempotent(user, 'testSuite.create', request, async (tx) => {
       await this.authorizeProject(tx, user, request.projectId);
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`suites:${request.projectId}`}))`,
+      );
+      const existing = await tx
+        .select({ key: testSuites.codeKey })
+        .from(testSuites)
+        .where(eq(testSuites.projectId, request.projectId));
+      const stem =
+        request.name.replace(
+          /[^a-zA-Z0-9]+(.)?/g,
+          (_, next: string | undefined) => next?.toUpperCase() ?? '',
+        ) || 'Suite';
+      const base = /^[A-Za-z]/.test(stem) ? stem : `Suite${stem}`;
+      let codeKey = base;
+      for (let suffix = 2; existing.some(({ key }) => key === codeKey); suffix++)
+        codeKey = `${base}${suffix}`;
       const [row] = await tx
         .insert(testSuites)
-        .values({ projectId: request.projectId, name: request.name, revision: 1 })
+        .values({ projectId: request.projectId, name: request.name, codeKey, revision: 1 })
         .returning();
       if (!row) throw new Error('Could not create the test suite.');
       await this.recordActivity(tx, user, {
@@ -1008,6 +1035,33 @@ export class CanonicalRepository {
     });
   }
 
+  enqueueTestRun(
+    user: AuthenticatedUser,
+    request: Omit<StartTestRunRequest, 'source'>,
+  ): Promise<ServerRunJob> {
+    return this.idempotent(user, 'run.enqueue', request, async (tx) => {
+      const test = await this.authorizeTest(tx, user, request.testId);
+      await this.validateScheduleSelection(tx, test.projectId, request.environmentId, [test.id]);
+      const snapshot = await this.snapshot(tx, test.id);
+      const profileId = request.profileId ?? snapshot.currentRevision.content.profileId ?? null;
+      await this.requireTestProfile(tx, user, profileId, test.projectId, [request.environmentId]);
+      const [job] = await tx
+        .insert(serverRunJobs)
+        .values({
+          projectId: test.projectId,
+          testId: test.id,
+          testRevisionId: snapshot.currentRevision.id,
+          testRevisionNumber: snapshot.currentRevision.number,
+          environmentId: request.environmentId,
+          profileId,
+          source: 'server-manual',
+          status: 'queued',
+        })
+        .returning();
+      return this.serverRunJob(job!);
+    });
+  }
+
   startTestRun(user: AuthenticatedUser, request: StartTestRunRequest): Promise<TestRun> {
     return this.idempotent(user, 'run.start', request, async (tx) => {
       const test = await this.authorizeTest(tx, user, request.testId);
@@ -1015,6 +1069,13 @@ export class CanonicalRepository {
       if (!test.currentRevisionId || !test.currentRevisionNumber)
         throw new RepositoryError('NOT_FOUND', 'The test revision was not found.');
       const snapshot = await this.snapshot(tx, request.testId);
+      if (testExecutionMode(snapshot.currentRevision.content) === 'ci-only')
+        throw new RepositoryError('CONFLICT', 'CI-only tests cannot run on Testron environments.');
+      if (isCatalogueTest(snapshot.currentRevision.content))
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository tests must run in their Playwright project.',
+        );
       if (snapshot.currentRevision.content.status === 'requested')
         throw new RepositoryError('CONFLICT', 'Test requests must be marked ready before running.');
       if (!snapshot.currentRevision.content.environmentIds.includes(request.environmentId))
@@ -1863,7 +1924,22 @@ export class CanonicalRepository {
         .for('update')
         .limit(1);
       if (!test) throw new RepositoryError('NOT_FOUND', 'The test was not found.');
-      await this.requireEnvironments(tx, request.content.environmentIds, test.projectId);
+      const current = await this.snapshot(tx, test.id);
+      if (
+        isCatalogueTest(current.currentRevision.content) &&
+        (stable(current.currentRevision.content.repository) !==
+          stable(request.content.repository) ||
+          current.currentRevision.content.source !== request.content.source ||
+          testExecutionMode(current.currentRevision.content) !==
+            testExecutionMode(request.content) ||
+          stable(current.currentRevision.content.steps) !== stable(request.content.steps))
+      )
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository source is read-only. Update it with testron push.',
+        );
+      if (request.content.environmentIds.length)
+        await this.requireEnvironments(tx, request.content.environmentIds, test.projectId);
       await this.requireTestProfile(
         tx,
         user,
@@ -1969,6 +2045,353 @@ export class CanonicalRepository {
     });
   }
 
+  async createSyncKey(
+    user: AuthenticatedUser,
+    request: { projectId: string; name: string; days: number },
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const token = `tsk_${randomBytes(32).toString('base64url')}`;
+      const expiresAt = new Date(Date.now() + request.days * 86_400_000).toISOString();
+      const [key] = await tx
+        .insert(apiKeys)
+        .values({
+          userId: user.id,
+          projectId: request.projectId,
+          name: request.name,
+          tokenHash: createHash('sha256').update(token).digest('hex'),
+          expiresAt,
+        })
+        .returning({ id: apiKeys.id });
+      return { id: key!.id, token, expiresAt };
+    });
+  }
+
+  async revokeSyncKey(user: AuthenticatedUser, request: { projectId: string; id: string }) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await tx
+        .delete(apiKeys)
+        .where(
+          and(
+            eq(apiKeys.id, request.id),
+            eq(apiKeys.projectId, request.projectId),
+            eq(apiKeys.userId, user.id),
+          ),
+        );
+      return { revoked: true };
+    });
+  }
+
+  async pullRepository(
+    user: AuthenticatedUser,
+    request: { projectId: string; repositoryId: string },
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      const rows = await tx
+        .select({ id: tests.id })
+        .from(tests)
+        .where(and(eq(tests.projectId, request.projectId), isNull(tests.deletedAt)))
+        .orderBy(asc(tests.createdAt));
+      const snapshots = [];
+      for (const row of rows) snapshots.push(await this.snapshot(tx, row.id));
+      return {
+        suites: await this.testSuiteSummaries(tx, [request.projectId]),
+        environments: await tx
+          .select({ id: environments.id, name: environments.name })
+          .from(environments)
+          .where(
+            and(eq(environments.projectId, request.projectId), isNull(environments.deletedAt)),
+          ),
+        tests: snapshots,
+        files: await tx
+          .select({
+            path: repositoryFiles.path,
+            source: repositoryFiles.source,
+            hash: repositoryFiles.hash,
+          })
+          .from(repositoryFiles)
+          .where(
+            and(
+              eq(repositoryFiles.projectId, request.projectId),
+              eq(repositoryFiles.repositoryId, request.repositoryId),
+            ),
+          ),
+      };
+    });
+  }
+
+  async reportRepositoryRun(user: AuthenticatedUser, input: ReportRun) {
+    return this.db.transaction(async (tx) => {
+      const test = await this.authorizeTest(tx, user, input.testId);
+      if (test.projectId !== input.projectId)
+        throw new RepositoryError('NOT_FOUND', 'Test not found in this project.');
+      await this.requireEnvironment(tx, input.environmentId, input.projectId);
+      const [revision] = await tx
+        .select()
+        .from(testRevisions)
+        .where(
+          and(
+            eq(testRevisions.id, input.testRevision.id),
+            eq(testRevisions.testId, input.testId),
+            eq(testRevisions.number, input.testRevision.number),
+          ),
+        );
+      if (!revision)
+        throw new RepositoryError(
+          'NOT_FOUND',
+          'The reported test revision was not found. Pull or push before reporting.',
+        );
+      const [run] = await tx
+        .insert(testRuns)
+        .values({
+          id: input.id,
+          projectId: input.projectId,
+          testId: input.testId,
+          testRevisionId: input.testRevision.id,
+          testRevisionNumber: input.testRevision.number,
+          environmentId: input.environmentId,
+          source: input.source,
+          status: input.status,
+          startedAt: input.startedAt,
+          finishedAt: new Date(Date.parse(input.startedAt) + input.durationMs).toISOString(),
+          durationMs: input.durationMs,
+          error: input.error,
+          context: input.context,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!run) {
+        const [existing] = await tx.select().from(testRuns).where(eq(testRuns.id, input.id));
+        if (!existing || existing.projectId !== input.projectId || existing.testId !== input.testId)
+          throw new RepositoryError('CONFLICT', 'Report ID already belongs to another run.');
+        return this.run(existing);
+      }
+      return this.run(run);
+    });
+  }
+
+  async pushRepository(user: AuthenticatedUser, request: SyncPush) {
+    return this.db.transaction(async (tx) => {
+      await this.authorizeProject(tx, user, request.projectId);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sync:${request.projectId}`}))`);
+      if (
+        request.environmentIds.length &&
+        request.tests.some((test) => test.execution === 'ci-and-testron')
+      )
+        await this.requireEnvironments(tx, request.environmentIds, request.projectId);
+      for (const suiteId of new Set(request.tests.map((test) => test.suiteId)))
+        if (suiteId) await this.requireTestSuite(tx, suiteId, request.projectId);
+      const files = request.files.map((file) => ({
+        ...file,
+        hash: createHash('sha256').update(file.source).digest('hex'),
+      }));
+      for (const file of files) {
+        const [previous] = await tx
+          .select()
+          .from(repositoryFiles)
+          .where(
+            and(
+              eq(repositoryFiles.projectId, request.projectId),
+              eq(repositoryFiles.repositoryId, request.repositoryId),
+              eq(repositoryFiles.path, file.path),
+            ),
+          )
+          .for('update');
+        if (previous?.hash !== file.hash && (previous?.hash ?? null) !== file.baseHash)
+          throw new RepositoryError(
+            'CONFLICT',
+            `FILE_CONFLICT: ${file.path} changed remotely. Pull and reconcile it before pushing.`,
+          );
+      }
+      const changes = [];
+      for (const input of [...request.tests].sort((a, b) => a.id.localeCompare(b.id))) {
+        const [previous] = await tx
+          .select()
+          .from(tests)
+          .where(eq(tests.id, input.id))
+          .for('update');
+        if (previous && (previous.projectId !== request.projectId || previous.deletedAt))
+          throw new RepositoryError(
+            'CONFLICT',
+            `TEST_ID_UNAVAILABLE: ${input.id} cannot be used in this project.`,
+          );
+        const snapshot = previous ? await this.snapshot(tx, input.id) : undefined;
+        const before = snapshot?.currentRevision.content;
+        if (before?.repository && before.repository.id !== request.repositoryId)
+          throw new RepositoryError(
+            'CONFLICT',
+            `REPOSITORY_CONFLICT: ${input.id} belongs to another repository.`,
+          );
+        const [flow] = await tx
+          .select({ id: browserAuthenticationFlows.id })
+          .from(browserAuthenticationFlows)
+          .where(
+            and(
+              eq(browserAuthenticationFlows.setupTestId, input.id),
+              isNull(browserAuthenticationFlows.deletedAt),
+            ),
+          );
+        if (flow)
+          throw new RepositoryError(
+            'CONFLICT',
+            'Authentication setup tests cannot be converted into repository tests.',
+          );
+        const source = input.source ?? files.find((file) => file.path === input.file)!.source;
+        const parsed =
+          input.kind === 'portable' && input.execution === 'ci-and-testron'
+            ? parsePlaywright(source)
+            : undefined;
+        const portable = Boolean(
+          parsed && !parsed.error && !parsed.steps.some(({ step }) => step.kind === 'code'),
+        );
+        const steps = reconcilePlaywrightSteps(
+          before?.steps.map((step) => step.payload) ?? [],
+          portable ? parsed!.steps.map((step) => step.step) : [],
+        );
+        const content = testRevisionContentSchema.parse({
+          stepSchemaVersion: 1,
+          title: input.title,
+          status: 'ready',
+          execution: portable ? 'ci-and-testron' : 'ci-only',
+          environmentIds: !portable
+            ? []
+            : request.environmentIds.length
+              ? request.environmentIds
+              : (before?.environmentIds ?? []),
+          ...(portable && before?.profileId ? { profileId: before.profileId } : {}),
+          prerequisites: before?.prerequisites ?? [],
+          steps: steps.map((payload, index) => ({
+            id: before?.steps[index]?.id ?? randomUUID(),
+            payload,
+          })),
+          description: input.description ?? before?.description ?? input.title,
+          humanSteps: input.humanSteps ?? before?.humanSteps ?? [],
+          source,
+          repository: {
+            id: request.repositoryId,
+            kind: portable ? 'portable' : 'catalogue',
+            origin:
+              before?.repository?.origin ??
+              (before?.repository || !before ? 'repository' : 'testron'),
+            file: input.file,
+            files: [input.file],
+            titlePath: input.titlePath,
+            line: input.line,
+          },
+        });
+        await this.requireTestProfile(
+          tx,
+          user,
+          content.profileId,
+          request.projectId,
+          content.environmentIds,
+        );
+        const unchanged =
+          before && stable(before) === stable(content) && previous?.testSuiteId === input.suiteId;
+        if (
+          !unchanged &&
+          (previous
+            ? previous.currentRevisionId !== input.baseRevision?.id ||
+              previous.currentRevisionNumber !== input.baseRevision?.number
+            : input.baseRevision !== null)
+        )
+          throw new RepositoryError(
+            'CONFLICT',
+            `TEST_CONFLICT: ${input.id} changed or has no synchronized baseline. Pull before pushing.`,
+          );
+        changes.push({
+          input,
+          previous,
+          content,
+          status: unchanged
+            ? ('unchanged' as const)
+            : previous
+              ? ('updated' as const)
+              : ('created' as const),
+        });
+      }
+      const result = [];
+      for (const { input, previous, content, status } of changes) {
+        let revision = previous?.currentRevisionId
+          ? { id: previous.currentRevisionId, number: previous.currentRevisionNumber! }
+          : null;
+        if (!request.dryRun && status !== 'unchanged') {
+          if (!previous)
+            await tx.insert(tests).values({
+              id: input.id,
+              projectId: request.projectId,
+              title: input.title,
+              testSuiteId: input.suiteId,
+              createdBy: user.id,
+            });
+          const [created] = await tx
+            .insert(testRevisions)
+            .values({
+              testId: input.id,
+              projectId: request.projectId,
+              number: (previous?.currentRevisionNumber ?? 0) + 1,
+              parentRevisionId: previous?.currentRevisionId ?? null,
+              parentRevisionNumber: previous?.currentRevisionNumber ?? null,
+              content,
+              createdBy: user.id,
+            })
+            .returning();
+          revision = { id: created!.id, number: created!.number };
+          await tx
+            .update(tests)
+            .set({
+              title: input.title,
+              testSuiteId: input.suiteId,
+              currentRevisionId: revision.id,
+              currentRevisionNumber: revision.number,
+            })
+            .where(eq(tests.id, input.id));
+          await this.recordActivity(tx, user, {
+            projectId: request.projectId,
+            action: previous ? 'test.updated' : 'test.created',
+            entityType: 'test',
+            entityId: input.id,
+            entityLabel: input.title,
+          });
+        }
+        result.push({
+          id: input.id,
+          status,
+          revision,
+          execution: content.execution,
+          environmentIds: content.environmentIds,
+        });
+      }
+      if (!request.dryRun)
+        for (const file of files) {
+          await tx
+            .insert(repositoryFiles)
+            .values({
+              projectId: request.projectId,
+              repositoryId: request.repositoryId,
+              path: file.path,
+              source: file.source,
+              hash: file.hash,
+            })
+            .onConflictDoUpdate({
+              target: [
+                repositoryFiles.projectId,
+                repositoryFiles.repositoryId,
+                repositoryFiles.path,
+              ],
+              set: { source: file.source, hash: file.hash },
+            });
+        }
+      return {
+        dryRun: request.dryRun,
+        tests: result,
+        files: files.map(({ path, hash }) => ({ path, hash })),
+      };
+    });
+  }
+
   private async idempotent<T>(
     user: AuthenticatedUser,
     operation: string,
@@ -2042,6 +2465,8 @@ export class CanonicalRepository {
     user: AuthenticatedUser,
     projectId: string,
   ): Promise<void> {
+    if (user.apiKeyProjectId && user.apiKeyProjectId !== projectId)
+      throw new RepositoryError('FORBIDDEN', 'This API key belongs to another project.');
     const [project] = await tx
       .select({ ownerId: projects.ownerId })
       .from(projects)
@@ -2181,6 +2606,17 @@ export class CanonicalRepository {
     if (uniqueIds.length === 0 || rows.length !== uniqueIds.length)
       throw new RepositoryError('NOT_FOUND', 'A selected test was not found in this project.');
     const snapshots = await Promise.all(uniqueIds.map((testId) => this.snapshot(tx, testId)));
+    if (
+      snapshots.some(
+        (snapshot) => testExecutionMode(snapshot.currentRevision.content) === 'ci-only',
+      )
+    )
+      throw new RepositoryError('CONFLICT', 'CI-only tests cannot run on Testron environments.');
+    if (snapshots.some((snapshot) => isCatalogueTest(snapshot.currentRevision.content)))
+      throw new RepositoryError(
+        'CONFLICT',
+        'Repository tests must run in their Playwright project.',
+      );
     if (snapshots.some((snapshot) => snapshot.currentRevision.content.status === 'requested'))
       throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
     if (
@@ -2216,6 +2652,13 @@ export class CanonicalRepository {
       throw new RepositoryError('CONFLICT', 'The run schedule has no runnable tests.');
     const values = selections.map(({ test, revision }) => {
       const content = this.revision(revision).content;
+      if (testExecutionMode(content) === 'ci-only')
+        throw new RepositoryError('CONFLICT', 'CI-only tests cannot run on Testron environments.');
+      if (isCatalogueTest(content))
+        throw new RepositoryError(
+          'CONFLICT',
+          'Repository tests must run in their Playwright project.',
+        );
       if (content.status === 'requested')
         throw new RepositoryError('CONFLICT', 'Test requests cannot be scheduled.');
       if (!content.environmentIds.includes(schedule.environmentId))
@@ -2696,6 +3139,7 @@ export class CanonicalRepository {
       id: row.id,
       projectId: row.projectId,
       name: row.name,
+      codeKey: row.codeKey,
       revision: row.revision,
       createdAt: instant(row.createdAt),
       updatedAt: instant(row.updatedAt),
@@ -2715,6 +3159,7 @@ export class CanonicalRepository {
       environmentId: row.environmentId,
       profileId: row.profileId,
       status: row.status as TestRun['status'],
+      context: row.context,
       source: row.source as TestRun['source'],
       startedAt: instant(row.startedAt),
       finishedAt: row.finishedAt ? instant(row.finishedAt) : null,

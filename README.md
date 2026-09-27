@@ -3,6 +3,17 @@
 Server-backed Electron test recorder that persists recoverable drafts and emits
 deterministic Playwright TypeScript.
 
+## Developer CLI
+
+Build the repository integration with `pnpm build:cli`. Run
+`node packages/cli/dist/cli.js --help`, or pack `packages/cli` and install the archive
+in your Playwright project. The CLI provides typed suite references, persistent test
+IDs, project-scoped API keys, and conflict-aware `push` / `pull` synchronization.
+See [the quickstart](docs/integration/quickstart.md) and [CLI reference](docs/integration/cli.md).
+The public website builds these guides at `/docs`, with Markdown downloads.
+Apply migration `0020_repository_sync` before using the CLI. Repository tests are
+viewable in the web UI and execute in their original Playwright project.
+
 ## Test requests
 
 QA can use **Request test** on the project dashboard to submit a title, description

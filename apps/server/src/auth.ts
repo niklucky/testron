@@ -15,6 +15,7 @@ import {
 } from '@testron/protocol';
 import type { Database } from './database/database.js';
 import {
+  apiKeys,
   passwordResetEmailOutbox,
   passwordResetTokens,
   sessions,
@@ -32,6 +33,7 @@ const passwordRecord = (password: string) => {
 
 export interface AuthenticatedUser {
   id: string;
+  apiKeyProjectId?: string;
   email: string;
   name: string | null;
 }
@@ -163,6 +165,7 @@ export class AuthenticationService {
         .set(passwordRecord(input.newPassword))
         .where(eq(users.id, resetToken.userId));
       await transaction.delete(sessions).where(eq(sessions.userId, resetToken.userId));
+      await transaction.delete(apiKeys).where(eq(apiKeys.userId, resetToken.userId));
       await transaction
         .delete(passwordResetTokens)
         .where(eq(passwordResetTokens.userId, resetToken.userId));
@@ -172,6 +175,25 @@ export class AuthenticationService {
 
   async authenticate(authorization: string | undefined): Promise<AuthenticatedUser | undefined> {
     if (!authorization?.startsWith('Bearer ')) return undefined;
+    if (authorization.slice(7).startsWith('tsk_')) {
+      const [user] = await this.db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          apiKeyProjectId: apiKeys.projectId,
+        })
+        .from(apiKeys)
+        .innerJoin(users, eq(users.id, apiKeys.userId))
+        .where(
+          and(
+            eq(apiKeys.tokenHash, hash(authorization.slice(7))),
+            gt(apiKeys.expiresAt, new Date().toISOString()),
+          ),
+        )
+        .limit(1);
+      return user;
+    }
     const [user] = await this.db
       .select({ id: users.id, email: users.email, name: users.name })
       .from(sessions)

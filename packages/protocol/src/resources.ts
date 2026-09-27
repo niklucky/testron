@@ -76,7 +76,13 @@ export const projectActivitySchema = z
   })
   .strict();
 export const testRunStatusSchema = z.enum(['running', 'passed', 'failed', 'cancelled', 'timedOut']);
-export const testRunSourceSchema = z.enum(['desktop-local', 'server-manual', 'server-scheduled']);
+export const testRunSourceSchema = z.enum([
+  'desktop-local',
+  'server-manual',
+  'server-scheduled',
+  'ci',
+  'repository-local',
+]);
 export const serverRunJobStatusSchema = z.enum([
   'queued',
   'running',
@@ -369,6 +375,7 @@ export const testSuiteSchema = z
     id: entityIdSchema,
     projectId: entityIdSchema,
     name: testSuiteNameSchema,
+    codeKey: z.string().optional(),
     revision: revisionNumberSchema,
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -416,6 +423,17 @@ export const revisionStepSchema = z
   })
   .strict();
 
+export const testExecutionModeSchema = z.enum(['ci-only', 'ci-and-testron']);
+
+export const testExecutionMode = (content: {
+  execution?: z.infer<typeof testExecutionModeSchema> | undefined;
+  repository?: unknown;
+}) => content.execution ?? (content.repository ? 'ci-only' : 'ci-and-testron');
+
+export const isCatalogueTest = (content: {
+  repository?: { kind?: string | undefined } | undefined;
+}) => Boolean(content.repository && content.repository.kind !== 'portable');
+
 export const testRevisionContentSchema = z
   .object({
     stepSchemaVersion: stepSchemaVersionSchema,
@@ -425,9 +443,11 @@ export const testRevisionContentSchema = z
     description: z.string().trim().max(20_000).optional(),
     /** Authentication profile used while recording and replaying this test. */
     profileId: entityIdSchema.nullable().optional(),
+    /** Publication is visibility; execution eligibility is a separate policy. */
+    execution: testExecutionModeSchema.optional(),
+    humanSteps: z.array(z.string().max(2_000)).max(200).optional(),
     environmentIds: z
       .array(entityIdSchema)
-      .min(1)
       .max(100)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: 'Test environment assignments must be unique.',
@@ -435,10 +455,29 @@ export const testRevisionContentSchema = z
     prerequisites: z.array(z.string().trim().min(1).max(1_000)).max(100).default([]),
     /** Canonical Playwright document. Older revisions are generated from their steps on load. */
     source: z.string().max(2_000_000).optional(),
+    /** Repository tests are source snapshots; they require a complete-spec runner. */
+    repository: z
+      .object({
+        id: entityIdSchema,
+        origin: z.enum(['repository', 'testron']).optional(),
+        kind: z.enum(['catalogue', 'portable']).optional(),
+        file: z.string().min(1).max(500),
+        files: z.array(z.string().min(1).max(500)).max(200).optional(),
+        titlePath: z.array(z.string()).max(100),
+        line: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
     steps: z.array(revisionStepSchema).max(10_000),
   })
   .strict()
   .superRefine((content, context) => {
+    if (!content.repository && content.environmentIds.length === 0)
+      context.addIssue({
+        code: 'custom',
+        path: ['environmentIds'],
+        message: 'A Testron-authored test requires an environment.',
+      });
     if (content.status === 'requested' && !content.description?.trim())
       context.addIssue({
         code: 'custom',
@@ -533,6 +572,14 @@ export const testSnapshotSchema = z
       });
   });
 
+export const reportedRunContextSchema = z
+  .object({
+    sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+    playwrightProject: z.string().max(200),
+    retry: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const testRunSchema = z
   .object({
     id: entityIdSchema,
@@ -543,6 +590,7 @@ export const testRunSchema = z
     profileId: entityIdSchema.nullable(),
     status: testRunStatusSchema,
     source: testRunSourceSchema,
+    context: reportedRunContextSchema.nullable().optional(),
     startedAt: timestampSchema,
     finishedAt: timestampSchema.nullable(),
     durationMs: z.number().int().nonnegative().nullable(),
@@ -591,7 +639,7 @@ export const serverRunJobSchema = z
     testRevision: revisionPointerSchema,
     environmentId: entityIdSchema,
     profileId: entityIdSchema.nullable(),
-    source: testRunSourceSchema.exclude(['desktop-local']),
+    source: testRunSourceSchema.exclude(['desktop-local', 'ci', 'repository-local']),
     status: serverRunJobStatusSchema,
     runId: entityIdSchema.nullable(),
     queuedAt: timestampSchema,

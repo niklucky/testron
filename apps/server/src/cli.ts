@@ -25,6 +25,7 @@ if (resendApiKey && !resendFrom)
 const server = await startTestronServer({
   runnerEgressPolicy: {
     allowedOrigins: parseRunnerOrigins(process.env.TESTRON_RUNNER_ALLOWED_ORIGINS),
+    loopbackOrigins: parseRunnerOrigins(process.env.TESTRON_RUNNER_LOOPBACK_ORIGINS),
   },
   databaseUrl,
   host,

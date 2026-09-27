@@ -1,3 +1,4 @@
 pnpm-lock.yaml
 apps/webapp/src/routeTree.gen.ts
 apps/server/drizzle
+.claude/worktrees/**

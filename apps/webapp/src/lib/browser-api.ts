@@ -1,4 +1,4 @@
-import type { WebWorkspaceSnapshot } from '@testron/protocol';
+import { testExecutionMode, isCatalogueTest, type WebWorkspaceSnapshot } from '@testron/protocol';
 import {
   deletePlaywrightStepSource,
   parsePlaywright,
@@ -34,14 +34,20 @@ let runPollTimer: ReturnType<typeof setTimeout> | undefined;
 
 export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapshot => {
   const projectId = selectedProjectId ?? value.projects[0]?.id;
-  const environments = value.environments.filter((item) => item.projectId === projectId);
+  const selectedTest = value.tests.find((item) => item.test.id === selectedTestId);
+  const environments = value.environments.filter(
+    (item) =>
+      item.projectId === projectId &&
+      (!selectedTest ||
+        selectedTest.test.projectId !== projectId ||
+        selectedTest.currentRevision.content.environmentIds.includes(item.id)),
+  );
   const environmentId =
     selectedEnvironmentId && environments.some((item) => item.id === selectedEnvironmentId)
       ? selectedEnvironmentId
       : environments[0]?.id;
   selectedProjectId = projectId;
   selectedEnvironmentId = environmentId;
-  const selectedTest = value.tests.find((item) => item.test.id === selectedTestId);
   return {
     viewer: value.viewer,
     members: value.members,
@@ -92,6 +98,10 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
       attachments,
       prerequisites: currentRevision.content.prerequisites,
       status: currentRevision.content.status,
+      execution: testExecutionMode(currentRevision.content),
+      repositoryManaged: isCatalogueTest(currentRevision.content),
+      repositoryFile: currentRevision.content.repository?.file,
+      humanSteps: currentRevision.content.humanSteps,
       description: currentRevision.content.description,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
@@ -107,6 +117,8 @@ export const libraryFromWorkspace = (value: WebWorkspaceSnapshot): LibrarySnapsh
       attachments,
       prerequisites: currentRevision.content.prerequisites,
       status: currentRevision.content.status,
+      execution: testExecutionMode(currentRevision.content),
+      repositoryManaged: isCatalogueTest(currentRevision.content),
       description: currentRevision.content.description,
       createdAt: test.createdAt,
       updatedAt: currentRevision.createdAt,
@@ -693,6 +705,14 @@ const command = (input: AppCommand): void => {
                 ? 'reuse'
                 : 'ignore',
         });
+      else if (selectedTestId && selectedEnvironmentId)
+        void trpcClient.run.enqueue
+          .mutate({ meta, testId: selectedTestId, environmentId: selectedEnvironmentId })
+          .then(refresh)
+          .catch((error: unknown) =>
+            window.alert(error instanceof Error ? error.message : 'Could not start server run.'),
+          );
+      else window.alert('Assign and select a Testron environment before running this test.');
       break;
     case 'create-authentication-flow':
       void mutate(

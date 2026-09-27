@@ -13,6 +13,7 @@
     "dev": "concurrently -n server,webapp,desktop \"pnpm dev:server\" \"pnpm dev:webapp\" \"pnpm dev:desktop\"",
     "build:webapp": "pnpm --filter @testron/webapp build",
     "dev:web": "pnpm --filter @testron/web dev",
+    "build:cli": "pnpm --filter @testron/cli build",
     "build:web": "pnpm --filter @testron/web build",
     "compose:up": "docker compose -f compose.local.yml up --detach --wait",
     "compose:down": "docker compose -f compose.local.yml down",

@@ -1,4 +1,4 @@
-import type { WebWorkspaceSnapshot } from '@testron/protocol';
+import { type WebWorkspaceSnapshot } from '@testron/protocol';
 import { useLayoutEffect } from 'react';
 
 import { connectBrowserApi } from '../../../lib/browser-api';

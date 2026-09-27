@@ -85,12 +85,13 @@ const executeStep = async (
   step: Step,
   variables: Readonly<Record<string, string>>,
   expect: typeof PlaywrightExpect,
+  environmentUrl: string,
 ): Promise<void> => {
   switch (step.kind) {
     case 'code':
       throw new Error('This test contains exact Playwright code and must run as a complete spec.');
     case 'navigate': {
-      runnerOrigin(step.url);
+      runnerOrigin(new URL(step.url, environmentUrl).href);
       const response = await page.goto(step.url);
       if (await response?.headerValue('x-testron-egress-denied'))
         throw new Error('Runner egress denied: destination must be an approved public website.');
@@ -252,6 +253,7 @@ export class ServerPlaywrightRunner {
       });
       context = await browser.newContext({
         serviceWorkers: 'block',
+        baseURL: options.environmentUrl,
         ...(options.storageState ? { storageState: options.storageState } : {}),
         ...(options.captureArtifacts === false ? {} : { recordVideo: { dir: videoDirectory } }),
       });
@@ -283,6 +285,7 @@ export class ServerPlaywrightRunner {
             step,
             options.environmentVariables,
             expect.configure({ timeout: remainingMs }),
+            options.environmentUrl,
           );
           results.push({
             index,

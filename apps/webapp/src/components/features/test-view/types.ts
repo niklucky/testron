@@ -1,4 +1,5 @@
 import type { RecordedStep } from '../record/types';
+import type { TestRun } from '@testron/protocol';
 
 /**
  * The test as a board reads it.
@@ -62,12 +63,16 @@ export type Run = {
   error?: string;
   /** How far it got, for the progress ribbon. */
   completed: number;
+  reported?: boolean;
+  revision?: number;
+  context?: TestRun['context'];
 };
 
 export type TestDetail = {
   project: string;
   suite: string;
   name: string;
+  description?: string;
   file: string;
   /** Environments this test is allowed to run in. */
   environments: string[];

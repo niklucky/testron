@@ -75,7 +75,7 @@ export class WebContentsReplay {
     try {
       if (step.kind === 'code') throw new Error('Exact code cannot be replayed as a browser step.');
       if (step.kind === 'navigate') {
-        const url = new URL(step.url);
+        const url = new URL(step.url, contents.getURL() || undefined);
         if (!['http:', 'https:'].includes(url.protocol))
           throw new Error('Only HTTP(S) steps can be replayed.');
         await this.bounded(contents.loadURL(url.href), signal);

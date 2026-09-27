@@ -1,3 +1,4 @@
+import { Docs } from './components/Docs';
 import { Downloads } from './components/Downloads';
 import { ArrowIcon, CheckIcon } from './components/Icons';
 import { appUrl, repositoryUrl, signInUrl, signUpUrl } from './lib/downloads';
@@ -8,7 +9,7 @@ const promises = [
   'Keep tests, revisions and run results on your own server',
 ];
 
-export const App = () => (
+const LandingPage = () => (
   <div className="flex min-h-screen flex-col">
     <header className="flex h-14 items-center justify-between px-5 sm:px-8">
       <span className="flex items-center gap-2">
@@ -16,6 +17,9 @@ export const App = () => (
         <span className="font-medium">Testron</span>
       </span>
       <nav className="flex items-center gap-2">
+        <a className="px-3 text-md text-ink-2 hover:text-ink" href="/docs/">
+          Docs
+        </a>
         <a
           className="inline-flex h-8 items-center rounded-md px-3 text-md font-medium text-ink-2 transition-colors hover:bg-raised hover:text-ink"
           href={signInUrl}
@@ -120,3 +124,10 @@ export const App = () => (
     </footer>
   </div>
 );
+
+export const App = () =>
+  window.location.pathname === '/docs' || window.location.pathname.startsWith('/docs/') ? (
+    <Docs />
+  ) : (
+    <LandingPage />
+  );

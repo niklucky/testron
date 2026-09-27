@@ -3,7 +3,12 @@ import path from 'node:path';
 import { and, asc, eq, isNull, lte } from 'drizzle-orm';
 
 import { nextCronOccurrence } from '@testron/domain/scheduling/cron';
-import { browserStorageStateSchema, testRevisionContentSchema } from '@testron/protocol';
+import {
+  browserStorageStateSchema,
+  testRevisionContentSchema,
+  testExecutionMode,
+  isCatalogueTest,
+} from '@testron/protocol';
 import type { Database } from '../database/database.js';
 import {
   environments,
@@ -165,6 +170,8 @@ export class ServerRunQueue {
     return selected.flatMap(({ test, revision }) => {
       const content = revisionContent(revision.content);
       if (
+        testExecutionMode(content) === 'ci-only' ||
+        isCatalogueTest(content) ||
         content.status === 'requested' ||
         !content.environmentIds.includes(schedule.environmentId)
       )
@@ -245,6 +252,22 @@ export class ServerRunQueue {
         if (!revision || !environment)
           throw new Error('The queued run references missing execution data.');
         content = revisionContent(revision.content);
+        if (testExecutionMode(content) === 'ci-only' || isCatalogueTest(content))
+          throw new Error('This test cannot run on Testron environments.');
+        const [current] = await tx
+          .select({ content: testRevisions.content })
+          .from(tests)
+          .innerJoin(testRevisions, eq(tests.currentRevisionId, testRevisions.id))
+          .where(and(eq(tests.id, job.testId), isNull(tests.deletedAt)))
+          .limit(1);
+        const currentContent = current && revisionContent(current.content);
+        if (
+          !currentContent ||
+          testExecutionMode(currentContent) === 'ci-only' ||
+          isCatalogueTest(currentContent) ||
+          !currentContent.environmentIds.includes(job.environmentId)
+        )
+          throw new Error('This test is no longer eligible for the queued environment.');
         if (content.status === 'requested') throw new Error('Test requests cannot run.');
       } catch {
         await tx

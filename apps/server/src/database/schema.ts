@@ -218,13 +218,17 @@ export const testSuites = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    codeKey: text('code_key').notNull(),
     revision: integer('revision').notNull(),
     createdAt: instant('created_at').defaultNow().notNull(),
     updatedAt: instant('updated_at').defaultNow().notNull(),
     deletedAt: instant('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
   },
-  (table) => [index('test_suites_project_idx').on(table.projectId)],
+  (table) => [
+    index('test_suites_project_idx').on(table.projectId),
+    uniqueIndex('test_suites_code_key_unique').on(table.projectId, table.codeKey),
+  ],
 );
 
 export const tests = pgTable(
@@ -421,6 +425,11 @@ export const testRuns = pgTable(
     profileId: uuid('profile_id').references(() => profiles.id),
     status: text('status').notNull(),
     source: text('source').notNull(),
+    context: jsonb('context').$type<{
+      sourceHash: string;
+      playwrightProject: string;
+      retry: number;
+    }>(),
     startedAt: instant('started_at').defaultNow().notNull(),
     finishedAt: instant('finished_at'),
     durationMs: integer('duration_ms'),
@@ -578,3 +587,30 @@ export const testAttachments = pgTable(
   },
   (table) => [index('test_attachments_test_id_idx').on(table.testId)],
 );
+
+export const repositoryFiles = pgTable(
+  'repository_files',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    repositoryId: uuid('repository_id').notNull(),
+    path: text('path').notNull(),
+    source: text('source').notNull(),
+    hash: text('hash').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.repositoryId, table.path] })],
+);
+
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: instant('expires_at').notNull(),
+});

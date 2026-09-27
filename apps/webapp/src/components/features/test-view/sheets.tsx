@@ -74,6 +74,7 @@ export const SourceSheet = ({
   onCopy,
   layout = 'modal',
   sourceFirst = false,
+  readOnly = false,
   onSourceFocusChange,
 }: {
   lines: CodeLine[];
@@ -89,6 +90,7 @@ export const SourceSheet = ({
   onCopy?: () => void;
   layout?: 'modal' | 'docked';
   sourceFirst?: boolean;
+  readOnly?: boolean;
   onSourceFocusChange?: (focused: boolean) => void;
 }) => {
   const { t } = useTranslation();
@@ -114,6 +116,7 @@ export const SourceSheet = ({
         {sourceFirst ? (
           <SourceEditor
             value={source}
+            readOnly={readOnly}
             onChange={onSource}
             onFocusChange={onSourceFocusChange}
             ariaLabel={t('test_source')}
@@ -123,6 +126,7 @@ export const SourceSheet = ({
           <textarea
             aria-label={t('test_source')}
             value={source}
+            readOnly={readOnly}
             spellCheck={false}
             onChange={(event) => onSource(event.target.value)}
             className="ui-mono h-[420px] w-full resize-none bg-transparent p-3 leading-[19px] text-ink outline-none"
@@ -135,10 +139,14 @@ export const SourceSheet = ({
       <footer className="flex shrink-0 items-center gap-2 px-4 py-3">
         {sourceFirst ? (
           <>
-            <Badge tone="good" icon="check">
-              Source of truth
+            <Badge tone={readOnly ? 'neutral' : 'good'} icon={readOnly ? 'lock' : 'check'}>
+              {readOnly ? 'Read only' : 'Source of truth'}
             </Badge>
-            <span className="text-ink-3">Manual steps are parsed from this Playwright test</span>
+            <span className="text-ink-3">
+              {readOnly
+                ? 'Edit in your repository and publish with testron push'
+                : 'Manual steps are parsed from this Playwright test'}
+            </span>
             <Button
               className="ml-auto"
               icon="copy"

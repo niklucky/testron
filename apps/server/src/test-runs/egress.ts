@@ -7,6 +7,8 @@ import type { Duplex } from 'node:stream';
 export interface RunnerEgressPolicy {
   /** Extra origins (for example a CDN or identity provider), configured by the operator. */
   allowedOrigins?: readonly string[];
+  /** Operator-only opt-in for local test environments; never supplied by a test. */
+  loopbackOrigins?: readonly string[];
 }
 
 const privateAddresses = new BlockList();
@@ -74,6 +76,7 @@ export const parseRunnerOrigins = (value = ''): string[] =>
 
 export class RunnerEgressProxy {
   private readonly allowed: Set<string>;
+  private readonly loopback: Set<string>;
   private readonly sockets = new Set<Duplex>();
   private closing = false;
   private readonly server = createServer();
@@ -84,6 +87,14 @@ export class RunnerEgressProxy {
     private readonly resolve: (hostname: string) => Promise<LookupAddress[]> = (hostname) =>
       lookup(hostname, { all: true }),
   ) {
+    this.loopback = new Set(
+      (policy.loopbackOrigins ?? []).map((value) => {
+        const origin = runnerOrigin(value);
+        if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin).hostname))
+          throw new Error('Loopback origins must name localhost, 127.0.0.1, or [::1].');
+        return origin;
+      }),
+    );
     this.allowed = new Set([
       runnerOrigin(environmentUrl),
       ...(policy.allowedOrigins?.map(runnerOrigin) ?? []),
@@ -104,7 +115,14 @@ export class RunnerEgressProxy {
     if (!this.allowed.has(origin)) throw new Error(`Runner origin is not allowed: ${origin}`);
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
     const addresses = isIP(hostname) ? [{ address: hostname }] : await this.resolve(hostname);
-    if (!addresses.length || addresses.some(({ address }) => !runnerAddressAllowed(address)))
+    if (
+      !addresses.length ||
+      addresses.some(
+        ({ address }) =>
+          !runnerAddressAllowed(address) &&
+          !(this.loopback.has(origin) && (address === '127.0.0.1' || address === '::1')),
+      )
+    )
       throw new Error(`Runner address is not allowed: ${origin}`);
     if (this.closing) throw new Error('Runner proxy is closed.');
     return { url, address: addresses[0]!.address };

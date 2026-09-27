@@ -192,3 +192,21 @@ describe('runner egress', () => {
     }
   });
 });
+
+describe('operator loopback opt-in', () => {
+  it('permits only the explicitly configured local origin and never metadata addresses', async () => {
+    const target = 'http://127.0.0.1:3456';
+    await expect(new RunnerEgressProxy(target).destination(target)).rejects.toThrow('address');
+    const proxy = new RunnerEgressProxy(target, { loopbackOrigins: [target] });
+    await expect(proxy.destination(target + '/dashboard')).resolves.toMatchObject({
+      address: '127.0.0.1',
+    });
+    await expect(proxy.destination('http://127.0.0.1:3457')).rejects.toThrow('origin');
+    expect(
+      () =>
+        new RunnerEgressProxy('http://169.254.169.254', {
+          loopbackOrigins: ['http://169.254.169.254'],
+        }),
+    ).toThrow('Loopback');
+  });
+});

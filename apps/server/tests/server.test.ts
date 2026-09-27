@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { parsePlaywright } from '@testron/domain/codegen/parse-playwright';
+import { pull, push } from '../../../packages/cli/src/sync';
+import type { Config } from '../../../packages/cli/src/config';
+import { ServerPlaywrightRunner } from '../src/test-runs/runner';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +27,9 @@ import { ServerArtifactRetention } from '../src/test-runs/artifact-retention.js'
 import type { ServerRunOptions, ServerRunResult } from '../src/test-runs/runner.js';
 import { testRuns } from '../src/database/schema.js';
 
-const databaseUrl = 'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test' as const;
+const databaseUrl =
+  process.env.TESTRON_TEST_DATABASE_URL ??
+  'postgresql://testron_test:testron_test@127.0.0.1:55433/testron_test';
 const expectedDatabase = 'testron_test';
 const expectedUser = 'testron_test';
 let server: RunningTestronServer;
@@ -193,7 +202,7 @@ describe('PostgreSQL tRPC vertical slice', () => {
     ).resolves.toMatchObject({ viewer: { name: 'Nikita', email }, projects: [] });
   });
 
-  it('resets a password with an expiring single-use email token and revokes existing sessions', async () => {
+  it('resets a password with an expiring single-use email token and revokes sessions and API keys', async () => {
     const email = 'reset@example.test';
     const password = 'correct horse battery staple';
     const registration = await client().auth.register.mutate({
@@ -201,6 +210,12 @@ describe('PostgreSQL tRPC vertical slice', () => {
       email,
       password,
     });
+
+    const api = client(registration.accessToken);
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'Reset keys' });
+    const key = await api.sync.createKey.mutate({ projectId: project.id, name: 'CI', days: 365 });
+    const keyRequest = { projectId: project.id, repositoryId: randomUUID() };
+    await expect(client(key.token).sync.pull.query(keyRequest)).resolves.toBeDefined();
 
     await expect(
       client().auth.requestPasswordReset.mutate({ email: 'missing@example.test' }),
@@ -245,6 +260,9 @@ describe('PostgreSQL tRPC vertical slice', () => {
     await expect(
       client(registration.accessToken).workspace.get.query({ meta: requestMeta() }),
     ).rejects.toMatchObject({ data: { code: 'UNAUTHORIZED' } });
+    await expect(client(key.token).sync.pull.query(keyRequest)).rejects.toMatchObject({
+      data: { code: 'UNAUTHORIZED' },
+    });
     await expect(client().auth.login.mutate({ email, password })).rejects.toMatchObject({
       data: { code: 'UNAUTHORIZED' },
     });
@@ -2249,4 +2267,566 @@ describe('PostgreSQL tRPC vertical slice', () => {
       status: 'refresh-failed',
     });
   });
+});
+
+describe('repository synchronization', () => {
+  it('rejects oversized titles without breaking workspace reads and accepts the shared title limit', async () => {
+    const { api } = await signIn();
+    const { project } = await createSlice(api);
+    const request = {
+      projectId: project.id,
+      repositoryId: randomUUID(),
+      files: [{ path: 'test.spec.ts', source: '// catalogue', baseHash: null }],
+      tests: [
+        {
+          id: randomUUID(),
+          suiteId: null,
+          title: 'x'.repeat(201),
+          file: 'test.spec.ts',
+          titlePath: ['test'],
+          line: 1,
+          baseRevision: null,
+        },
+      ],
+    };
+    await expect(api.sync.push.mutate(request)).rejects.toMatchObject({
+      data: { code: 'BAD_REQUEST' },
+    });
+    expect(
+      (
+        await api.sync.pull.query({
+          projectId: request.projectId,
+          repositoryId: request.repositoryId,
+        })
+      ).tests,
+    ).toHaveLength(1);
+    await api.sync.push.mutate({
+      ...request,
+      tests: [{ ...request.tests[0]!, title: 'x'.repeat(200) }],
+    });
+    expect((await api.workspace.getWeb.query({ meta: requestMeta() })).tests).toHaveLength(2);
+  });
+
+  it.each([
+    "import {test} from '@playwright/test'; test('broken', async () => {",
+    "import {test} from '@playwright/test'; test('custom', async ({page}) => { await page.evaluate(() => 1); });",
+  ])('downgrades unsupported portable source and blocks remote execution: %s', async (source) => {
+    const { api } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const id = randomUUID();
+    const result = await api.sync.push.mutate({
+      projectId: project.id,
+      repositoryId: randomUUID(),
+      environmentIds: [environment.id],
+      files: [{ path: 'test.spec.ts', source, baseHash: null }],
+      tests: [
+        {
+          id,
+          suiteId: null,
+          title: 'Unsupported',
+          file: 'test.spec.ts',
+          titlePath: ['Unsupported'],
+          line: 1,
+          baseRevision: null,
+          kind: 'portable',
+          execution: 'ci-and-testron',
+        },
+      ],
+    });
+    expect(result.tests[0]?.execution).toBe('ci-only');
+    const saved = await api.test.get.query({ meta: requestMeta(), testId: id });
+    expect(saved.currentRevision.content).toMatchObject({
+      source,
+      steps: [],
+      environmentIds: [],
+      repository: { kind: 'catalogue' },
+    });
+    await expect(
+      api.run.enqueue.mutate({ meta: mutationMeta(), testId: id, environmentId: environment.id }),
+    ).rejects.toThrow('CI-only');
+  });
+
+  it('publishes CI-only tests without environments and preserves explicit execution eligibility', async () => {
+    const { api } = await signIn();
+    const project = await api.project.create.mutate({ meta: mutationMeta(), name: 'CI catalogue' });
+    const suite = await api.testSuite.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'CI',
+    });
+    const repositoryId = randomUUID();
+    const ciId = randomUUID();
+    const sharedId = randomUUID();
+    const request = {
+      projectId: project.id,
+      repositoryId,
+      files: [
+        {
+          path: 'tests/mixed.spec.ts',
+          source:
+            "import {test} from '@playwright/test'; test('shared', async ({page}) => { await page.goto('/'); });",
+          baseHash: null,
+        },
+      ],
+      tests: [ciId, sharedId].map((id) => ({
+        id,
+        suiteId: suite.id,
+        title: id,
+        file: 'tests/mixed.spec.ts',
+        titlePath: [id],
+        line: 1,
+        baseRevision: null,
+        ...(id === sharedId
+          ? { execution: 'ci-and-testron' as const, kind: 'portable' as const }
+          : {}),
+      })),
+    };
+    const pushed = await api.sync.push.mutate(request);
+    const ci = await api.test.get.query({ meta: requestMeta(), testId: ciId });
+    const shared = await api.test.get.query({ meta: requestMeta(), testId: sharedId });
+    expect(ci.currentRevision.content.execution).toBe('ci-only');
+    expect(ci.currentRevision.content.environmentIds).toEqual([]);
+    expect(shared.currentRevision.content.execution).toBe('ci-and-testron');
+    expect(shared.currentRevision.content.environmentIds).toEqual([]);
+    expect(ci.currentRevision.content.repository?.origin).toBe('repository');
+    const environment = await api.environment.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Development',
+      baseUrl: 'https://development.example',
+      testIdAttribute: 'data-testid',
+    });
+    await expect(
+      api.run.start.mutate({
+        meta: mutationMeta(),
+        testId: ciId,
+        environmentId: environment.id,
+        source: 'desktop-local',
+      }),
+    ).rejects.toThrow('CI-only');
+    await expect(
+      api.runSchedule.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'CI forbidden',
+        cron: '0 1 * * *',
+        environmentId: environment.id,
+        testIds: [ciId],
+        enabled: false,
+      }),
+    ).rejects.toThrow('CI-only');
+    await expect(
+      api.run.start.mutate({
+        meta: mutationMeta(),
+        testId: sharedId,
+        environmentId: environment.id,
+        source: 'desktop-local',
+      }),
+    ).rejects.toThrow('not assigned');
+    await expect(
+      api.test.saveRevision.mutate({
+        meta: mutationMeta(),
+        testId: ciId,
+        baseRevision: ci.test.currentRevision,
+        content: { ...ci.currentRevision.content, execution: 'ci-and-testron' },
+      }),
+    ).rejects.toThrow('read-only');
+    const upgraded = await api.sync.push.mutate({
+      ...request,
+      environmentIds: [environment.id],
+      tests: request.tests.map((test) => ({
+        ...test,
+        baseRevision: pushed.tests.find((item) => item.id === test.id)!.revision,
+      })),
+    });
+    expect(upgraded.tests.find((test) => test.id === ciId)?.status).toBe('unchanged');
+    expect(
+      (await api.test.get.query({ meta: requestMeta(), testId: sharedId })).currentRevision.content
+        .environmentIds,
+    ).toEqual([environment.id]);
+  });
+
+  it('tracks Testron origin and preserves existing bindings when adopting a pulled test', async () => {
+    const { api } = await signIn();
+    const { project, environment, snapshot } = await createSlice(api);
+    const suite = await api.testSuite.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Imported',
+    });
+    await api.sync.push.mutate({
+      projectId: project.id,
+      repositoryId: randomUUID(),
+      files: [
+        {
+          path: 'imported.spec.ts',
+          source:
+            "import {test} from '@playwright/test'; test('adopted', async ({page}) => { await page.goto('/'); });",
+          baseHash: null,
+        },
+      ],
+      tests: [
+        {
+          id: snapshot.test.id,
+          suiteId: suite.id,
+          title: snapshot.test.title,
+          file: 'imported.spec.ts',
+          titlePath: [snapshot.test.title],
+          line: 1,
+          baseRevision: snapshot.test.currentRevision,
+          execution: 'ci-and-testron',
+          kind: 'portable',
+        },
+      ],
+    });
+    const adopted = await api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id });
+    expect(adopted.currentRevision.content.repository?.origin).toBe('testron');
+    expect(adopted.currentRevision.content.environmentIds).toEqual([environment.id]);
+  });
+
+  it('preserves suite code keys, stable IDs and no-op revisions, and rejects stale atomic pushes', async () => {
+    const { api } = await signIn();
+    const { project, environment } = await createSlice(api);
+    const suite = await api.testSuite.create.mutate({
+      meta: mutationMeta(),
+      projectId: project.id,
+      name: 'Authentication',
+    });
+    expect(suite.codeKey).toBe('Authentication');
+    const renamed = await api.testSuite.update.mutate({
+      meta: mutationMeta(),
+      testSuiteId: suite.id,
+      baseRevision: suite.revision,
+      name: 'Login and identity',
+    });
+    expect(renamed.codeKey).toBe('Authentication');
+    const repositoryId = randomUUID();
+    const id = randomUUID();
+    const request = {
+      projectId: project.id,
+      repositoryId,
+      environmentIds: [environment.id],
+      files: [
+        { path: 'tests/auth.spec.ts', source: '// first source', baseHash: null as string | null },
+      ],
+      tests: [
+        {
+          id,
+          suiteId: suite.id,
+          title: 'sign in',
+          file: 'tests/auth.spec.ts',
+          titlePath: ['Password', 'sign in'],
+          line: 3,
+          baseRevision: null as { id: string; number: number } | null,
+        },
+      ],
+    };
+    const preview = await api.sync.push.mutate({ ...request, dryRun: true });
+    expect(preview.tests[0]?.status).toBe('created');
+    expect((await api.sync.pull.query({ projectId: project.id, repositoryId })).files).toEqual([]);
+    const created = await api.sync.push.mutate(request);
+    expect(created.tests[0]?.revision?.number).toBe(1);
+    const retry = await api.sync.push.mutate(request);
+    expect(retry.tests[0]?.status).toBe('unchanged');
+    expect(retry.tests[0]?.revision).toEqual(created.tests[0]?.revision);
+    const snapshot = await api.test.get.query({ meta: requestMeta(), testId: id });
+    expect(snapshot.currentRevision.content.repository?.file).toBe('tests/auth.spec.ts');
+    expect(snapshot.test.testSuiteId).toBe(suite.id);
+    const updated = await api.sync.push.mutate({
+      ...request,
+      files: [
+        { ...request.files[0]!, source: '// second source', baseHash: created.files[0]!.hash },
+      ],
+      tests: [
+        { ...request.tests[0]!, title: 'renamed login', baseRevision: created.tests[0]!.revision },
+      ],
+    });
+    expect(updated.tests[0]?.revision?.number).toBe(2);
+    await expect(
+      api.sync.push.mutate({
+        ...request,
+        files: [
+          { ...request.files[0]!, source: '// stale edit', baseHash: created.files[0]!.hash },
+          { path: 'helpers.ts', source: 'export {};', baseHash: null },
+        ],
+      }),
+    ).rejects.toThrow('FILE_CONFLICT');
+    const catalog = await api.sync.pull.query({ projectId: project.id, repositoryId });
+    expect(catalog.files).toHaveLength(1);
+    expect(catalog.tests.find(({ test }) => test.id === id)?.test.title).toBe('renamed login');
+    await expect(
+      api.test.saveRevision.mutate({
+        meta: mutationMeta(),
+        testId: id,
+        baseRevision: updated.tests[0]!.revision!,
+        content: { ...snapshot.currentRevision.content, source: '// edited in UI' },
+      }),
+    ).rejects.toThrow('read-only');
+  });
+
+  it('scopes API keys to project sync, enforces access, and revokes them', async () => {
+    const { api } = await signIn();
+    const { project } = await createSlice(api);
+    const other = await api.project.create.mutate({ meta: mutationMeta(), name: 'Other' });
+    const key = await api.sync.createKey.mutate({ projectId: project.id, name: 'CLI', days: 1 });
+    const keyed = client(key.token);
+    await expect(
+      keyed.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).resolves.toHaveProperty('suites');
+    await expect(
+      keyed.sync.pull.query({ projectId: other.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('another project');
+    await expect(keyed.workspace.get.query({ meta: requestMeta() })).rejects.toThrow(
+      'only use repository sync',
+    );
+    await expect(
+      keyed.sync.createKey.mutate({ projectId: project.id, name: 'Another' }),
+    ).rejects.toThrow('only use repository sync');
+    const stranger = await signIn('stranger@example.test');
+    await expect(
+      stranger.api.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('access');
+    await api.sync.revokeKey.mutate({ projectId: project.id, id: key.id });
+    await expect(
+      keyed.sync.pull.query({ projectId: project.id, repositoryId: randomUUID() }),
+    ).rejects.toThrow('UNAUTHORIZED');
+  });
+});
+
+describe('portable test acceptance round trips', () => {
+  it('runs pulled public/profiled tests locally, preserves editable pushes, runs new portable tests and reports catalogue runs', async () => {
+    await promisify(execFile)(process.execPath, ['build.mjs'], {
+      cwd: path.resolve(import.meta.dirname, '../../../packages/cli'),
+    });
+    const site = createServer((request, response) => {
+      response.setHeader('content-type', 'text/html');
+      const authenticated = request.headers.cookie?.includes('session=local-session');
+      response.end(
+        `<h1>${request.url === '/private' && !authenticated ? 'Sign in' : 'Dashboard'}</h1><p>Ready</p>`,
+      );
+    });
+    await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve));
+    const target = `http://127.0.0.1:${(site.address() as { port: number }).port}`;
+    const root = await mkdtemp(path.join(tmpdir(), 'testron-acceptance-'));
+    const queue = new ServerRunQueue(
+      server.database.db,
+      artifactsDirectory,
+      undefined,
+      15000,
+      new ServerPlaywrightRunner({ loopbackOrigins: [target] }),
+    );
+    try {
+      const { api, token } = await signIn();
+      const project = await api.project.create.mutate({
+        meta: mutationMeta(),
+        name: 'Round trips',
+      });
+      const environment = await api.environment.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Isolated acceptance',
+        baseUrl: target,
+        testIdAttribute: 'data-testid',
+      });
+      await api.testSuite.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Smoke',
+      });
+      const profile = await api.profile.create.mutate({
+        meta: mutationMeta(),
+        projectId: project.id,
+        name: 'Dedicated test account',
+        authenticationType: 'cookies',
+        environments: [
+          {
+            environmentId: environment.id,
+            variables: [{ name: 'session', value: 'local-session', sensitive: true }],
+          },
+        ],
+      });
+      const config: Config = {
+        server: server.url,
+        projectId: project.id,
+        repositoryId: randomUUID(),
+        environmentIds: [environment.id],
+        playwrightConfig: 'playwright.config.ts',
+        supportFiles: [],
+        importDir: 'tests',
+        reportEnvironmentId: environment.id,
+      };
+      await symlink(
+        path.resolve(import.meta.dirname, '../../../node_modules'),
+        path.join(root, 'node_modules'),
+        'dir',
+      );
+      await writeFile(path.join(root, 'package.json'), '{"type":"module"}');
+      await writeFile(
+        path.join(root, 'playwright.config.ts'),
+        `export default {testDir:'./tests',use:{baseURL:${JSON.stringify(target)}}};`,
+      );
+      await writeFile(
+        path.join(root, 'testron.config.ts'),
+        `export default ${JSON.stringify(config)};`,
+      );
+      await writeFile(
+        path.join(root, 'local-auth.json'),
+        JSON.stringify({
+          cookies: [
+            {
+              name: 'session',
+              value: 'local-session',
+              domain: '127.0.0.1',
+              path: '/',
+              expires: -1,
+              httpOnly: true,
+              secure: false,
+              sameSite: 'Lax',
+            },
+          ],
+          origins: [],
+        }),
+      );
+      const runLocal = (file: string) =>
+        promisify(execFile)(
+          process.execPath,
+          [
+            path.join(root, 'node_modules/@playwright/test/cli.js'),
+            'test',
+            file,
+            '--reporter=line,' +
+              path.resolve(import.meta.dirname, '../../../packages/cli/dist/run-reporter.js'),
+          ],
+          {
+            cwd: root,
+            env: {
+              ...process.env,
+              TESTRON_BASE_URL: target,
+              TESTRON_STORAGE_STATE: path.join(root, 'local-auth.json'),
+              TESTRON_API_KEY: token,
+              CI: 'true',
+            },
+            timeout: 30000,
+          },
+        );
+      const runRemote = async (id: string) => {
+        const job = await api.run.enqueue.mutate({
+          meta: mutationMeta(),
+          testId: id,
+          environmentId: environment.id,
+        });
+        await queue.processNow();
+        const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+        const completed = workspace.serverRunJobs!.find((item) => item.id === job.id)!;
+        expect(completed.error).toBeNull();
+        expect(completed.status).toBe('passed');
+      };
+      for (const authenticated of [false, true]) {
+        const source = `import {test,expect} from '@playwright/test';
+test('Dashboard ${authenticated ? 'authenticated' : 'public'}',async({page})=>{await page.goto('${target}${authenticated ? '/private' : '/'}');await expect(page.getByRole('heading',{name:'Dashboard'})).toBeVisible();});`;
+        const snapshot = await api.test.create.mutate({
+          meta: mutationMeta(),
+          projectId: project.id,
+          content: {
+            stepSchemaVersion: 1,
+            title: `Dashboard ${authenticated ? 'authenticated' : 'public'}`,
+            environmentIds: [environment.id],
+            profileId: authenticated ? profile.id : null,
+            prerequisites: [],
+            source,
+            steps: parsePlaywright(source).steps.map(({ step }) => ({
+              id: randomUUID(),
+              payload: step,
+            })),
+          },
+        });
+        await pull(root, config, api, { test: snapshot.test.id });
+        const file = `tests/${snapshot.test.id}.spec.ts`;
+        expect((await runLocal(file)).stdout).toContain('1 passed');
+        const local = await readFile(path.join(root, file), 'utf8');
+        await writeFile(
+          path.join(root, file),
+          local.replace(
+            'toBeVisible();',
+            "toBeVisible(); await expect(page.getByText('Ready', {exact:true})).toBeVisible();",
+          ),
+        );
+        const uploaded = await push(root, config, api, { file });
+        expect(uploaded.tests[0]!.id).toBe(snapshot.test.id);
+        const updated = await api.test.get.query({ meta: requestMeta(), testId: snapshot.test.id });
+        expect(updated.currentRevision.content.repository?.kind).toBe('portable');
+        expect(updated.currentRevision.content.profileId ?? null).toBe(
+          authenticated ? profile.id : null,
+        );
+        expect(updated.currentRevision.content.steps).toHaveLength(3);
+        await runRemote(snapshot.test.id);
+        // An editor change followed by pull/edit/push must not conflict with the raw source baseline.
+        await api.test.saveRevision.mutate({
+          meta: mutationMeta(),
+          testId: snapshot.test.id,
+          baseRevision: updated.test.currentRevision,
+          content: { ...updated.currentRevision.content, description: 'Edited in Testron' },
+        });
+        await pull(root, config, api, { test: snapshot.test.id });
+        await push(root, config, api, { file });
+      }
+      const direct = `import {test,expect} from '@playwright/test';
+import {testron,suites} from '../testron.generated';
+test('Code-authored smoke',testron({publish:true,execution:'ci-and-testron',suite:suites.Smoke,description:'A visitor sees the dashboard',steps:['Open dashboard','Verify heading']}),async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{name:'Dashboard'})).toBeVisible();});`;
+      await writeFile(path.join(root, 'tests/smoke.spec.ts'), direct);
+      const portable = await push(root, config, api, { file: 'tests/smoke.spec.ts' });
+      const portableId = portable.tests[0]!.id;
+      const portableSnapshot = await api.test.get.query({
+        meta: requestMeta(),
+        testId: portableId,
+      });
+      expect(portableSnapshot.currentRevision.content.description).toBe(
+        'A visitor sees the dashboard',
+      );
+      expect(portableSnapshot.currentRevision.content.steps).toHaveLength(2);
+      await runRemote(portableId);
+      await writeFile(
+        path.join(root, 'tests/helper.ts'),
+        `export {test,expect} from '@playwright/test';`,
+      );
+      await writeFile(
+        path.join(root, 'tests/complex.spec.ts'),
+        direct
+          .replace("from '@playwright/test'", "from './helper'")
+          .replace('Code-authored smoke', 'Repository complex test'),
+      );
+      const complex = await push(root, config, api, { file: 'tests/complex.spec.ts' });
+      expect(complex.downgraded).toEqual(['Repository complex test']);
+      expect(complex.files.map((file) => file.path)).toEqual(['tests/complex.spec.ts']);
+      const complexId = complex.tests[0]!.id;
+      await expect(
+        api.run.enqueue.mutate({
+          meta: mutationMeta(),
+          testId: complexId,
+          environmentId: environment.id,
+        }),
+      ).rejects.toThrow('CI-only');
+      expect((await runLocal('tests/complex.spec.ts')).stdout).toContain('1 passed');
+      const workspace = await api.workspace.getWeb.query({ meta: requestMeta() });
+      const report = workspace.recentRuns!.find(
+        (run) => run.testId === complexId && run.source === 'ci',
+      );
+      expect(report?.status).toBe('passed');
+      expect(report?.context?.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+      const snapshot = await api.test.get.query({ meta: requestMeta(), testId: complexId });
+      await expect(
+        api.test.saveRevision.mutate({
+          meta: mutationMeta(),
+          testId: complexId,
+          baseRevision: snapshot.test.currentRevision,
+          content: { ...snapshot.currentRevision.content, source: 'changed' },
+        }),
+      ).rejects.toThrow('read-only');
+    } finally {
+      await queue.close();
+      site.closeAllConnections();
+      await new Promise<void>((resolve) => site.close(() => resolve()));
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
 });
