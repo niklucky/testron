@@ -348,7 +348,8 @@ describe('imported local execution', () => {
     await expect(run('http://127.0.0.1:3210')).rejects.toMatchObject({
       stdout: expect.stringContaining('TESTRON_STORAGE_STATE'),
     });
-  });
+    // Five sequential Playwright CLI launches include process/worker startup on CI.
+  }, 30_000);
 
   it('rejects custom code and multiple recorded origins instead of changing their meaning', async () => {
     const { exportTestSource } = await import('../src/export-test');
